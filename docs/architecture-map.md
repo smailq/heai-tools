@@ -74,8 +74,10 @@ The posture governs dependency edges only; confinement holds under either settin
 - **Glob semantics**, kept deliberately small:
   - Repo-root-relative, with no leading or trailing `/`; a bare filename matches only at the repository root.
   - `**` matches zero or more path segments and is always a whole segment, so `a/**/c` matches `a/c`; `*` stays within one segment; `?` is one character.
+  - A trailing `**` still needs a segment to match, so `src/**` claims the files under `src` and not a file named `src`.
   - A glob where `**` is not alone in its segment, such as `a**` or `**.ts`, is a validation error.
   - No character classes, brace expansion, or negation: `[`, `{` and `!` match themselves, and subtraction is what `exclude` is for.
+  - Dot-prefixed paths are ordinary paths: `**` claims `.github/workflows/ci.yml` like anything else.
   - Matching is case-sensitive, and a glob matches files, never directories, so claiming a directory's contents means ending the glob with `**`.
 - **Unowned paths**: a file matching no territory is a violation unless the effective `unowned` posture is `allow`.
   The effective posture is the repository's own, else the map's, else `fail`.

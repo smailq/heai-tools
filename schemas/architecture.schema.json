@@ -103,7 +103,7 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[^/](.*[^/])?$",
-      "description": "Repo-root-relative glob, with no leading or trailing '/'. '**' spans path segments, '*' stays within one segment, '?' is one character; a bare filename matches only at the repository root."
+      "description": "Repo-root-relative glob, with no leading or trailing '/'. '**' matches zero or more path segments and is always a whole segment, '*' stays within one segment, '?' is one character; a bare filename matches only at the repository root. '[', '{' and '!' carry no special meaning and match themselves. Dot-prefixed paths are ordinary paths."
     },
     "globList": {
       "type": "array",

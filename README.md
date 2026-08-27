@@ -11,6 +11,13 @@ Adoption is incremental: a partial map is legal, so a repository can claim one t
 - [`schemas/architecture.schema.json`](schemas/architecture.schema.json) - JSON Schema (draft 2020-12) for the map
 - [`docs/architecture-map.md`](docs/architecture-map.md) - design rationale, semantics, and the rules a validator must enforce beyond the schema
 
+## Tools
+
+[`tools/`](tools) holds one directory per tool, each independent: its own manifest, its own dependencies, its own test command, built and run from its own directory.
+Tools here will target different languages, so there is no shared build at the root.
+
+- [`tools/scope-gate`](tools/scope-gate) - checks a diff against the map's ownership boundaries.
+
 ## Ideas
 
 Potential features, not commitments.
