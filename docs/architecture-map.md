@@ -29,6 +29,8 @@ Human-owned territories hold the paths that govern what llm-agents may do - CI c
 **Repositories are explicit.**
 A required top-level `repositories` section declares each repository by short name.
 A repository is a named, path-addressable tree: no version-control system or host is assumed, and an entry may name a `remotePath` for tools that need to reach it.
+An entry may also name a `localPath`, where a checkout of that tree sits on the machine reading the map, so a tool that reads the files resolves them from the map rather than being told on every invocation.
+A `localPath` is a local convenience and not part of the architecture: a map is equally valid on a machine where that path does not exist.
 A monorepo declares one entry; a multi-repo system declares several and one map governs them all:
 
 - **Territory scope** is a list of `{repository, globs, exclude?}` entries, so a territory can span repositories, or claim an entire repository with `**` and carve out what other territories own.

@@ -89,6 +89,11 @@
           "minLength": 1,
           "description": "Where the repository lives, for tools that need to reach it: a URL or host path, e.g. 'src.example.com/team/app'. Optional - a map governing a tree that is simply present, or has no remote home, names it and says no more."
         },
+        "localPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where a checkout of this repository sits on the machine reading the map: an absolute path, or one relative to the directory holding the map. Optional - tools that only reason about the map need nothing, while tools that read the tree resolve it here instead of being told on every invocation. It is a local convenience, not part of the architecture: a map is equally valid on a machine where the path does not exist."
+        },
         "unowned": {
           "description": "Overrides the map-level 'unowned' posture for this repository, so a newly onboarded repository can be mid-adoption while the others stay exhaustive.",
           "enum": ["fail", "allow"]

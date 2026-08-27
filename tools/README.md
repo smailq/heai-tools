@@ -20,3 +20,4 @@ Tools read [`../schemas/architecture.schema.json`](../schemas/architecture.schem
 ## Tools
 
 - [`scope-gate`](scope-gate) - checks a diff against the map's ownership boundaries.
+- [`map-editor`](map-editor) - a web editor for visualizing and editing the map.

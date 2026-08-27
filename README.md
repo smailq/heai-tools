@@ -17,6 +17,7 @@ Adoption is incremental: a partial map is legal, so a repository can claim one t
 Tools here will target different languages, so there is no shared build at the root.
 
 - [`tools/scope-gate`](tools/scope-gate) - checks a diff against the map's ownership boundaries.
+- [`tools/map-editor`](tools/map-editor) - a web editor for visualizing and editing the map: the system drawn from it, live validation, and paste-in/export-out so the map stays a file you move yourself.
 
 ## Ideas
 

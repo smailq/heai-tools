@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture Map Editor</title>
+  <script>
+    // Mounted under a path (e.g. tailscale serve --set-path /architect), the
+    // bare mount URL arrives without a trailing slash and relative URLs would
+    // resolve outside the mount - normalize before any asset loads. Paths whose
+    // last segment has a dot (real files) are left alone.
+    if (!location.pathname.endsWith('/') && !location.pathname.split('/').pop().includes('.')) {
+      location.replace(location.pathname + '/' + location.search + location.hash)
+    }
+  </script>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>Architecture map</h1>
+    <span id="store-note" class="path"></span>
+    <span id="status" class="status"></span>
+    <button id="paste-btn">Paste YAML…</button>
+    <button id="export-btn">Export .yaml</button>
+    <button id="mode-btn">Raw YAML</button>
+  </header>
+  <div id="problems-bar" hidden>
+    <button id="problems-toggle">
+      <span id="problems-chevron">▸</span>
+      <span id="problems-summary"></span>
+    </button>
+    <ul id="problem-list" hidden></ul>
+  </div>
+  <main>
+    <div id="filetree-col">
+      <div id="filetree-head">
+        <h2>Repositories</h2>
+        <button type="button" id="add-repo-btn" title="Add repository">+</button>
+      </div>
+      <div id="filetree"></div>
+    </div>
+    <div id="editor-col">
+      <div id="system-view">
+        <div id="tabbar">
+          <button type="button" class="tab" id="tab-general">General</button>
+          <button type="button" class="tab" id="tab-actors">Actors</button>
+          <button type="button" class="tab" id="tab-territories">Territories</button>
+          <span class="tab-spacer"></span>
+          <button type="button" class="tab-add" id="add-human-btn" hidden>+ human</button>
+          <button type="button" class="tab-add" id="add-agent-btn" hidden>+ llm-agent</button>
+          <button type="button" class="tab-add" id="add-territory-btn" hidden>+ territory</button>
+        </div>
+        <div id="tab-content">
+          <div id="general-page" hidden></div>
+          <div id="actors-page" hidden></div>
+          <div id="canvas-wrap"><svg id="canvas"></svg></div>
+        </div>
+        <div id="inspector"></div>
+      </div>
+      <textarea id="raw-editor" spellcheck="false" placeholder="# architecture.yaml" hidden></textarea>
+    </div>
+  </main>
+
+  <div id="paste-backdrop" class="backdrop" hidden>
+    <div class="modal" id="paste-modal">
+      <h2 id="paste-title">Load an architecture map</h2>
+      <p class="modal-hint">
+        Paste the contents of an <code>architecture.yaml</code>. It is held in this
+        browser while you edit and never written back to disk - use
+        <strong>Export .yaml</strong> to take it out again.
+      </p>
+      <textarea id="paste-input" spellcheck="false" placeholder="version: 1&#10;actors:&#10;  …"></textarea>
+      <p id="paste-error"></p>
+      <div class="modal-btns">
+        <button type="button" id="paste-template">Start from a template</button>
+        <span class="modal-spacer"></span>
+        <button type="button" id="paste-cancel">Cancel</button>
+        <button type="button" id="paste-load">Load</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-backdrop" class="backdrop" hidden>
+    <div class="modal" id="repo-modal">
+      <h2 id="repo-modal-title">Edit repository</h2>
+      <label class="rm-field"><span>name</span><input type="text" id="rm-name" spellcheck="false" /></label>
+      <label class="rm-field"><span>remote path</span><input type="text" id="rm-remote" spellcheck="false" placeholder="src.example.com/team/app" /></label>
+      <label class="rm-field"><span>local path</span><input type="text" id="rm-local" spellcheck="false" placeholder="~/Code/app — a checkout on this machine, so its files can be listed" /></label>
+      <label class="rm-field"><span>unowned paths</span><select id="rm-unowned">
+        <option value="">inherit from map</option>
+        <option value="fail">fail (exhaustive)</option>
+        <option value="allow">allow (adopting)</option>
+      </select></label>
+      <label class="rm-field"><span>undeclared dependencies</span><select id="rm-undeclared">
+        <option value="">inherit from map</option>
+        <option value="fail">fail (graph and code in lockstep)</option>
+        <option value="warn">warn (advisory)</option>
+      </select></label>
+      <p id="rm-error"></p>
+      <div class="modal-btns">
+        <span class="modal-spacer"></span>
+        <button type="button" id="rm-cancel">Cancel</button>
+        <button type="button" id="rm-save">Save</button>
+      </div>
+    </div>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>
