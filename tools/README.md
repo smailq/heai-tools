@@ -21,3 +21,4 @@ Tools read [`../schemas/architecture.schema.json`](../schemas/architecture.schem
 
 - [`scope-gate`](scope-gate) - checks a diff against the map's ownership boundaries.
 - [`map-editor`](map-editor) - a web editor for visualizing and editing the map.
+- [`task-manager`](task-manager) - a file-based task tracker for a repository, managed by an agent.

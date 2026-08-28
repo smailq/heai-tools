@@ -315,8 +315,8 @@ main { flex: 1; display: flex; min-height: 0; }
 #inspector {
   grid-column: 2;
   grid-row: 2;
-  width: 400px;
-  min-width: 320px;
+  width: 480px;
+  min-width: 384px;
   min-height: 0;
   border-left: 1px solid var(--border);
   background: var(--panel);
@@ -338,8 +338,11 @@ main { flex: 1; display: flex; min-height: 0; }
   font-size: 13px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  max-height: 120px;
-  overflow: hidden;
+  /* A long context scrolls in place rather than being cut off: the whole value
+     is readable without opening the editor for it. */
+  max-height: 240px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .i-value.mono { font-family: ui-monospace, monospace; font-size: 12px; }
 .i-value.empty { color: var(--muted); font-style: italic; }
