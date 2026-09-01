@@ -18,6 +18,9 @@ Nothing is written back to the file it came from, so what lands in the repositor
 That keeps the server stateless: it can be restarted under an open editor, and the map is never at risk from a process holding a stale copy of it.
 The store is per-browser and per-origin; clearing site data discards whatever has not been exported.
 
+`--file architecture.yaml` seeds the editor: when the browser holds no map yet, the page reads that file once (through `GET /api/file`) instead of opening the paste dialog, and a **Reload** button re-reads it on demand.
+The file is still never written - export to bring edits back to it.
+
 A pasted map that does not validate opens in **Raw YAML** mode with its problems listed, so a half-written file can be finished here rather than rejected.
 
 ## The three tabs
@@ -61,6 +64,7 @@ The server serves the page and four stateless endpoints; none of them touch the 
 | `POST /api/validate` | `{"yaml": "..."}` or `{"map": {...}}` → `{valid, errors, warnings, map?}` |
 | `POST /api/serialize` | `{"map": {...}}` → `{yaml}` |
 | `POST /api/tree` | `{"repositories": {...}}` → the files under each entry's `localPath` |
+| `GET /api/file` | the `--file` seed as `{path, name, yaml}`; 404 when none is configured |
 | `GET /api/template` | the starter map, as YAML and as an object |
 | `GET /api/schema` | the schema being validated against |
 
@@ -71,6 +75,7 @@ The server serves the page and four stateless endpoints; none of them touch the 
 | `--port` | `PORT` | `8789` | port to listen on |
 | `--host` | `HOST` | `127.0.0.1` | address to bind |
 | `--schema` | `SCHEMA_FILE` | `../../schemas/architecture.schema.json` | schema to validate against |
+| `--file` | `MAP_FILE` | none | a map file to seed the browser from (read only) |
 | `--base-path` | `BASE_PATH` | none | URL prefix the app is mounted under, e.g. behind `tailscale serve --set-path` |
 
 `/api/tree` lists directories on the machine running the server, for whoever reaches the page.

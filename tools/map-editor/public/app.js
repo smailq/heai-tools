@@ -16,6 +16,7 @@ const statusEl = document.getElementById('status')
 const storeNoteEl = document.getElementById('store-note')
 const exportBtn = document.getElementById('export-btn')
 const pasteBtn = document.getElementById('paste-btn')
+const fileBtn = document.getElementById('file-btn')
 const modeBtn = document.getElementById('mode-btn')
 const problemList = document.getElementById('problem-list')
 const problemsBar = document.getElementById('problems-bar')
@@ -1611,11 +1612,56 @@ function adopt(yaml, validation) {
   maybeReloadTree()
 }
 
+// ── The seed file: `--file` on the server ──
+//
+// Loaded once when the browser holds nothing, and again on the Reload button.
+// The server never writes it; what is edited here is still the browser's copy.
+
+let seedName = null
+
+async function loadSeedFile() {
+  let res
+  try {
+    res = await fetch('api/file')
+  } catch {
+    return false
+  }
+  if (!res.ok) return false
+  const { name, yaml } = await res.json()
+  seedName = name
+  fileBtn.textContent = `Reload ${name}`
+  fileBtn.hidden = false
+  const v = await fetch('api/validate', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ yaml })
+  })
+  adopt(yaml, await v.json())
+  return true
+}
+
+/** Show the Reload button without loading, when the browser already holds a map. */
+async function revealSeedButton() {
+  try {
+    const res = await fetch('api/file')
+    if (!res.ok) return
+    const { name } = await res.json()
+    seedName = name
+    fileBtn.textContent = `Reload ${name}`
+    fileBtn.hidden = false
+  } catch {
+    // no seed file, or no server: the button stays hidden
+  }
+}
+
+fileBtn.addEventListener('click', () => loadSeedFile())
+
 // ── Start ──
 
 async function start() {
   const stored = readStore()
   lastChangeAt = stored?.updatedAt ?? null
+  if (stored && (stored.map || stored.yaml)) revealSeedButton()
   if (stored && stored.map) {
     mode = 'system'
     mapState = stored.map
@@ -1635,6 +1681,7 @@ async function start() {
     adopt(stored.yaml, await res.json())
     return
   }
+  if (await loadSeedFile()) return
   mapState = null
   renderAll()
   applyValidation(null)

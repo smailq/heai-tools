@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { extname, join, normalize, resolve } from 'node:path'
+import { basename, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { createValidator, mapToYaml, TEMPLATE } from './validate.ts'
@@ -40,6 +40,14 @@ const publicDir = join(here, '..', 'public')
 // Optional URL prefix the app is mounted under (e.g. `tailscale serve
 // --set-path /architect` forwards requests with the prefix intact). The client
 // uses relative URLs throughout, so it follows whatever path it was loaded from.
+// Optional seed file (`--file architecture.yaml`). The server still never
+// writes it: the page reads it once through `/api/file` when the browser holds
+// no map yet (and again on request), then edits its own copy as usual.
+const seedPath = (() => {
+  const v = argValue('--file') ?? process.env.MAP_FILE
+  return v ? resolve(v) : null
+})()
+
 const rawBasePath = argValue('--base-path') ?? process.env.BASE_PATH ?? ''
 const basePath = ('/' + rawBasePath.replace(/^\/+|\/+$/g, '')).replace(/^\/$/, '')
 
@@ -235,6 +243,19 @@ const server = createServer(async (req, res) => {
       return
     }
 
+    if (pathname === '/api/file' && req.method === 'GET') {
+      if (!seedPath) {
+        sendJson(res, 404, { error: 'no map file configured; start with --file <path>' })
+        return
+      }
+      if (!existsSync(seedPath)) {
+        sendJson(res, 404, { error: `map file not found: ${seedPath}`, path: seedPath })
+        return
+      }
+      sendJson(res, 200, { path: seedPath, name: basename(seedPath), yaml: readFileSync(seedPath, 'utf8') })
+      return
+    }
+
     if (pathname === '/api/template' && req.method === 'GET') {
       sendJson(res, 200, { yaml: TEMPLATE, map: parse(TEMPLATE) })
       return
@@ -263,6 +284,12 @@ server.listen(port, host, () => {
   if (basePath) console.log(`map-editor: also serving under base path ${basePath}/`)
   console.log(`map-editor: schema ${schemaPath}`)
   console.log('map-editor: the map is held in the browser - paste it in, export it back out')
+  if (seedPath) {
+    console.log(
+      `map-editor: seeding from ${seedPath}${existsSync(seedPath) ? '' : ' (not found)'} - ` +
+        'read only; export to write it back'
+    )
+  }
   if (host !== '127.0.0.1' && host !== 'localhost') {
     console.log(
       'map-editor: WARNING - listening beyond loopback, and /api/tree lists directories ' +
