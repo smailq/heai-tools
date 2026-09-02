@@ -4,7 +4,7 @@
 // and when the view disagrees with them the view is stale. It carries a banner
 // saying so, and `build --check` is the gate that proves it.
 
-import { TASK_STATUSES, taskOrder, type Task } from './model.ts'
+import { TASK_STATUSES, taskOrder, territoriesOf, type Task } from './model.ts'
 import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INDEX_FILE, ITEMS_DIR, type Store } from './store.ts'
@@ -12,6 +12,8 @@ import { INDEX_FILE, ITEMS_DIR, type Store } from './store.ts'
 const BANNER = '<!-- GENERATED FILE - regenerate with `task-manager build`. Do not edit by hand. -->'
 
 const dash = (value: string): string => value || '-'
+/** A territory list as one token, so an entry stays greppable as `t:api,web`. */
+const territories = (value: string): string => dash(territoriesOf(value).join(','))
 
 export function renderIndex(store: Store): string {
   const byStatus = new Map(TASK_STATUSES.map((s) => [s, [] as Task[]]))
@@ -25,7 +27,7 @@ export function renderIndex(store: Store): string {
     '',
     `**${store.tasks.length} tasks** - ${counts}`,
     '',
-    `Each entry: \`[slug](${ITEMS_DIR}/slug.md) · p:<priority> · t:<territory> - <title>\`, where \`-\` means unset.`,
+    `Each entry: \`[slug](${ITEMS_DIR}/slug.md) · p:<priority> · t:<territory> - <title>\`, where \`-\` means unset and \`t:\` lists every territory the task sits in, comma-separated.`,
     "The slug is the task's stable id; the linked file holds the full task body and is the source of truth.",
     'Sections appear in pick-up order: finish `in-progress` work first, then take from `todo` (the committed queue), then triage `backlog`. `blocked` tasks name their blocker in the body. Within a section, triaged priority sorts first (urgent → low, unset last).',
     "After changing any task's frontmatter, re-run `task-manager build`. Full contract: [README.md](README.md).",
@@ -41,7 +43,7 @@ export function renderIndex(store: Store): string {
     }
     for (const t of group) {
       lines.push(
-        `- [${t.slug}](${ITEMS_DIR}/${t.slug}.md) · p:${dash(t.priority)} · t:${dash(t.territory)} - ${t.title}`
+        `- [${t.slug}](${ITEMS_DIR}/${t.slug}.md) · p:${dash(t.priority)} · t:${territories(t.territory)} - ${t.title}`
       )
     }
     lines.push('')

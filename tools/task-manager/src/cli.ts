@@ -29,7 +29,8 @@ Properties (new, set) - an empty value clears one, e.g. --priority=
   --title <text>       the human-readable title
   --status <name>      lifecycle state
   --priority <name>    urgent, high, medium, low
-  --territory <name>   the territory that owns it
+  --territory <names>  the territory it routes to; several, comma-separated, when
+                       the work crosses a boundary
   --body <text>        (new) the body; reads stdin when given as - or omitted
   --note <text>        (set) a line appended to the body; bodies are never rewritten
 

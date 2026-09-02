@@ -6,6 +6,7 @@ import {
   UsageError,
   claimants,
   entriesFor,
+  ownerOf,
   unownedPosture,
   validateGlobs
 } from './map.ts'
@@ -84,7 +85,7 @@ export function runGate({ map, repository, subject, paths }: GateInput): GateRes
       continue
     }
 
-    const owner = map.territories[territory]!.owner
+    const owner = ownerOf(map, territory)
     const ownerType = map.actors[owner]?.type ?? null
     findings.push({
       path,
@@ -114,12 +115,21 @@ export function subjectGlobs(
   repository: string,
   subject: Subject
 ): string[] {
-  const globs = subject.territories.flatMap((t) =>
-    entriesFor(map, repository, t).flatMap((e) =>
-      // Exclusions are noted rather than subtracted: this is a hint, and
-      // silently advertising an excluded path would mislead the reader.
-      (e.globs ?? []).map((g) => (e.exclude ? `${g} (minus exclusions)` : g))
+  const globs = subject.territories.flatMap((t) => {
+    // Exclusions and child carve-outs are noted rather than subtracted: this
+    // is a hint, and silently advertising a subtracted path would mislead.
+    const carved = Object.entries(map.territories).some(
+      ([name, o]) => o.parent === t && name !== t && entriesFor(map, repository, name).length > 0
     )
-  )
+    return entriesFor(map, repository, t).flatMap((e) =>
+      (e.globs ?? []).map((g) => {
+        const notes = [
+          ...(e.exclude ? ['minus exclusions'] : []),
+          ...(carved ? ['minus child territories'] : [])
+        ]
+        return notes.length ? `${g} (${notes.join(', ')})` : g
+      })
+    )
+  })
   return [...new Set(globs)]
 }

@@ -234,12 +234,13 @@ test('delete moves the task file and regenerates the view', async () => {
   assert.equal((await cli('build', '--dir', dir, '--check')).code, 0)
 })
 
-test('the CLI can still set what the web view will not', async () => {
-  // The narrow surface is the browser's, not the format's: status and
-  // territory move here, where the change lands beside the work.
+test('the CLI sets every property, and a territory list is one flag', async () => {
   const dir = await tracker()
   await cli('new', 'one', '--title', 'One', '--body', 'Scope.', '--dir', dir)
-  const r = await cli('set', 'one', '--status', 'in-review', '--dir', dir)
+  const r = await cli('set', 'one', '--status', 'in-review', '--territory', 'web,api', '--dir', dir)
   assert.equal(r.code, 0)
-  assert.match(readFileSync(join(dir, 'items', 'one.md'), 'utf8'), /status: in-review/)
+  const file = readFileSync(join(dir, 'items', 'one.md'), 'utf8')
+  assert.match(file, /status: in-review/)
+  assert.match(file, /territory: api, web\n/)
+  assert.match(readFileSync(join(dir, 'INDEX.md'), 'utf8'), /· t:api,web - One/)
 })

@@ -146,12 +146,17 @@
     },
     "territory": {
       "type": "object",
-      "required": ["owner", "scope"],
+      "required": ["scope"],
       "additionalProperties": false,
+      "anyOf": [{ "required": ["owner"] }, { "required": ["parent"] }],
       "properties": {
+        "parent": {
+          "$ref": "#/$defs/name",
+          "description": "A key of 'territories', making this territory a child carved out of that one. A child's declared globs must fall within its parent's declared globs, and the parent's effective scope is what remains after each child's declared globs are subtracted - the no-overlap rule compares effective scopes - so a child sits inside its parent without overlap and without the parent writing a mirroring 'exclude'. Like 'exclude.territories', the subtraction is not recursive: the parent loses the child's declared globs, not the child's own exclusions. 'owner' and the 'undeclaredDependencies' posture default from the nearest ancestor that sets them, and ancestor contexts layer onto the child's own. Dependency edges do not flow: 'dependsOn' names the child or the parent exactly, and depending on one grants nothing about the other. The relation must be a forest - acyclic, no territory its own parent."
+        },
         "owner": {
           "$ref": "#/$defs/name",
-          "description": "A key of 'actors'. Every actor is confined to the territories it owns; a human-owned territory is where the paths that govern what llm-agents may do belong."
+          "description": "A key of 'actors'. Every actor is confined to the territories it owns; a human-owned territory is where the paths that govern what llm-agents may do belong. Optional on a territory with a 'parent': left out, it defaults to the nearest ancestor's owner; declared, it assigns this territory's owner outright, and is what this territory's own children default from. Required on a territory without a parent."
         },
         "scope": {
           "type": "array",
@@ -169,7 +174,7 @@
           "$comment": "Declared on the territory so a territory's full definition is readable in one place."
         },
         "undeclaredDependencies": {
-          "description": "Overrides the 'undeclaredDependencies' posture for dependencies this territory's code takes, so one legacy territory can be advisory while the rest of the map stays enforced. The most specific setting wins: this one, else the importing repository's, else the map's.",
+          "description": "Overrides the 'undeclaredDependencies' posture for dependencies this territory's code takes, so one legacy territory can be advisory while the rest of the map stays enforced. The most specific setting wins: this one, else the nearest ancestor territory's, else the importing repository's, else the map's.",
           "enum": ["fail", "warn"]
         },
         "context": {

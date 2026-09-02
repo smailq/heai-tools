@@ -18,6 +18,7 @@ export {
   claims,
   entriesFor,
   loadMap,
+  ownerOf,
   resolveRepository,
   resolveSubject,
   territoriesOwnedBy,

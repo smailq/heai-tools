@@ -76,6 +76,33 @@ test('territories and their owners are read from the configured map', () => {
   assert.equal(vocabularies.ownerOf('missing'), null)
 })
 
+test('a child territory without an owner inherits through the parent chain', () => {
+  const dir = tracker({
+    'config.yaml': 'map: ./map.yaml\n',
+    'map.yaml': [
+      'territories:',
+      '  root:',
+      '    owner: kyu',
+      '  mid:',
+      '    parent: root',
+      '  leaf:',
+      '    parent: mid',
+      '  own:',
+      '    parent: root',
+      '    owner: api-owner',
+      '  broken:',
+      '    parent: ghost',
+      ''
+    ].join('\n')
+  })
+  const vocabularies = loadVocabularies(dir)
+  assert.equal(vocabularies.ownerOf('leaf'), 'kyu')
+  assert.equal(vocabularies.ownerOf('own'), 'api-owner')
+  // A chain the map leaves broken resolves to no owner; judging the map is
+  // the validator's business, not this tool's.
+  assert.equal(vocabularies.ownerOf('broken'), null)
+})
+
 test('a configured map that cannot be read fails rather than reopening the vocabulary', () => {
   const dir = tracker({ 'config.yaml': 'map: ./nowhere.yaml\n' })
   assert.throws(() => loadVocabularies(dir), /cannot read architecture map/)

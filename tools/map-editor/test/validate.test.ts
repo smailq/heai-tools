@@ -3,7 +3,14 @@ import { describe, it } from 'node:test'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stringify } from 'yaml'
-import { createValidator, TEMPLATE, type ArchitectureMap } from '../src/validate.ts'
+import {
+  claims,
+  createValidator,
+  effectiveOwner,
+  TEMPLATE,
+  type ArchitectureMap,
+  type Territory
+} from '../src/validate.ts'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const validator = createValidator(join(here, '..', '..', '..', 'schemas', 'architecture.schema.json'))
@@ -105,6 +112,104 @@ describe('referential integrity', () => {
     const m = map()
     m.territories.service!.scope[0]!.globs = ['src/**.ts']
     assert.ok(has(errorsOf(m), '** must be a whole segment'))
+  })
+})
+
+describe('child territories', () => {
+  /** platform owns everything; service carves src/** out of it as a child. */
+  function nested(): ArchitectureMap {
+    const m = map()
+    m.territories.platform!.scope[0]!.globs = ['**']
+    m.territories.service!.parent = 'platform'
+    return m
+  }
+
+  it('accepts a child inside its parent, with no exclude written', () => {
+    assert.deepEqual(errorsOf(nested()), [])
+  })
+
+  it('accepts a child without an owner, inheriting through the chain', () => {
+    const m = nested()
+    delete (m.territories.service as Partial<Territory>).owner
+    const result = check(m)
+    assert.deepEqual(result.errors, [])
+    assert.equal(effectiveOwner(result.map!, 'service'), 'kyu')
+  })
+
+  it('rejects a territory with neither owner nor parent', () => {
+    const m = map()
+    delete (m.territories.service as Partial<Territory>).owner
+    assert.ok(has(errorsOf(m), 'schema:'))
+  })
+
+  it('rejects an unknown parent, and a territory that is its own parent', () => {
+    const m = map()
+    m.territories.service!.parent = 'ghost'
+    assert.ok(has(errorsOf(m), 'parent "ghost" is not a declared territory'))
+    m.territories.service!.parent = 'service'
+    assert.ok(has(errorsOf(m), 'territory is its own parent'))
+  })
+
+  it('rejects a parent cycle, once', () => {
+    const m = nested()
+    m.territories.platform!.parent = 'service'
+    const cycles = errorsOf(m).filter((e) => e.includes('parent cycle'))
+    assert.equal(cycles.length, 1)
+  })
+
+  it('rejects a child glob outside its parent, or in a repository the parent does not claim', () => {
+    const m = map()
+    m.territories.service!.parent = 'platform' // platform claims only architecture.yaml
+    assert.ok(has(errorsOf(m), `"src/**" is not contained in parent platform's globs for app`))
+    m.repositories.site = {}
+    m.territories.service!.scope[0]!.repository = 'site'
+    assert.ok(has(errorsOf(m), 'which parent platform declares no scope in'))
+  })
+
+  it('takes a grandchild out of the child, not the grandparent, and keeps the forest valid', () => {
+    const m = nested()
+    m.territories.inner = {
+      parent: 'service',
+      scope: [{ repository: 'app', globs: ['src/inner/**'] }]
+    }
+    assert.deepEqual(errorsOf(m), [])
+  })
+
+  it('still rejects two children of one parent claiming a common path', () => {
+    const m = nested()
+    m.territories.twin = {
+      parent: 'platform',
+      owner: 'api',
+      scope: [{ repository: 'app', globs: ['src/twin/**'] }]
+    }
+    assert.ok(has(errorsOf(m), 'service and twin overlap in app'))
+  })
+
+  it('resolves a path to the child in claims()', () => {
+    const result = check(nested())
+    assert.equal(claims(result.map!, 'app', 'service', 'src/a.ts'), true)
+    assert.equal(claims(result.map!, 'app', 'platform', 'src/a.ts'), false)
+    assert.equal(claims(result.map!, 'app', 'platform', 'docs/x.md'), true)
+  })
+
+  it('counts inherited ownership when judging idle actors and human ownership', () => {
+    const m = map({
+      territories: {
+        root: { owner: 'kyu', scope: [{ repository: 'app', globs: ['**'] }] },
+        sub: { parent: 'root', scope: [{ repository: 'app', globs: ['src/**'] }] }
+      }
+    })
+    const result = check(m)
+    assert.ok(!has(result.warnings, 'no human-owned territory'))
+    assert.ok(!has(result.warnings, 'actors.kyu'))
+  })
+
+  it('flags an exclusion that restates a child carve-out', () => {
+    const m = nested()
+    m.territories.platform!.scope[0]!.exclude = { territories: ['service'] }
+    assert.ok(has(check(m).warnings, '"service" is a child of platform'))
+    m.territories.platform!.scope[0]!.exclude = { globs: ['src/**'] }
+    assert.ok(has(check(m).warnings, 'already subtracted by a child'))
   })
 })
 

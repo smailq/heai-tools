@@ -32,6 +32,11 @@ test('the index groups by status in pick-up order, with unset fields dashed', ()
   assert.ok(out.includes('Do not edit by hand'))
 })
 
+test('a territory list is one token in the index, so an entry stays greppable', () => {
+  const store = load(tracker({ 'items/cross.md': task({ title: 'Cross', territory: 'web, api' }) }))
+  assert.ok(renderIndex(store).includes('- [cross](items/cross.md) · p:- · t:api,web - Cross'))
+})
+
 test('the index is stable across regenerations', () => {
   const dir = tracker({
     'items/b.md': task({ priority: 'high' }),

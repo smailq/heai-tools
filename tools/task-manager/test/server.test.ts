@@ -19,7 +19,7 @@ function tracker(files: Record<string, string>): string {
 
 const DIR = tracker({
   'config.yaml': 'map: ./map.yaml\n',
-  'map.yaml': 'territories:\n  api:\n    owner: api-owner\n',
+  'map.yaml': 'territories:\n  api:\n    owner: api-owner\n  web:\n    owner: web-owner\n',
   'items/one.md': task({ title: 'One', territory: 'api' }),
   'items/other.md': task({ title: 'Other' })
 })
@@ -89,19 +89,87 @@ test('a task page shows every frontmatter key, and its two timestamps', async ()
   assert.match(html, /\(\d+ days ago\)|\(today\)|\(yesterday\)/)
 })
 
-test('priority is the only field with a control', async () => {
+test('priority, status and territory are the only fields with controls', async () => {
   const html = await (await get('/tasks/task/one')).text()
-  // Priority carries buttons...
+  // Priority and status carry buttons...
   assert.match(html, /<form class="prio"[^>]*action="\/tasks\/task\/one\/priority"/)
   for (const value of ['urgent', 'high', 'medium', 'low']) {
     assert.match(html, new RegExp(`name="priority" value="${value}"`), value)
   }
-  // ...and nothing else does: status and territory are shown only.
-  for (const key of ['status', 'territory', 'title', 'slug']) {
+  assert.match(html, /<form class="prio"[^>]*action="\/tasks\/task\/one\/status"/)
+  for (const value of ['in-progress', 'in-review', 'blocked', 'todo', 'backlog', 'done', 'canceled']) {
+    assert.match(html, new RegExp(`name="status" value="${value}"`), value)
+  }
+  // ...territory carries one toggle per territory the map declares...
+  assert.match(html, /<form class="prio"[^>]*action="\/tasks\/task\/one\/territory"/)
+  assert.match(html, /class="pbtn t-set on" title="owned by api-owner">api</)
+  assert.match(html, /class="pbtn t-set" title="owned by web-owner">web</)
+  // ...and nothing else does: title and slug are shown only.
+  for (const key of ['title', 'slug']) {
     assert.doesNotMatch(html, new RegExp(`name="${key}"`), key)
   }
   assert.doesNotMatch(html, /<select/)
   assert.doesNotMatch(html, /name="note"/)
+})
+
+test('territory toggles post the set as it would be after the click', async () => {
+  // `one` sits in api: the api button posts the set without it, the web
+  // button posts the set with web added, and `none` clears it.
+  const html = await (await get('/tasks/task/one')).text()
+  assert.match(html, /name="territory" value="" class="pbtn t-set on"[^>]*>api</)
+  assert.match(html, /name="territory" value="api, web" class="pbtn t-set"[^>]*>web</)
+  assert.match(html, /name="territory" value="" class="pbtn t-none">none</)
+
+  const res = await post('/tasks/task/one/territory', { territory: 'web, api' })
+  assert.equal(res.status, 303)
+  assert.equal(res.headers.get('location'), '/tasks/task/one')
+  // Written canonically: sorted, unique, one line.
+  assert.match(readFileSync(join(DIR, 'items', 'one.md'), 'utf8'), /territory: api, web\n/)
+
+  const after = await (await get('/tasks/task/one')).text()
+  assert.match(after, /class="pbtn t-set on"[^>]*>api</)
+  assert.match(after, /class="pbtn t-set on"[^>]*>web</)
+  assert.match(after, /owned by api-owner \(api\), web-owner \(web\)/)
+  // Every territory the task sits in is a badge in the list, and a chip counts it.
+  assert.match(after, /<span class="badge ">api<\/span> <span class="badge ">web<\/span>/)
+  assert.match(after, /href="\/tasks\/task\/one\?t=web">web <span>1<\/span>/)
+  assert.match(await (await get('/tasks/?t=web')).text(), /href="\/tasks\/task\/one"/)
+
+  // Back to api alone, so the tests after this one see what they expect.
+  await post('/tasks/task/one/territory', { territory: 'api' })
+  assert.match(readFileSync(join(DIR, 'items', 'one.md'), 'utf8'), /territory: api\n/)
+})
+
+test('a territory the map does not declare is refused, and nothing is written', async () => {
+  const before = readFileSync(join(DIR, 'items', 'one.md'), 'utf8')
+  const res = await post('/tasks/task/one/territory', { territory: 'api, nope' })
+  assert.equal(res.status, 400)
+  assert.match(await res.text(), /territory &quot;nope&quot; not in/)
+  assert.equal(readFileSync(join(DIR, 'items', 'one.md'), 'utf8'), before)
+})
+
+test('the current status is the pressed button, and setting one writes it', async () => {
+  // Task `one` starts as todo.
+  const html = await (await get('/tasks/task/one')).text()
+  assert.match(html, /class="pbtn s-todo on" disabled>todo</)
+  assert.match(html, /class="pbtn s-in-progress">in-progress</)
+
+  const res = await post('/tasks/task/one/status', { status: 'in-progress' })
+  assert.equal(res.status, 303)
+  assert.equal(res.headers.get('location'), '/tasks/task/one')
+  assert.match(readFileSync(join(DIR, 'items', 'one.md'), 'utf8'), /status: in-progress/)
+
+  const after = await (await get('/tasks/task/one')).text()
+  assert.match(after, /class="pbtn s-in-progress on" disabled>in-progress</)
+  await post('/tasks/task/one/status', { status: 'todo' })
+})
+
+test('an invalid status is refused and nothing is written', async () => {
+  const before = readFileSync(join(DIR, 'items', 'other.md'), 'utf8')
+  const res = await post('/tasks/task/other/status', { status: 'paused' })
+  assert.equal(res.status, 400)
+  assert.match(await res.text(), /paused&quot; not in/)
+  assert.equal(readFileSync(join(DIR, 'items', 'other.md'), 'utf8'), before)
 })
 
 test('the current priority is the pressed button, and cannot be re-submitted', async () => {
@@ -150,8 +218,11 @@ test('the new-task form offers only what is worth setting at capture', async () 
   for (const name of ['title', 'priority', 'territory', 'status', 'body']) {
     assert.match(html, new RegExp(`name="${name}"`), name)
   }
-  // A closed vocabulary is a select, so the page cannot offer a bad value.
-  assert.match(html, /<select name="territory">[\s\S]*?<option value="api">/)
+  // A closed vocabulary is a set of checkboxes, so the page cannot offer a
+  // bad value, and a task can be captured into more than one territory.
+  assert.match(html, /<input type="checkbox" name="territory" value="api">/)
+  assert.match(html, /<input type="checkbox" name="territory" value="web">/)
+  assert.doesNotMatch(html, /<select name="territory">/)
   // Status at capture is only ever the triage pool or the committed queue.
   assert.match(html, /<option value="backlog"/)
   assert.match(html, /<option value="todo"/)
@@ -187,6 +258,29 @@ test('a title with nothing a slug can use is refused', async () => {
   const res = await post('/tasks/task/new', { title: '!!!', body: 'B' })
   assert.equal(res.status, 400)
   assert.match(await res.text(), /a title is required/)
+})
+
+test('checked territories fold into one list on the created task', async () => {
+  const res = await fetch(`${origin}/tasks/task/new`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'title=Crosses+a+boundary&territory=web&territory=api&body=B',
+    redirect: 'manual'
+  })
+  assert.equal(res.status, 303)
+  const file = readFileSync(join(DIR, 'items', 'crosses-a-boundary.md'), 'utf8')
+  assert.match(file, /territory: api, web\n/)
+  // The re-rendered form keeps both boxes checked when creation is refused.
+  const bad = await fetch(`${origin}/tasks/task/new`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: 'title=&territory=web&territory=api&body=B',
+    redirect: 'manual'
+  })
+  assert.equal(bad.status, 400)
+  const html = await bad.text()
+  assert.match(html, /value="api" checked/)
+  assert.match(html, /value="web" checked/)
 })
 
 test('a rejected creation re-renders the form with what was typed', async () => {

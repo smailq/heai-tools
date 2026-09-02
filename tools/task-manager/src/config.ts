@@ -108,13 +108,31 @@ function readMap(path: string): MapView {
   if (!territories || typeof territories !== 'object' || Array.isArray(territories)) {
     throw new UsageError(`architecture map has no "territories" section: ${path}`)
   }
-  const owners = new Map<string, string>()
-  for (const [name, value] of Object.entries(territories as Record<string, unknown>)) {
-    const owner =
+  const field = (name: string, key: 'owner' | 'parent'): string | null => {
+    const value = (territories as Record<string, unknown>)[name]
+    const raw =
       value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)['owner']
+        ? (value as Record<string, unknown>)[key]
         : undefined
-    if (typeof owner === 'string' && owner) owners.set(name, owner)
+    return typeof raw === 'string' && raw ? raw : null
+  }
+  // A territory's owner resolves through its parent chain: a child that
+  // declares none belongs to the actor its nearest ancestor names. A chain
+  // the map leaves broken resolves to no owner, which is the validator's
+  // business, not this tool's.
+  const owners = new Map<string, string>()
+  for (const name of Object.keys(territories as object)) {
+    const seen = new Set<string>()
+    let cur: string | null = name
+    while (cur !== null && !seen.has(cur) && cur in (territories as object)) {
+      seen.add(cur)
+      const owner = field(cur, 'owner')
+      if (owner !== null) {
+        owners.set(name, owner)
+        break
+      }
+      cur = field(cur, 'parent')
+    }
   }
   return { territories: Object.keys(territories as object), owners }
 }

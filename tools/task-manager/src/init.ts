@@ -33,8 +33,8 @@ function renderConfig(config: Config): string {
 function renderReadme(config: Config): string {
   const territory =
     config.map !== undefined
-      ? `empty, or a territory declared in [\`${config.map}\`](${config.map})`
-      : 'empty, or a territory name'
+      ? `empty, or territories declared in [\`${config.map}\`](${config.map}), comma-separated`
+      : 'empty, or territory names, comma-separated'
 
   return `# Tasks
 
@@ -71,7 +71,7 @@ Exactly these six frontmatter keys, always present, in this order:
 | \`title\` | free text | required |
 | \`status\` | ${backtickList(TASK_STATUSES)} | lifecycle state (below) |
 | \`priority\` | empty, ${backtickList(PRIORITIES)} | empty = not yet triaged |
-| \`territory\` | ${territory} | routes the task to its owner; empty = not yet triaged |
+| \`territory\` | ${territory} | routes the task to each territory's owner; empty = not yet triaged |
 | \`created_at\` | \`YYYY-MM-DD\` | stamped once, at creation |
 | \`modified_at\` | \`YYYY-MM-DD\` | restamped by every edit that changes something |
 

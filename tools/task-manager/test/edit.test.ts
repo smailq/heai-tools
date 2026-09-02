@@ -107,6 +107,17 @@ test('a property the format does not have is refused by name', () => {
   )
 })
 
+test('a territory list is written canonically, and a reorder is not a change', () => {
+  const dir = tracker()
+  createTask(dir, 'one', { title: 'One', territory: 'web, api' }, 'Body.')
+  assert.match(readFileSync(join(dir, 'items', 'one.md'), 'utf8'), /territory: api, web\n/)
+  const same = updateTask(dir, 'one', { territory: 'api,web' })
+  assert.deepEqual(same.changed, [])
+  const grown = updateTask(dir, 'one', { territory: 'billing, api, web' })
+  assert.deepEqual(grown.changed, ['territory'])
+  assert.equal(load(dir).tasks[0]!.territory, 'api, billing, web')
+})
+
 test('a territory is checked against the configured map', () => {
   const dir = tracker({
     'config.yaml': 'map: ./map.yaml\n',

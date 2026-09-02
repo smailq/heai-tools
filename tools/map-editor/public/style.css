@@ -139,52 +139,151 @@ main { flex: 1; display: flex; min-height: 0; }
 #tab-content { grid-column: 1; grid-row: 2; min-width: 0; min-height: 0; display: flex; }
 #general-page, #actors-page { flex: 1; overflow-y: auto; padding: 14px 18px; background: var(--bg); }
 
-.res-section { margin-bottom: 18px; }
-.res-section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
-.res-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+.res-section { margin-bottom: 32px; }
+.res-section h2 {
+  display: flex; align-items: baseline; gap: 8px;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 12px;
+}
+.res-count { font: 500 11px ui-monospace, monospace; letter-spacing: 0; color: var(--muted); opacity: 0.8; font-variant-numeric: tabular-nums; }
+
+/* ── Actors: one three-column grid per section - card, arrow, territories -
+   so every row's arrow and territory column sit on the same vertical line
+   instead of trailing each card's own width. A row is `display: contents`;
+   its three children are the grid cells. ── */
+.res-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 440px) auto minmax(0, 1fr);
+  column-gap: 14px;
+  row-gap: 22px;
+  align-items: start;
+}
+.res-row { display: contents; }
 .res-card {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 3px;
+  gap: 4px;
+  width: 100%;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px 14px;
+  padding: 11px 14px 12px;
   font: inherit;
   color: var(--text);
   cursor: pointer;
   text-align: left;
-  min-width: 220px;
-  max-width: 420px;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 120ms ease;
 }
 .res-card:hover { border-color: var(--accent); }
+.res-card:active { transform: translateY(1px); }
 .res-card.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.res-row { display: flex; align-items: center; gap: 10px; width: 100%; }
-.res-arrow { color: var(--muted); font-size: 16px; flex-shrink: 0; }
-.res-row-nodes { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; }
+.res-card:focus-visible, .t-node:focus-visible, .task-row:focus-visible, .res-empty-add:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+/* The arrow sits on the card's title line; the cell is present even for an
+   actor owning nothing, so the columns hold. */
+.res-arrow { color: var(--muted); font-size: 16px; line-height: 1; padding-top: 14px; min-width: 1em; }
+.res-row-nodes { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; min-width: 0; }
+/* Territory nodes are secondary to the card: a bar in the owner's color on
+   a flat tint, no full border, so the card stays the one bordered surface. */
 .t-node {
   display: flex;
   align-items: stretch;
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--panel);
+  border: 1px solid transparent;
   border-radius: 8px;
   padding: 0;
   overflow: hidden;
   cursor: pointer;
   text-align: left;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 120ms ease;
 }
-.t-node:hover { border-color: var(--accent); }
-.t-node.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.t-node-bar { width: 5px; flex-shrink: 0; }
-.t-node-body { display: flex; flex-direction: column; gap: 1px; padding: 7px 12px; }
+.t-node:hover { border-color: var(--accent); background: var(--bg); }
+.t-node:active { transform: translateY(1px); }
+.t-node.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); background: var(--bg); }
+.t-node-bar { width: 4px; flex-shrink: 0; }
+.t-node-body { display: flex; flex-direction: column; gap: 1px; padding: 6px 12px 7px 10px; }
 .t-node-name { font: 600 12px ui-monospace, monospace; color: var(--text); }
-.t-node-sub { font: 10px ui-monospace, monospace; color: var(--muted); }
+.t-node-sub { font: 11px ui-monospace, monospace; color: var(--muted); }
+.t-tree-children {
+  display: flex; flex-direction: column; gap: 6px; align-items: flex-start;
+  margin-left: 14px; padding-left: 12px; border-left: 1px solid var(--border);
+}
+
+/* An actor's prioritized tasks: a plain list hung off a rail in the owner's
+   color, under the card, one row per task. */
+.res-card-cell { display: flex; flex-direction: column; gap: 8px; align-items: stretch; min-width: 0; }
+.res-tasks {
+  display: flex; flex-direction: column; gap: 2px; align-items: stretch; min-width: 0;
+  margin-left: 12px; padding-left: 10px; border-left: 2px solid var(--border);
+}
+.res-tasks-head {
+  font: 600 10px ui-monospace, monospace; color: var(--muted);
+  letter-spacing: 0.04em; margin-top: 8px; padding: 0 0 2px 6px;
+}
+.res-tasks-head:first-child { margin-top: 0; }
+.task-row {
+  display: flex; align-items: center; gap: 6px; max-width: 100%; min-width: 0;
+  background: transparent; border: 1px solid transparent; border-radius: 6px; padding: 4px 6px;
+  cursor: pointer; font: inherit; text-align: left;
+  transition: border-color 150ms ease, background-color 150ms ease, transform 120ms ease;
+}
+.task-row:hover { background: var(--panel); border-color: var(--border); }
+.task-row:active { transform: translateY(1px); }
+.task-row.selected { background: var(--panel); border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.i-static { font: 12px ui-monospace, monospace; color: var(--text); }
+.i-taskbody {
+  font: 12px ui-monospace, monospace; color: var(--text); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin: 0;
+  white-space: pre-wrap; overflow-wrap: anywhere; max-height: 40vh; overflow: auto;
+}
+.task-status, .task-prio {
+  font: 600 10px/1.4 ui-monospace, monospace; border-radius: 4px; padding: 0 5px; flex-shrink: 0;
+}
+.task-status { color: #fff; }
+.st-in-progress { background: #2563eb; }
+.st-in-review { background: #7c3aed; }
+.st-blocked { background: #dc2626; }
+.st-todo { background: var(--muted); }
+.task-prio { border: 1px solid var(--border); color: var(--muted); }
+.p-urgent { color: var(--err); border-color: var(--err); }
+.p-high { color: var(--warn); border-color: var(--warn); }
+.task-title {
+  font: 11px ui-monospace, monospace; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Empty section: the gap names itself and offers the add button in place. */
+.res-empty {
+  grid-column: 1 / -1;
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  border: 1px dashed var(--border); border-radius: 10px; padding: 14px 16px;
+  color: var(--muted); font-size: 12px;
+}
+.res-empty-text { flex: 1; min-width: 200px; }
+.res-empty-add {
+  background: var(--bg); color: var(--muted); border: 1px dashed var(--border); border-radius: 8px;
+  padding: 4px 12px; font-size: 12px; cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, transform 120ms ease;
+}
+.res-empty-add:hover { border-color: var(--accent); color: var(--accent); }
+.res-empty-add:active { transform: translateY(1px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .res-card, .t-node, .task-row, .res-empty-add { transition: none; }
+  .res-card:active, .t-node:active, .task-row:active, .res-empty-add:active { transform: none; }
+}
 
 .res-title { display: inline-flex; align-items: center; gap: 7px; font: 600 13px ui-monospace, monospace; }
-.res-sub { font-size: 12px; color: var(--text); overflow-wrap: anywhere; }
-.res-sub.mono { font-family: ui-monospace, monospace; color: var(--muted); }
-.res-meta { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.res-sub {
+  font-size: 12px; line-height: 1.45; color: var(--text); overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+}
+.res-sub.mono { font-family: ui-monospace, monospace; color: var(--muted); -webkit-line-clamp: 1; }
+.res-meta {
+  display: inline-flex; align-items: center; gap: 6px; margin-top: 2px;
+  font-size: 11px; color: var(--muted); overflow-wrap: anywhere; font-variant-numeric: tabular-nums;
+}
 .res-tag {
   font: 10px ui-monospace, monospace;
   text-transform: uppercase;
@@ -213,23 +312,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .chip.dep { opacity: 0.55; }
 .chip.dep.selected { opacity: 1; }
 
-#canvas-wrap { flex: 1; min-height: 0; overflow: auto; background: var(--bg); }
-#canvas { display: block; }
-
-.repo-rect { fill: var(--panel); stroke: var(--border); stroke-width: 1; }
-.repo-name { fill: var(--text); font: 600 13px ui-monospace, monospace; }
-.repo-sub { fill: var(--muted); font: 10px ui-monospace, monospace; }
-
-.territory-node { cursor: pointer; }
-.node-rect { fill: var(--bg); stroke: var(--border); stroke-width: 1; }
-.territory-node:hover .node-rect { stroke: var(--accent); }
-.territory-node.selected .node-rect { stroke: var(--accent); stroke-width: 2; }
-.node-name { fill: var(--text); font: 600 12px ui-monospace, monospace; }
-.node-owner { font: 10px ui-monospace, monospace; }
-
-.edge { fill: none; stroke: var(--muted); stroke-width: 1.5; opacity: 0.75; }
-.edge-arrow { fill: var(--muted); }
-.canvas-empty { fill: var(--muted); font: 13px system-ui, sans-serif; }
+/* The graph canvas (Cytoscape) needs a definite box; it pans and zooms itself. */
+#canvas-wrap { flex: 1; min-height: 0; overflow: hidden; background: var(--bg); }
+#canvas { width: 100%; height: 100%; }
+.canvas-empty { color: var(--muted); font: 13px system-ui, sans-serif; padding: 24px; }
 
 /* ── File tree: one explorer per repository, from its localPath ── */
 #filetree-col {

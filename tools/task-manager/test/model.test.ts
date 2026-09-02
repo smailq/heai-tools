@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { TASK_KEYS, parseTask, taskOrder, serializeTask, type Task } from '../src/model.ts'
+import { TASK_KEYS, normalizeTerritories, parseTask, taskOrder, serializeTask, territoriesOf, type Task } from '../src/model.ts'
 
 const TASK = `---
 title: Do the thing
@@ -97,6 +97,30 @@ test('a closed territory vocabulary is enforced; an open one is not', () => {
   const closed = { territories: ['core'] }
   assert.ok(problems(parseTask('t', TASK, closed))[0]!.includes('territory "api"'))
   assert.equal(parseTask('t', TASK, { territories: null }).ok, true)
+})
+
+test('a territory list is several names, comma-separated, stored canonically', () => {
+  const raw = TASK.replace('territory: api', 'territory: web,api ,  billing')
+  const parsed = parseTask('t', raw)
+  assert.ok(parsed.ok)
+  assert.equal(parsed.value.territory, 'api, billing, web')
+  assert.deepEqual(territoriesOf(parsed.value.territory), ['api', 'billing', 'web'])
+  assert.equal(normalizeTerritories(' web, api,api '), 'api, web')
+  assert.deepEqual(territoriesOf(''), [])
+})
+
+test('every name in a territory list is checked against a closed vocabulary', () => {
+  const closed = { territories: ['api', 'web'] }
+  assert.ok(parseTask('t', TASK.replace('territory: api', 'territory: api, web'), closed).ok)
+  const found = problems(parseTask('t', TASK.replace('territory: api', 'territory: api, ui'), closed))
+  assert.ok(found.some((p) => p.includes('territory "ui" not in [api, web]')))
+})
+
+test('a territory list that repeats a name, or leaves an entry empty, is refused', () => {
+  const twice = problems(parseTask('t', TASK.replace('territory: api', 'territory: api, api')))
+  assert.ok(twice.some((p) => p.includes('territory lists "api" twice')))
+  const gap = problems(parseTask('t', TASK.replace('territory: api', 'territory: api,, web')))
+  assert.ok(gap.some((p) => p.includes('has an empty entry')))
 })
 
 test('an empty territory passes even a closed vocabulary', () => {

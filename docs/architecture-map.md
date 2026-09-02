@@ -26,6 +26,16 @@ An llm-agent carries a `context`, inline markdown with its role, focus, and stan
 A territory is a named set of paths with one owner, a declared actor: an llm-agent (e.g. `api-owner`) or a human (e.g. `smailq`).
 Human-owned territories hold the paths that govern what llm-agents may do - CI configs, guard tooling, repo-wide docs, the map itself - and name the person accountable for them.
 
+**Child territories.**
+A territory may declare a `parent`, carving itself out of another territory rather than standing beside it.
+A child's declared globs must fall within its parent's, and the parent's *effective* scope is what remains after each child's declared globs are subtracted; the no-overlap rule compares what each territory actually keeps.
+This is `exclude` turned right-side out: the parent no longer restates which subtrees its children took, and adding a child cannot leave a stale exclusion behind.
+Like `exclude.territories`, the subtraction is not recursive - the parent loses the child's declared globs, not the child's own exclusions.
+`owner` becomes optional on a child, defaulting from the nearest ancestor that declares one, so subdividing one owner's tree for structure does not restate the owner; a child may equally declare its own `owner`, handing the carved-out paths to a different actor, and that declaration is what its own children then default from.
+The `undeclaredDependencies` posture defaults the same way, and ancestor contexts layer onto the child's own.
+Dependency edges do not flow down or up: `dependsOn` names the child or the parent exactly, a path resolves to the one territory whose effective scope holds it, and depending on a parent grants nothing about its children.
+The relation must be a forest - no cycles, no territory its own parent - and a territory without a parent must declare an owner.
+
 **Repositories are explicit.**
 A required top-level `repositories` section declares each repository by short name.
 A repository is a named, path-addressable tree: no version-control system or host is assumed, and an entry may name a `remotePath` for tools that need to reach it.
@@ -46,7 +56,7 @@ The posture governs unowned paths only; confinement holds under either setting.
 **Context is inline.**
 Context is the map's one annotation mechanism, held in the map itself so it cannot drift from the boundary it describes or fall outside the map's own protection.
 A territory's `context` holds the invariants, review discipline, and background needed to work in and review the territory, and is optional whoever owns it.
-The layers compose: an llm-agent working in a territory receives its own `context` and the territory's, where the territory has one.
+The layers compose: an llm-agent working in a territory receives its own `context`, each ancestor territory's, outermost first, and the territory's own, where they have one.
 A freshness check compares when a territory's `context` last changed, via the map file's own history, against the last change to the files in its scope.
 Context outpaced by its code warns; staleness is a judgment call for the owner's next review, not a merge blocker.
 
@@ -85,15 +95,20 @@ The posture governs dependency edges only; confinement holds under either settin
   The effective posture is the repository's own, else the map's, else `fail`.
 - **Undeclared dependencies**: a dependency the code takes is a violation when the importing territory's `dependsOn` does not name the imported territory, unless the effective posture is `warn`.
   Within a repository both sides resolve from path to territory, which is the normative case; across repositories, resolving a declared package dependency to a territory is left to the surrounding tooling.
-  The violation belongs to the importing territory, so the effective posture is that territory's own, else that of the repository holding the importing side, else the map's, else `fail`.
+  The violation belongs to the importing territory, so the effective posture is that territory's own, else the nearest ancestor territory's, else that of the repository holding the importing side, else the map's, else `fail`.
   The check covers every dependency the code takes, not only those a change touches.
   A dependency with an unowned path on either side is not an undeclared dependency, since there is no territory to name: unowned paths are the `unowned` posture's business.
+- **Child territories**: a territory's *effective scope* is its declared globs, minus its entries' exclusions, minus the declared globs of each territory naming it as `parent`.
+  Containment is checked on declared globs, per repository, as glob languages: every child glob must be contained in the union of the parent's declared globs for that repository, before either side's exclusions.
+  A child's own exclusions do not return paths to the parent - the subtraction is of declared globs, mirroring `exclude.territories` - so a path a child excludes belongs to whichever territory claims it, or is unowned.
+  A child without an `owner` takes the nearest ancestor's; the chain always resolves, since a territory without a parent must declare one.
 - **Exclusion**: a scope entry's `exclude` subtracts from its own `globs` within the same repository, so a path belongs to the entry when it matches at least one glob and no exclusion.
   `exclude.globs` names patterns directly; `exclude.territories` names territories and subtracts the globs each declares for this repository, so a catch-all need not restate its siblings' patterns.
   Subtraction by territory is not recursive: it subtracts that territory's declared globs, not that territory's own exclusions.
   Exclusion never assigns the excluded path, which belongs to whichever territory claims it, or is unowned.
-- **No overlap**: no path may be matched by more than one *territory's* scope, once exclusions are subtracted.
+- **No overlap**: no path may be matched by more than one territory's *effective* scope - declared globs less exclusions, less children's declared globs.
   Entries within one territory union instead, and an `exclude` subtracts only from the entry declaring it.
+  A child inside its parent's globs is therefore no overlap, since the parent's effective scope no longer holds those paths; two children of one parent claiming the same path still is.
   Overlap is a property of the globs, compared as the sets of paths they can match, never of the files that happen to exist: `src/**` and `src/legacy/**` overlap the moment both are written, empty or not.
   A map is therefore valid on its own terms, and no commit elsewhere can invalidate one that was valid when reviewed.
 
@@ -102,14 +117,17 @@ The posture governs dependency edges only; confinement holds under either settin
 Errors:
 
 - Every `scope[].repository` must name a key of `repositories`.
-- Every territory `owner` must name a key of `actors`.
+- Every territory `owner` must name a key of `actors`; a territory without a `parent` must declare an `owner`.
+- Every territory `parent` must name a key of `territories`; the relation must be a forest - acyclic, and no territory its own parent.
+- Every child territory's declared globs must be contained, per repository and as glob languages, in its parent's declared globs for that repository - which also means a child cannot claim a repository its parent does not.
 - Every name in a territory's `dependsOn` must name a key of `territories`; the relation must be acyclic, and no territory may depend on itself.
 - Every name in an `exclude.territories` list must name a key of `territories`, and no territory may exclude itself.
-- No path may be matched by more than one territory's scope, compared after exclusions and as glob languages rather than against the files on disk.
+- No path may be matched by more than one territory's effective scope, compared after exclusions and children's subtractions and as glob languages rather than against the files on disk.
 
 Warnings:
 
 - An exclusion that subtracts nothing from its entry, judged as languages: `exclude.globs: ['ci/**']` does not warn merely because `ci/` is empty today.
+- An exclusion that restates what a child territory's `parent` relation already subtracts - the redundant mirror invites drift when the child's scope changes.
 - Paths an entry excludes that no territory claims - deleting a territory without updating the exclusions that mirrored it leaves those paths unowned, which nothing else catches.
 - Two `repositories` entries sharing a `remotePath`, compared as exact strings, since two names for one tree let two territories own the same path without ever overlapping.
 - A declared repository that no territory's scope names.

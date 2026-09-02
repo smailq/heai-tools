@@ -17,7 +17,9 @@ export interface ScopeEntry {
 }
 
 export interface Territory {
-  owner: string
+  /** Required on a territory without a parent; a child may omit it and inherit. */
+  owner?: string
+  parent?: string
   scope: ScopeEntry[]
   dependsOn?: string[]
   context?: string
@@ -124,7 +126,30 @@ function excludes(
   return false
 }
 
-/** Whether a territory claims a path: matched by a glob, minus its exclusions. */
+/**
+ * Whether a child territory's declared globs take a path out of this
+ * territory's effective scope. Like exclusion by territory, the subtraction is
+ * not recursive: the child's declared globs, not the child's own exclusions.
+ */
+function takenByChild(
+  map: ArchitectureMap,
+  repository: string,
+  territory: string,
+  path: string
+): boolean {
+  for (const [name, t] of Object.entries(map.territories)) {
+    if (t.parent !== territory || name === territory) continue
+    for (const entry of entriesFor(map, repository, name)) {
+      if (matchesAny(path, entry.globs ?? [])) return true
+    }
+  }
+  return false
+}
+
+/**
+ * Whether a territory's effective scope holds a path: matched by a glob, minus
+ * its exclusions, minus what its children carve out.
+ */
 export function claims(
   map: ArchitectureMap,
   repository: string,
@@ -132,11 +157,38 @@ export function claims(
   path: string
 ): boolean {
   for (const entry of entriesFor(map, repository, territory)) {
-    if (matchesAny(path, entry.globs ?? []) && !excludes(map, repository, entry, path)) {
+    if (
+      matchesAny(path, entry.globs ?? []) &&
+      !excludes(map, repository, entry, path) &&
+      !takenByChild(map, repository, territory, path)
+    ) {
       return true
     }
   }
   return false
+}
+
+/**
+ * A territory's owner: its own, else the nearest ancestor's. A chain that does
+ * not resolve - an unknown parent, a parent cycle, or a root with no owner - is
+ * a map problem, reported rather than guessed at.
+ */
+export function ownerOf(map: ArchitectureMap, territory: string): string {
+  const seen = new Set<string>()
+  let name = territory
+  for (;;) {
+    if (seen.has(name)) {
+      throw new UsageError(`map is invalid: parent cycle through territory "${name}"`)
+    }
+    seen.add(name)
+    const t = map.territories[name]
+    if (!t) throw new UsageError(`map is invalid: unknown parent territory "${name}"`)
+    if (t.owner) return t.owner
+    if (!t.parent) {
+      throw new UsageError(`map is invalid: territory "${name}" has neither owner nor parent`)
+    }
+    name = t.parent
+  }
 }
 
 /**
@@ -174,9 +226,9 @@ export function claimants(map: ArchitectureMap, repository: string, path: string
 }
 
 export function territoriesOwnedBy(map: ArchitectureMap, owner: string): string[] {
-  return Object.entries(map.territories)
-    .filter(([, t]) => t.owner === owner)
-    .map(([name]) => name)
+  // Ownership resolves through the parent chain, so a child that declares no
+  // owner belongs to the actor its nearest ancestor names.
+  return Object.keys(map.territories).filter((name) => ownerOf(map, name) === owner)
 }
 
 export type SubjectKind = 'territory' | 'actor'
@@ -228,7 +280,7 @@ function build(map: ArchitectureMap, kind: SubjectKind, name: string): Subject {
   if (kind === 'territory') {
     const t = map.territories[name]
     if (!t) throw new UsageError(`no territory named "${name}" in the map`)
-    return { kind, name, territories: [name], owner: t.owner }
+    return { kind, name, territories: [name], owner: ownerOf(map, name) }
   }
   if (!map.actors[name]) throw new UsageError(`no actor named "${name}" in the map`)
   return { kind, name, territories: territoriesOwnedBy(map, name) }

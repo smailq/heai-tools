@@ -28,7 +28,9 @@ export interface ScopeEntry {
 }
 
 export interface Territory {
-  owner: string
+  /** Required on a territory without a parent; a child may omit it and inherit. */
+  owner?: string
+  parent?: string
   scope: ScopeEntry[]
   dependsOn?: string[]
   undeclaredDependencies?: UndeclaredPosture
@@ -98,6 +100,38 @@ function exclusionGlobs(map: ArchitectureMap, entry: ScopeEntry): string[] {
     for (const other of entriesFor(map, entry.repository, name)) out.push(...(other.globs ?? []))
   }
   return out
+}
+
+/** Direct children of a territory: every territory naming it as `parent`. */
+function childrenOf(map: ArchitectureMap, name: string): string[] {
+  return Object.entries(map.territories)
+    .filter(([child, t]) => t.parent === name && child !== name)
+    .map(([child]) => child)
+}
+
+/**
+ * The declared globs a territory's children subtract from it in one repository.
+ * Like exclusion by territory, the subtraction is not recursive: a child's own
+ * exclusions play no part.
+ */
+function childSubtraction(map: ArchitectureMap, repository: string, name: string): string[] {
+  return childrenOf(map, name).flatMap((child) =>
+    entriesFor(map, repository, child).flatMap((e) => e.globs ?? [])
+  )
+}
+
+/** A territory's owner through the parent chain, or null where the chain is broken. */
+export function effectiveOwner(map: ArchitectureMap, name: string): string | null {
+  const seen = new Set<string>()
+  let cur: string | undefined = name
+  while (cur !== undefined && !seen.has(cur)) {
+    seen.add(cur)
+    const t: Territory | undefined = map.territories[cur]
+    if (!t) return null
+    if (t.owner !== undefined) return t.owner
+    cur = t.parent
+  }
+  return null
 }
 
 /** Territories in the order a cycle through `from` visits them, or null. */
@@ -174,8 +208,15 @@ export function createValidator(schemaPath: string): Validator {
     }
 
     for (const [name, territory] of Object.entries(map.territories)) {
-      if (!actorNames.has(territory.owner)) {
+      if (territory.owner !== undefined && !actorNames.has(territory.owner)) {
         errors.push(`territories.${name}: owner "${territory.owner}" is not a declared actor`)
+      }
+      if (territory.parent !== undefined) {
+        if (!territoryNames.has(territory.parent)) {
+          errors.push(`territories.${name}: parent "${territory.parent}" is not a declared territory`)
+        } else if (territory.parent === name) {
+          errors.push(`territories.${name}: territory is its own parent`)
+        }
       }
       for (const [i, entry] of (territory.scope ?? []).entries()) {
         const where = `territories.${name}.scope[${i}]`
@@ -201,6 +242,57 @@ export function createValidator(schemaPath: string): Validator {
       }
     }
 
+    // ── Parent relation is a forest ──
+    const parentCycles = new Set<string>()
+    for (const name of territoryNames) {
+      const chain: string[] = []
+      let cur: string | undefined = name
+      while (cur !== undefined && territoryNames.has(cur)) {
+        const at = chain.indexOf(cur)
+        if (at >= 0) {
+          const cycle = chain.slice(at)
+          // A self-parent is already reported above; longer cycles once each.
+          if (cycle.length > 1) {
+            const key = [...cycle].sort().join('|')
+            if (!parentCycles.has(key)) {
+              parentCycles.add(key)
+              errors.push(`territories: parent cycle ${[...cycle, cycle[0]].join(' -> ')}`)
+            }
+          }
+          break
+        }
+        chain.push(cur)
+        cur = map.territories[cur]?.parent
+      }
+    }
+
+    // ── A child's declared globs sit inside its parent's ──
+    if (globsUsable) {
+      for (const [name, territory] of Object.entries(map.territories)) {
+        const parent = territory.parent
+        if (parent === undefined || parent === name || !territoryNames.has(parent)) continue
+        for (const [i, entry] of (territory.scope ?? []).entries()) {
+          const parentGlobs = entriesFor(map, entry.repository, parent).flatMap(
+            (e) => e.globs ?? []
+          )
+          for (const g of entry.globs ?? []) {
+            // Containment in a union is judged per glob: some one parent glob
+            // must cover the child's. A union that covers only jointly is
+            // reported anyway - a false finding on an exotic pair of patterns
+            // is better than silence, and the map is what gets rewritten
+            // either way.
+            if (!parentGlobs.some((p) => contains(p, g))) {
+              errors.push(
+                parentGlobs.length
+                  ? `territories.${name}.scope[${i}].globs: "${g}" is not contained in parent ${parent}'s globs for ${entry.repository}`
+                  : `territories.${name}.scope[${i}].globs: "${g}" claims ${entry.repository}, which parent ${parent} declares no scope in`
+              )
+            }
+          }
+        }
+      }
+    }
+
     // ── Acyclic dependency graph ──
     const reported = new Set<string>()
     for (const name of territoryNames) {
@@ -217,7 +309,13 @@ export function createValidator(schemaPath: string): Validator {
     if (globsUsable) errors.push(...overlapErrors(map))
 
     // ── Warnings ──
-    const owners = new Set(Object.values(map.territories).map((t) => t.owner))
+    // Ownership resolves through the parent chain, so an actor a child
+    // inherits is not "owning nothing".
+    const owners = new Set(
+      Object.keys(map.territories)
+        .map((name) => effectiveOwner(map, name))
+        .filter((o): o is string => o !== null)
+    )
     for (const actor of actorNames) {
       if (!owners.has(actor)) warnings.push(`actors.${actor}: declared but owns no territory`)
     }
@@ -246,9 +344,10 @@ export function createValidator(schemaPath: string): Validator {
     }
 
     if (globsUsable) warnings.push(...exclusionWarnings(map))
+    warnings.push(...redundantCarveOutWarnings(map, globsUsable))
 
-    const humanOwned = Object.values(map.territories).some(
-      (t) => map.actors[t.owner]?.type === 'human'
+    const humanOwned = Object.keys(map.territories).some(
+      (name) => map.actors[effectiveOwner(map, name) ?? '']?.type === 'human'
     )
     if (!humanOwned) {
       warnings.push(
@@ -300,11 +399,16 @@ function overlapWitness(
   first: string,
   second: string
 ): [string, string] | null {
+  // Children's declared globs come off each side's effective scope, so a
+  // child inside its parent's globs is not an overlap while two children of
+  // one parent claiming the same path still is.
+  const carvedA = childSubtraction(map, repository, first)
+  const carvedB = childSubtraction(map, repository, second)
   for (const entryA of entriesFor(map, repository, first)) {
     const excludeA = exclusionGlobs(map, entryA)
     for (const entryB of entriesFor(map, repository, second)) {
       const excludeB = exclusionGlobs(map, entryB)
-      const subtracted = [...excludeA, ...excludeB]
+      const subtracted = [...excludeA, ...excludeB, ...carvedA, ...carvedB]
       for (const globA of entryA.globs ?? []) {
         for (const globB of entryB.globs ?? []) {
           if (!intersects(globA, globB)) continue
@@ -347,13 +451,46 @@ function exclusionWarnings(map: ArchitectureMap): string[] {
   return warnings
 }
 
-/** Whether a territory claims a path in a repository: matched, minus exclusions. */
+/**
+ * Exclusions restating what a child's `parent` relation already subtracts. The
+ * redundant mirror invites drift when the child's scope changes.
+ */
+function redundantCarveOutWarnings(map: ArchitectureMap, globsUsable: boolean): string[] {
+  const warnings: string[] = []
+  for (const [name, territory] of Object.entries(map.territories)) {
+    const children = new Set(childrenOf(map, name))
+    for (const [i, entry] of (territory.scope ?? []).entries()) {
+      if (!entry.exclude) continue
+      const where = `territories.${name}.scope[${i}].exclude`
+      for (const excluded of entry.exclude.territories ?? []) {
+        if (children.has(excluded)) {
+          warnings.push(
+            `${where}.territories: "${excluded}" is a child of ${name}, which its parent relation already subtracts`
+          )
+        }
+      }
+      if (!globsUsable) continue
+      const carved = childSubtraction(map, entry.repository, name)
+      for (const g of entry.exclude.globs ?? []) {
+        if (carved.some((c) => contains(c, g))) {
+          warnings.push(
+            `${where}.globs: "${g}" is already subtracted by a child territory's parent relation`
+          )
+        }
+      }
+    }
+  }
+  return warnings
+}
+
+/** Whether a territory's effective scope holds a path: matched, minus exclusions, minus children. */
 export function claims(
   map: ArchitectureMap,
   repository: string,
   territory: string,
   path: string
 ): boolean {
+  if (matchesAny(path, childSubtraction(map, repository, territory))) return false
   for (const entry of entriesFor(map, repository, territory)) {
     if (matchesAny(path, entry.globs ?? []) && !matchesAny(path, exclusionGlobs(map, entry))) {
       return true

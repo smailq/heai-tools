@@ -16,7 +16,7 @@ import { execFileSync } from 'node:child_process'
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, extname, join, normalize, resolve } from 'node:path'
+import { basename, dirname, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 import { createValidator, mapToYaml, TEMPLATE } from './validate.ts'
@@ -106,7 +106,28 @@ function sameOrigin(req: IncomingMessage): boolean {
   }
 }
 
+// Vendored browser libraries are served out of node_modules rather than
+// copied into public/, so the dependency stays a reviewable package.json line.
+const VENDOR: Record<string, string> = {
+  '/vendor/cytoscape.min.js': join(here, '..', 'node_modules', 'cytoscape', 'dist', 'cytoscape.min.js'),
+  // The fcose layout (compound-aware force layout) and its UMD dependency chain.
+  '/vendor/layout-base.js': join(here, '..', 'node_modules', 'layout-base', 'layout-base.js'),
+  '/vendor/cose-base.js': join(here, '..', 'node_modules', 'cose-base', 'cose-base.js'),
+  '/vendor/cytoscape-fcose.js': join(here, '..', 'node_modules', 'cytoscape-fcose', 'cytoscape-fcose.js')
+}
+
 function serveStatic(res: ServerResponse, urlPath: string): void {
+  const vendored = VENDOR[urlPath]
+  if (vendored) {
+    if (!existsSync(vendored)) {
+      res.writeHead(404, { 'content-type': 'text/plain' })
+      res.end('vendored library missing - run npm install in tools/map-editor')
+      return
+    }
+    res.writeHead(200, { 'content-type': MIME[extname(vendored)] ?? 'application/octet-stream' })
+    res.end(readFileSync(vendored))
+    return
+  }
   const rel = urlPath === '/' ? 'index.html' : urlPath.slice(1)
   const file = normalize(join(publicDir, rel))
   if (!file.startsWith(publicDir) || !existsSync(file)) {
@@ -191,6 +212,88 @@ function repoTree(repositories: Record<string, { localPath?: unknown }>): { repo
   return { repos }
 }
 
+// ── Tasks: the task-manager tracker beside the map or inside a repository ──
+// Read-only, like the file tree: the tracker's own CLI owns every write. A
+// tracker is looked for at the conventional `.heai/tasks` (and the legacy
+// `tasks/`) inside each repository's localPath, and beside a seeded map file.
+
+interface TaskRow {
+  slug: string
+  title: string
+  status: string
+  priority: string
+  /** One or more territory names, comma-separated, as the tracker writes them. */
+  territory: string
+  created_at: string
+  modified_at: string
+  /** The markdown after the frontmatter, capped; enough to read, not to edit. */
+  body: string
+}
+
+const BODY_LIMIT = 4000
+
+const TASK_LIMIT = 1000
+
+function taskDirs(repositories: Record<string, { localPath?: unknown }>): string[] {
+  const dirs = new Set<string>()
+  if (seedPath) dirs.add(join(dirname(seedPath), 'tasks'))
+  for (const repo of Object.values(repositories ?? {})) {
+    const declared = typeof repo?.localPath === 'string' ? repo.localPath : null
+    if (!declared) continue
+    const root = resolve(expandHome(declared))
+    dirs.add(join(root, '.heai', 'tasks'))
+    dirs.add(join(root, 'tasks'))
+  }
+  return [...dirs]
+}
+
+function readTasks(repositories: Record<string, { localPath?: unknown }>): {
+  tasks: TaskRow[]
+  truncated: boolean
+} {
+  const tasks: TaskRow[] = []
+  const seen = new Set<string>()
+  for (const dir of taskDirs(repositories)) {
+    const items = join(dir, 'items')
+    if (!existsSync(items) || !statSync(items).isDirectory()) continue
+    for (const name of readdirSync(items).sort()) {
+      if (!name.endsWith('.md') || seen.has(join(items, name))) continue
+      seen.add(join(items, name))
+      if (tasks.length >= TASK_LIMIT) return { tasks, truncated: true }
+      let text: string
+      try {
+        text = readFileSync(join(items, name), 'utf8')
+      } catch {
+        continue
+      }
+      // Only the frontmatter matters here; a file the tracker would reject is
+      // skipped rather than surfaced, since this view is a hint, not a gate.
+      const m = /^---\n([\s\S]*?)\n---/.exec(text)
+      if (!m) continue
+      let fm: unknown
+      try {
+        fm = parse(m[1]!)
+      } catch {
+        continue
+      }
+      if (!fm || typeof fm !== 'object' || Array.isArray(fm)) continue
+      const f = fm as Record<string, unknown>
+      const field = (k: string) => (typeof f[k] === 'string' ? (f[k] as string) : '')
+      tasks.push({
+        slug: name.slice(0, -3),
+        title: field('title'),
+        status: field('status'),
+        priority: field('priority'),
+        territory: field('territory'),
+        created_at: field('created_at'),
+        modified_at: field('modified_at'),
+        body: text.slice(m[0].length).trim().slice(0, BODY_LIMIT)
+      })
+    }
+  }
+  return { tasks, truncated: false }
+}
+
 const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${port}`)
   const stripped = stripBasePath(url.pathname)
@@ -240,6 +343,17 @@ const server = createServer(async (req, res) => {
         return
       }
       sendJson(res, 200, repoTree(repositories as Record<string, { localPath?: unknown }>))
+      return
+    }
+
+    if (pathname === '/api/tasks' && req.method === 'POST') {
+      const body = JSON.parse(await readBody(req)) as { repositories?: unknown }
+      const repositories = body.repositories
+      if (!repositories || typeof repositories !== 'object' || Array.isArray(repositories)) {
+        sendJson(res, 400, { error: 'body must be {"repositories": {...}}' })
+        return
+      }
+      sendJson(res, 200, readTasks(repositories as Record<string, { localPath?: unknown }>))
       return
     }
 

@@ -37,6 +37,7 @@ import { UsageError } from './config.ts'
 import {
   PRIORITIES,
   relativeDate,
+  territoriesOf,
   today,
   taskOrder,
   TASK_STATUSES,
@@ -153,7 +154,7 @@ interface View {
 function visibleTasks(v: View): Task[] {
   if (v.filter === null) return v.store.tasks
   if (v.filter === 'none') return v.store.tasks.filter((t) => !t.territory)
-  return v.store.tasks.filter((t) => t.territory === v.filter)
+  return v.store.tasks.filter((t) => territoriesOf(t.territory).includes(v.filter!))
 }
 
 /**
@@ -164,7 +165,7 @@ function visibleTasks(v: View): Task[] {
 function filterChips(v: View): string {
   const counts = new Map<string, number>()
   for (const task of v.store.tasks) {
-    if (task.territory) counts.set(task.territory, (counts.get(task.territory) ?? 0) + 1)
+    for (const t of territoriesOf(task.territory)) counts.set(t, (counts.get(t) ?? 0) + 1)
   }
   const declared = v.store.vocabularies.territories
   const names = declared
@@ -217,35 +218,102 @@ const unset = (note: string): string => `<span class="muted">– (${esc(note)})<
 // ── Controls ──────────────────────────────────────────────────────────────
 // Which fields a browser may change is a deliberately narrow question.
 //
-// Priority is the one property edited in place, because triage is what this
-// view is for: deciding what matters is a judgement made while reading the
-// list, and it is the one change that is safe to make away from the work.
+// Priority, status and territory are the three properties edited in place:
+// triage, the board and routing are what this view is for, so deciding what
+// matters, moving work along its states and sending it to the territories it
+// touches are the judgements made while reading the list.
 //
-// Status and territory are shown but not editable here. Both are decisions
-// that travel with a commit - a status move accompanies the work, a territory
-// routes the task to an owner - so they go through the CLI or the agent that
-// owns the tracker, where the change lands in a branch alongside what caused
-// it.
+// Territory is a set rather than a value. With a map configured every declared
+// territory is a toggle, so the page cannot offer a name the map does not
+// have, and a task that crosses a boundary holds every territory it crosses.
+// Without a map the vocabulary is open, and the names are typed.
 //
-// Title and slug are not editable either: the slug is an id, and a title that
-// drifts from the body it heads is worse than one edited deliberately in the
-// file.
+// Title and slug are not editable: the slug is an id, and a title that drifts
+// from the body it heads is worse than one edited deliberately in the file.
 
 const PRIORITY_CHOICES: { value: string; label: string }[] = [
   ...PRIORITIES.map((p) => ({ value: p, label: p })),
   { value: '', label: 'none' }
 ]
 
-/** The priority row: one submit button per choice, the current one pressed. */
-function priorityControl(v: View, slug: string, current: string): string {
-  const buttons = PRIORITY_CHOICES.map(({ value, label }) => {
+/** One row of choice buttons, the current one pressed; posts a single field. */
+function choiceControl(
+  v: View,
+  slug: string,
+  field: 'priority' | 'status',
+  choices: { value: string; label: string }[],
+  current: string,
+  tintPrefix: string
+): string {
+  const buttons = choices.map(({ value, label }) => {
     const on = value === current
-    const tint = value ? `p-${value}` : 'p-none'
-    return `<button name="priority" value="${esc(value)}" class="pbtn ${tint}${on ? ' on' : ''}"${
+    const tint = value ? `${tintPrefix}-${value}` : `${tintPrefix}-none`
+    return `<button name="${field}" value="${esc(value)}" class="pbtn ${tint}${on ? ' on' : ''}"${
       on ? ' disabled' : ''
     }>${esc(label)}</button>`
   }).join('')
-  return `<form class="prio" method="post" action="${v.base}/task/${esc(slug)}/priority">${buttons}</form>`
+  return `<form class="prio" method="post" action="${v.base}/task/${esc(slug)}/${field}">${buttons}</form>`
+}
+
+/** The priority row: one submit button per choice, the current one pressed. */
+const priorityControl = (v: View, slug: string, current: string): string =>
+  choiceControl(v, slug, 'priority', PRIORITY_CHOICES, current, 'p')
+
+/** The status row, in the tracker's pick-up order; same shape as priority. */
+const statusControl = (v: View, slug: string, current: string): string =>
+  choiceControl(
+    v,
+    slug,
+    'status',
+    TASK_STATUSES.map((s) => ({ value: s, label: s })),
+    current,
+    's'
+  )
+
+/**
+ * The territory row: one toggle per declared territory, the ones the task
+ * sits in pressed. Each button posts the whole set as it would be after the
+ * toggle, so the control is a plain form that works without the script and
+ * every write is still one field. `none` clears the set.
+ *
+ * With no map configured there is nothing to list, so the names are typed.
+ */
+function territoryControl(v: View, slug: string, current: string): string {
+  const action = `${v.base}/task/${esc(slug)}/territory`
+  const declared = v.store.vocabularies.territories
+  if (declared === null) {
+    return `<form class="prio" method="post" action="${action}"><input class="tinput" name="territory" value="${esc(
+      current
+    )}" placeholder="(untriaged) - names, comma-separated"><button class="pbtn">set</button></form>`
+  }
+  const chosen = territoriesOf(current)
+  const buttons = declared.map((t) => {
+    const on = chosen.includes(t)
+    const next = on ? chosen.filter((x) => x !== t) : [...chosen, t]
+    const owner = v.store.vocabularies.ownerOf(t)
+    return `<button name="territory" value="${esc(next.join(', '))}" class="pbtn t-set${on ? ' on' : ''}"${
+      owner ? ` title="owned by ${esc(owner)}"` : ''
+    }>${esc(t)}</button>`
+  })
+  const none = chosen.length === 0
+  buttons.push(
+    `<button name="territory" value="" class="pbtn t-none${none ? ' on' : ''}"${none ? ' disabled' : ''}>none</button>`
+  )
+  return `<form class="prio" method="post" action="${action}">${buttons.join('')}</form>`
+}
+
+/** Who a task's territories route to: one owner named once, several named each. */
+function ownersNote(v: View, territory: string): string {
+  const owned = territoriesOf(territory)
+    .map((t) => ({ t, owner: v.store.vocabularies.ownerOf(t) }))
+    .filter((x): x is { t: string; owner: string } => x.owner !== null)
+  if (!owned.length) return ''
+  const owners = [...new Set(owned.map((x) => x.owner))]
+  const text =
+    owners.length === 1
+      ? `owned by ${owners[0]}`
+      : `owned by ${owned.map((x) => `${x.owner} (${x.t})`).join(', ')}`
+  return `<span class="muted owners">${esc(text)}</span>`
 }
 
 
@@ -257,18 +325,12 @@ const rows = (cells: [string, string][]): string =>
 
 /** Every frontmatter key of a task, in file order, plus where it lives. */
 function taskTable(v: View, task: Task): string {
-  const owner = v.store.vocabularies.ownerOf(task.territory)
   return `<table class="fm">${rows([
     ['slug', `<code>${esc(task.slug)}</code>`],
     ['title', esc(task.title)],
-    ['status', badge(task.status, task.status)],
+    ['status', statusControl(v, task.slug, task.status)],
     ['priority', priorityControl(v, task.slug, task.priority)],
-    [
-      'territory',
-      task.territory
-        ? `${esc(task.territory)}${owner ? ` <span class="muted">owned by ${esc(owner)}</span>` : ''}`
-        : unset('untriaged')
-    ],
+    ['territory', `${territoryControl(v, task.slug, task.territory)}${ownersNote(v, task.territory)}`],
     ['created_at', dateCell(task.created_at)],
     ['modified_at', dateCell(task.modified_at)],
     ['file', `<code>items/${esc(task.slug)}.md</code>`]
@@ -298,14 +360,31 @@ const option = (value: string, label: string, current: string): string =>
 const labelled = (label: string, control: string): string =>
   `<label>${esc(label)}${control}</label>`
 
+/** A labelled group of controls that carry labels of their own, so no label nests. */
+const grouped = (label: string, control: string): string =>
+  `<div class="gfield"><span>${esc(label)}</span>${control}</div>`
+
 function newTaskView(v: View, values: Record<string, string>, problems: string[]): string {
   const territories = v.store.vocabularies.territories
-  const territoryControl = territories
-    ? `<select name="territory">${[
-        option('', '(untriaged)', values['territory'] ?? ''),
-        ...territories.map((t) => option(t, t, values['territory'] ?? ''))
-      ].join('')}</select>`
-    : `<input name="territory" value="${esc(values['territory'] ?? '')}" placeholder="(untriaged)">`
+  const chosen = territoriesOf(values['territory'] ?? '')
+  // A closed vocabulary is a set of checkboxes: none checked is untriaged, and
+  // the page cannot offer a name the map does not declare.
+  const territoryField = territories
+    ? grouped(
+        'territory',
+        `<div class="checks">${territories
+          .map(
+            (t) =>
+              `<label class="check"><input type="checkbox" name="territory" value="${esc(t)}"${
+                chosen.includes(t) ? ' checked' : ''
+              }> ${esc(t)}</label>`
+          )
+          .join('')}</div>`
+      )
+    : labelled(
+        'territory',
+        `<input name="territory" value="${esc(values['territory'] ?? '')}" placeholder="(untriaged) - names, comma-separated">`
+      )
 
   return page(
     v,
@@ -325,7 +404,7 @@ function newTaskView(v: View, values: Record<string, string>, problems: string[]
                ...PRIORITIES.map((p) => option(p, p, values['priority'] ?? ''))
              ].join('')}</select>`
            )}
-           ${labelled('territory', territoryControl)}
+           ${territoryField}
            ${labelled(
              'status',
              `<select name="status">${[
@@ -424,7 +503,7 @@ function tasksView(v: View, selected: Task | null, problems: string[] = []): str
           <span class="title"${fade(t)}>${esc(t.title)}</span>
           <span class="meta">${t.priority ? badge(t.priority, `p-${t.priority}`) : ''}
             ${group.label === t.status ? '' : badge(t.status, t.status)}
-            ${t.territory ? badge(t.territory) : ''}</span>
+            ${territoriesOf(t.territory).map((x) => badge(x)).join(' ')}</span>
         </a>`
       }
     }
@@ -494,10 +573,18 @@ function sameOrigin(req: IncomingMessage): boolean {
   }
 }
 
-/** Form values, with every field trimmed; absent and blank are both "unset". */
+/**
+ * Form values, with every field trimmed; absent and blank are both "unset".
+ * `territory` is the one field a form may send several of - one per checked
+ * box - and they fold into the comma-separated list the file holds.
+ */
 function formValues(body: string): Record<string, string> {
+  const params = new URLSearchParams(body)
   const values: Record<string, string> = {}
-  for (const [key, value] of new URLSearchParams(body)) values[key] = value.trim()
+  for (const key of new Set(params.keys())) {
+    const all = params.getAll(key).map((v) => v.trim())
+    values[key] = key === 'territory' ? all.filter(Boolean).join(', ') : all[all.length - 1]!
+  }
   return values
 }
 
@@ -625,11 +712,12 @@ export function createTaskServer(options: ServerOptions): Server {
         }
       }
 
-      let m = path.match(/^\/task\/([a-z0-9.-]+)\/priority$/)
+      let m = path.match(/^\/task\/([a-z0-9.-]+)\/(priority|status|territory)$/)
       if (m) {
         const slug = m[1]!
+        const field = m[2] as 'priority' | 'status' | 'territory'
         try {
-          updateTask(dir, slug, { priority: values['priority'] ?? '' })
+          updateTask(dir, slug, { [field]: values[field] ?? '' })
           return seeOther(`/task/${slug}`)
         } catch (e) {
           const current = load(dir)

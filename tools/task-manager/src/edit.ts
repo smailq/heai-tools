@@ -19,7 +19,7 @@
 import { existsSync, mkdirSync, renameSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { UsageError } from './config.ts'
-import { parseTask, today, serializeTask, SLUG_PATTERN, type Task } from './model.ts'
+import { normalizeTerritories, parseTask, today, serializeTask, SLUG_PATTERN, type Task } from './model.ts'
 import { ITEMS_DIR, load, ValidationError, type Store } from './store.ts'
 import { writeIndex } from './render.ts'
 
@@ -76,11 +76,17 @@ function diff(before: Task, fields: object): string[] {
     .map(([key]) => key)
 }
 
-/** Drop the keys a caller left undefined, so they do not overwrite with `undefined`. */
+/**
+ * Drop the keys a caller left undefined, so they do not overwrite with
+ * `undefined`, and spell a territory list canonically before it is compared
+ * or written: `web,api` and `api, web` are the same routing decision.
+ */
 function given<T extends object>(fields: T): Record<string, string> {
-  return Object.fromEntries(
+  const out = Object.fromEntries(
     Object.entries(fields).filter(([, v]) => v !== undefined)
   ) as Record<string, string>
+  if ('territory' in out) out['territory'] = normalizeTerritories(out['territory']!)
+  return out
 }
 
 /**
@@ -158,7 +164,7 @@ export function updateTask(
   const current = store.tasks.find((t) => t.slug === slug)
   if (!current) throw new UsageError(`no task ${JSON.stringify(slug)} in ${ITEMS_DIR}/`)
 
-  const changed = diff(current, fields)
+  const changed = diff(current, given(fields))
   // An edit that changes nothing does not restamp: modified_at records when the
   // task last actually moved, not when it was last looked at.
   const touched = changed.length > 0 || note !== undefined

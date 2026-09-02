@@ -60,6 +60,7 @@ Run them as `node src/cli.ts <command>` from the tool directory, or install the 
 ```sh
 node src/cli.ts new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
 node src/cli.ts set cache-the-index --status in-progress --territory api
+node src/cli.ts set cache-the-index --territory api,web    # crosses a boundary
 node src/cli.ts set cache-the-index --status blocked --note "Blocked by [x](x.md)."
 ```
 
@@ -93,7 +94,7 @@ Exactly these six frontmatter keys, always present, in this order:
 | `title` | free text | required |
 | `status` | `in-progress` `in-review` `blocked` `todo` `backlog` `done` `canceled` | lifecycle state |
 | `priority` | empty, `urgent` `high` `medium` `low` | empty = not yet triaged |
-| `territory` | empty, or a declared territory | routes the task to its owner |
+| `territory` | empty, or one or more declared territories, comma-separated | routes the task to each one's owner |
 | `created_at` | `YYYY-MM-DD` | stamped once, at creation |
 | `modified_at` | `YYYY-MM-DD` | restamped by every edit that changes something |
 
@@ -123,6 +124,10 @@ Validation runs on every `build` and on every request the web view serves, over 
 A file reports every problem it has in one pass rather than failing at the first, so a malformed file is fixed once rather than three times.
 Every bad file is reported too, not just the first one, so a tracker is fixed in a single pass rather than one run per problem.
 
+A task sits in one territory as a rule, and in several when the work crosses a boundary: `territory: api, web` routes it to both owners.
+The list is written sorted and unique, so two edits that mean the same set produce the same line and a diff shows a change of routing rather than of order.
+`INDEX.md` carries it as one token, `t:api,web`, so an entry stays greppable.
+
 Which values `territory` may take is the **repository's** decision, not this tool's, so the list is not hard-coded.
 It defaults to open, because a tool that invented a repository's territory list would be wrong everywhere it was not configured.
 
@@ -135,7 +140,7 @@ map: ../architecture.yaml
 
 Territories are deliberately not listed here twice.
 A repository with an architecture map already names them, together with the actor that owns each one, so the tracker points at the map and the map stays the single source of ownership.
-A task's `territory` is then checked against it, and the web view shows the owning actor beside the territory - which is what makes `territory` a routing decision rather than a label.
+Every name a task's `territory` lists is then checked against it, and the web view shows the owning actor beside each - which is what makes `territory` a routing decision rather than a label.
 A configured map that cannot be read is an error, not a silent fallback: a tracker that asked to be checked must not quietly stop being checked.
 
 `config.yaml` is the one part of a tracker that is about the repository rather than the tasks, and a tracker is valid whether or not it has one.
@@ -156,18 +161,22 @@ The view sorts deterministically - status section, then priority, then slug - so
 | route | shows |
 | --- | --- |
 | `/` | the task list, in pick-up order, with the selected task beside it |
-| `/task/<slug>` | that task's frontmatter, its body, and the actor owning its territory |
+| `/task/<slug>` | that task's frontmatter, its body, and the actor owning each of its territories |
 | `/new` | the capture form |
-| `?t=<territory>` | the list narrowed to one territory, or `?t=none` for the untriaged |
+| `?t=<territory>` | the list narrowed to the tasks in one territory, or `?t=none` for the untriaged |
 
 ### What a browser may change
 
 Deliberately little.
 
-**Priority is the one property edited in place**, as a row of pills in the frontmatter table, because triage is what this view is for: deciding what matters is a judgement made while reading the list, and it is the one change that is safe to make away from the work.
+**Priority, status and territory are the three properties edited in place**, each as a row of pills in the frontmatter table, because triage, the board and routing are what this view is for: deciding what matters, moving work along its states and sending it to the territories it touches are the judgements made while reading the list.
 
-**Status and territory are shown but not editable here.**
-Both are decisions that travel with a commit - a status move accompanies the work, a territory routes the task to an owner - so they go through the CLI or the owning agent, where the change lands in a branch beside what caused it.
+**Territory is a set of toggles.**
+With a map configured, every territory it declares is a pill, the ones the task sits in pressed; pressing one adds or removes it, and `none` clears the set.
+Each pill posts the whole set as it would be after the click, so the control is a plain form that works without the script, and the page can never offer a name the map does not have.
+Without a map the vocabulary is open, and the names are typed, comma-separated.
+The capture form offers the same set as checkboxes.
+
 **Title and slug are not editable at all**: the slug is an id, and a title that drifts from the body it heads is worse than one edited deliberately in the file.
 
 The narrow surface is the browser's, not the format's.

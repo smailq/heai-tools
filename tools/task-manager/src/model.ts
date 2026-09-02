@@ -41,7 +41,10 @@ export interface Task {
   status: TaskStatus
   /** Empty = not yet triaged. */
   priority: string
-  /** Empty = not yet triaged. Otherwise a territory from the architecture map. */
+  /**
+   * Empty = not yet triaged. Otherwise one or more territories from the
+   * architecture map, comma-separated, sorted and unique - see `territoriesOf`.
+   */
   territory: string
   /** `YYYY-MM-DD`, set once when the task is created and never rewritten. */
   created_at: string
@@ -93,6 +96,30 @@ export function relativeDate(date: string, from: string = today()): string {
   return `${days} days ago`
 }
 
+/**
+ * The territories a task's `territory` value names, in file order.
+ *
+ * The field is a comma-separated list so that the frontmatter stays one line
+ * per key and a file with a single territory reads exactly as it always has.
+ * A task may sit in more than one territory when the work crosses a boundary;
+ * each name still routes to its own owner.
+ */
+export function territoriesOf(value: string): string[] {
+  return value
+    .split(',')
+    .map((t) => t.trim())
+    .filter((t) => t !== '')
+}
+
+/**
+ * The canonical spelling of a territory list: unique, sorted, `', '`-joined.
+ * Every write goes through this so two edits that mean the same set produce
+ * the same line, and a diff shows a change of routing rather than of order.
+ */
+export function normalizeTerritories(value: string): string {
+  return [...new Set(territoriesOf(value))].sort().join(', ')
+}
+
 /** A slug: kebab-case, with dots allowed so a version can be part of one. */
 export const SLUG_PATTERN = /^[a-z0-9]+([-.][a-z0-9]+)*$/
 
@@ -138,20 +165,26 @@ function parseFrontmatter(
   return { fields, body }
 }
 
-/** Check one optional field against a vocabulary. An empty value is always allowed. */
-function checkVocabulary(
-  value: string | undefined,
-  key: string,
-  vocabulary: Vocabulary,
-  problems: string[]
-): void {
+/**
+ * Check the territory list: each name against the vocabulary, and the list
+ * itself for the shapes that would make it ambiguous - a name given twice, or
+ * an empty entry left by a stray comma. An empty value is always allowed.
+ */
+function checkTerritories(value: string | undefined, vocabulary: Vocabulary, problems: string[]): void {
   if (!value) return
-  if (vocabulary === null) return
-  if (!vocabulary.includes(value)) {
+  const names = value.split(',').map((t) => t.trim())
+  if (names.some((t) => t === '')) {
+    problems.push(`territory ${JSON.stringify(value)} has an empty entry; separate names with commas`)
+  }
+  const seen = new Set<string>()
+  for (const name of names.filter((t) => t !== '')) {
+    if (seen.has(name)) problems.push(`territory lists ${JSON.stringify(name)} twice`)
+    seen.add(name)
+    if (vocabulary === null || vocabulary.includes(name)) continue
     problems.push(
       vocabulary.length
-        ? `${key} ${JSON.stringify(value)} not in [${list(vocabulary)}] (or empty)`
-        : `${key} ${JSON.stringify(value)} is set, but no ${key} is declared`
+        ? `territory ${JSON.stringify(name)} not in [${list(vocabulary)}] (or empty)`
+        : `territory ${JSON.stringify(name)} is set, but no territory is declared`
     )
   }
 }
@@ -173,7 +206,7 @@ export function parseTask(
   if (priority && !PRIORITIES.includes(priority as Priority)) {
     problems.push(`priority ${JSON.stringify(priority)} not in [${list(PRIORITIES)}] (or empty)`)
   }
-  checkVocabulary(fields['territory'], 'territory', vocabularies.territories, problems)
+  checkTerritories(fields['territory'], vocabularies.territories, problems)
   for (const key of ['created_at', 'modified_at'] as const) {
     const value = fields[key]
     if (value && !DATE_PATTERN.test(value)) {
@@ -189,7 +222,7 @@ export function parseTask(
       title: fields['title']!,
       status: status as TaskStatus,
       priority: priority ?? '',
-      territory: fields['territory'] ?? '',
+      territory: normalizeTerritories(fields['territory'] ?? ''),
       created_at: fields['created_at'] ?? '',
       modified_at: fields['modified_at'] ?? '',
       body

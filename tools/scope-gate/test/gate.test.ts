@@ -192,6 +192,72 @@ test('a path the carved-out territory itself excludes becomes unowned', () => {
   assert.equal(r.ok, false)
 })
 
+test('a child territory carves itself out of its parent, with no exclude written', () => {
+  const m: ArchitectureMap = {
+    ...map,
+    territories: {
+      everything: { owner: 'smailq', scope: [{ repository: 'app', globs: ['**'] }] },
+      api: {
+        parent: 'everything',
+        owner: 'api-owner',
+        scope: [{ repository: 'app', globs: ['src/api/**'] }]
+      }
+    }
+  }
+  // The path sits inside both territories' globs, yet resolves to the child:
+  // the parent's effective scope no longer holds it.
+  assert.equal(gate('api', ['src/api/handler.ts'], m).ok, true)
+  const r = gate('everything', ['src/api/handler.ts'], m)
+  assert.equal(r.ok, false)
+  assert.equal(r.findings[0]?.territory, 'api')
+  assert.equal(gate('everything', ['src/other.ts'], m).ok, true)
+})
+
+test('a child without an owner inherits from the nearest ancestor', () => {
+  const m: ArchitectureMap = {
+    ...map,
+    territories: {
+      everything: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['**'] }] },
+      docs: { parent: 'everything', scope: [{ repository: 'app', globs: ['docs/**'] }] }
+    }
+  }
+  // The actor subject owns the child through inheritance, and a finding
+  // against the child reports the inherited owner.
+  assert.equal(gate('api-owner', ['docs/readme.md'], m).ok, true)
+  const r = gate('smailq', ['docs/readme.md'], m)
+  assert.equal(r.findings[0]?.owner, 'api-owner')
+  assert.equal(r.findings[0]?.ownerType, 'llm-agent')
+})
+
+test("a child's own owner overrides the inherited one", () => {
+  const m: ArchitectureMap = {
+    ...map,
+    territories: {
+      everything: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['**'] }] },
+      governed: {
+        parent: 'everything',
+        owner: 'smailq',
+        scope: [{ repository: 'app', globs: ['ci/**'] }]
+      }
+    }
+  }
+  assert.equal(gate('smailq', ['ci/release.yml'], m).ok, true)
+  const r = gate('api-owner', ['ci/release.yml'], m)
+  assert.equal(r.ok, false)
+  assert.equal(r.findings[0]?.owner, 'smailq')
+})
+
+test('a parent chain that does not resolve an owner is a map error', () => {
+  const m: ArchitectureMap = {
+    ...map,
+    territories: {
+      a: { parent: 'b', scope: [{ repository: 'app', globs: ['a/**'] }] },
+      b: { parent: 'a', scope: [{ repository: 'app', globs: ['b/**'] }] }
+    }
+  }
+  assert.throws(() => gate('a', ['a/x.ts'], m), UsageError)
+})
+
 test('a malformed glob is a map error, whatever the diff contains', () => {
   const m: ArchitectureMap = {
     ...map,
