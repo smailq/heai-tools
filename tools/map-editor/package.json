@@ -16,7 +16,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "ajv": "^8.17.1",
+    "@heai-tools/map-check": "file:../map-check",
     "cytoscape": "^3.34.2",
     "cytoscape-fcose": "^2.2.0",
     "yaml": "^2.5.0"

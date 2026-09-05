@@ -19,7 +19,8 @@ import { homedir } from 'node:os'
 import { basename, dirname, extname, join, normalize, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
-import { createValidator, mapToYaml, TEMPLATE } from './validate.ts'
+import { createValidator, TEMPLATE } from '@heai-tools/map-check'
+import { mapToYaml } from './serialize.ts'
 
 function argValue(flag: string): string | undefined {
   const i = process.argv.indexOf(flag)

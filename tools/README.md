@@ -12,6 +12,7 @@ Tools here target different languages and ecosystems, so there is no shared buil
 
 ## Independence
 
+The normative statement is the [design principles](../README.md#design-principles) in the root README; this is the short form.
 A tool must not import source from another tool.
 Where two tools need the same logic, either publish it or implement it twice on purpose - a copy whose divergence is caught by tests beats a shared library that couples release cycles across ecosystems.
 
@@ -19,6 +20,8 @@ Tools read [`../schemas/architecture.schema.json`](../schemas/architecture.schem
 
 ## Tools
 
+- [`map-check`](map-check) - the reference validator for the map, as a command and a library, with the owner, territory, actor and context queries other tools shell out for.
 - [`scope-gate`](scope-gate) - checks a diff against the map's ownership boundaries.
 - [`map-editor`](map-editor) - a web editor for visualizing and editing the map.
 - [`task-manager`](task-manager) - a file-based task tracker for a repository, managed by an agent.
+- [`agent-host`](agent-host) - hosts the map's llm-agent actors, one Apple container each, and hands them tracker tasks.

@@ -28,7 +28,7 @@ A pasted map that does not validate opens in **Raw YAML** mode with its problems
 | tab | what it edits |
 | --- | --- |
 | General | `unowned` and `undeclaredDependencies`, the map-wide postures |
-| Actors | the humans and llm-agents that can own a territory, and what each owns |
+| Actors | the humans and llm-agents that can own a territory, what each owns, and what each watches without owning |
 | Territories | the system drawing: repositories as containers, territories as nodes, `dependsOn` as arrows |
 
 Selecting a territory highlights the files its globs claim in the file tree; selecting an actor highlights everything it owns.
@@ -47,13 +47,13 @@ A repository without one still appears; it simply lists no files.
 
 ## Validation
 
-Validation runs on every edit, against the schema first and then the semantic rules the schema cannot express: referential integrity of owners, repositories, `dependsOn` and `exclude.territories`; an acyclic dependency graph; the glob dialect; and the no-overlap rule.
+Validation runs on every edit through [`map-check`](../map-check), the reference validator, which this tool depends on as a package: against the schema first and then the semantic rules the schema cannot express: referential integrity of owners, repositories, `dependsOn` and `exclude.territories`; an acyclic dependency graph; the glob dialect; and the no-overlap rule.
 
 Overlap is a property of the **globs**, not of the files on disk: `src/**` and `src/legacy/**` overlap the moment both are written, empty or not, so a map that was valid when reviewed cannot be invalidated by a commit elsewhere.
 An `exclude` clears a reported overlap when it provably covers one of the two globs, which is what `exclude.territories` and a mirrored `exclude.globs` do.
 Where subtraction is subtler than that, the overlap is still reported: over-reporting on an exotic pair of patterns is better than silence on a real one.
 
-Warnings cover what is worth looking at before it becomes wrong - an actor owning nothing, a repository no territory scopes, two repositories sharing a `remotePath`, an exclusion that subtracts nothing or that strands paths no territory claims, and a map with no human-owned territory to fall inside.
+Warnings cover what is worth looking at before it becomes wrong - an actor neither owning nor watching anything, an actor watching a territory it already owns, a repository no territory scopes, two repositories sharing a `remotePath`, an exclusion that subtracts nothing or that strands paths no territory claims, and a map with no human-owned territory to fall inside.
 
 ## Endpoints
 
@@ -84,8 +84,8 @@ That is why the default binding is loopback: bind wider only inside a container 
 ## Tests
 
 ```sh
-npm test        # glob dialect, glob relations, schema and semantic rules
+npm test        # the endpoints: validate, serialize, template, schema
 npm run typecheck
 ```
 
-`test/glob.test.ts` pins the dialect - the same cases `scope-gate` pins, because both implement it separately and must agree.
+The validator and the glob dialect are `map-check`'s, tested there; the editor's own test spawns the server and exercises the endpoints over it.

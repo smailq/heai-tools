@@ -107,6 +107,7 @@ function normalizedMap() {
   for (const actor of Object.values(map.actors ?? {})) {
     dropEmpty(actor, 'identity')
     dropEmpty(actor, 'context')
+    dropEmpty(actor, 'watches')
   }
   for (const repo of Object.values(map.repositories ?? {})) {
     dropEmpty(repo, 'remotePath')
@@ -1116,6 +1117,36 @@ function repoSelect(value, onchange) {
   )
 }
 
+/** Watches: checkbox chips over every territory, committing immediately; grants nothing. */
+function watchesGroup(name, actor) {
+  const wrap = el('div', 'i-group')
+  wrap.appendChild(el('span', 'i-label', 'watches'))
+  const body = el('div', 'i-group-body i-chips')
+  const names = Object.keys(mapState.territories || {})
+  if (names.length === 0) body.appendChild(el('span', 'i-hint', 'no territories yet'))
+  for (const n of names) {
+    const current = actor.watches || []
+    const active = current.includes(n)
+    const chip = el('button', 'chip dep' + (active ? ' selected' : ''))
+    chip.type = 'button'
+    const dot = el('span', 'chip-dot')
+    dot.style.background = ownerColor(effectiveOwner(n))
+    chip.appendChild(dot)
+    chip.appendChild(el('span', '', n))
+    chip.addEventListener('click', (e) => {
+      e.stopPropagation()
+      actor.watches = active ? current.filter((x) => x !== n) : [...current, n]
+      if (actor.watches.length === 0) delete actor.watches
+      refresh()
+    })
+    body.appendChild(chip)
+  }
+  wrap.appendChild(body)
+  const hint = el('p', 'i-hint', 'Observed, not owned: watching grants nothing. A watcher that needs a change files a task for the owner.')
+  wrap.appendChild(hint)
+  return wrap
+}
+
 function ownsGroup(name) {
   const owned = territoriesOwnedBy(name)
   const wrap = el('div', 'i-group')
@@ -1203,6 +1234,7 @@ function renderActorInspector(name) {
     })
   )
   inspector.appendChild(ownsGroup(name))
+  inspector.appendChild(watchesGroup(name, actor))
   if (actor.type === 'human') {
     inspector.appendChild(
       el('p', 'i-hint', 'A human-owned territory is where the paths that govern what agents may do belong — CI, guard tooling, repo-wide docs, and the map itself.')
@@ -1312,6 +1344,11 @@ function renderTerritoryInspector(name) {
           if (Object.keys(entry.exclude).length === 0) delete entry.exclude
         }
       }
+      for (const actor of Object.values(mapState.actors || {})) {
+        if (!actor.watches) continue
+        actor.watches = actor.watches.filter((x) => x !== name)
+        if (actor.watches.length === 0) delete actor.watches
+      }
       if (subTerritory === name) {
         subTerritory = null
         refresh()
@@ -1336,6 +1373,9 @@ function renderTerritoryInspector(name) {
             if (!entry.exclude?.territories) continue
             entry.exclude.territories = entry.exclude.territories.map((x) => (x === name ? next : x))
           }
+        }
+        for (const actor of Object.values(mapState.actors || {})) {
+          if (actor.watches) actor.watches = actor.watches.map((x) => (x === name ? next : x))
         }
         if (subTerritory === name) subTerritory = next
         else selection = { type: 'territory', id: next }

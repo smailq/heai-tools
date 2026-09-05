@@ -21,6 +21,9 @@ One namespace for every kind of owner makes a name unique by construction and an
 An actor of type `human` carries an `identity` - handle or email, whatever the surrounding tooling resolves; other actors carry one only where they act under an account of their own.
 Declaring an actor grants it nothing: territories assign the paths.
 An llm-agent carries a `context`, inline markdown with its role, focus, and standing guidance across every territory it owns; a human may.
+An actor may also `watches` territories it does not own - a maintainer watching for bugs and health across a module, a reviewer watching what it reviews.
+Watching grants nothing: confinement is unchanged, and a watcher that needs a change files a task for the territory's owner.
+It only steers the surrounding tooling - which contexts the actor is composed with, which changes and events reach it - so that an observer role is declared in the map rather than improvised in a prompt.
 
 **Territories.**
 A territory is a named set of paths with one owner, a declared actor: an llm-agent (e.g. `api-owner`) or a human (e.g. `smailq`).
@@ -122,6 +125,7 @@ Errors:
 - Every child territory's declared globs must be contained, per repository and as glob languages, in its parent's declared globs for that repository - which also means a child cannot claim a repository its parent does not.
 - Every name in a territory's `dependsOn` must name a key of `territories`; the relation must be acyclic, and no territory may depend on itself.
 - Every name in an `exclude.territories` list must name a key of `territories`, and no territory may exclude itself.
+- Every name in an actor's `watches` must name a key of `territories`.
 - No path may be matched by more than one territory's effective scope, compared after exclusions and children's subtractions and as glob languages rather than against the files on disk.
 
 Warnings:
@@ -131,5 +135,6 @@ Warnings:
 - Paths an entry excludes that no territory claims - deleting a territory without updating the exclusions that mirrored it leaves those paths unowned, which nothing else catches.
 - Two `repositories` entries sharing a `remotePath`, compared as exact strings, since two names for one tree let two territories own the same path without ever overlapping.
 - A declared repository that no territory's scope names.
-- An actor declared but owning no territory.
+- An actor declared but neither owning nor watching a territory.
+- An actor watching a territory it owns, by declaration or inheritance - watching adds nothing to owning.
 - A map file falling outside every human-owned territory, since the map protects everything else and so must protect itself.

@@ -67,6 +67,13 @@
           "type": "string",
           "minLength": 1,
           "description": "Actor-specific context, inline as markdown: the actor's role, focus, and standing guidance that applies across every territory it owns. Required for type 'llm-agent', which the map steers; optional for the rest."
+        },
+        "watches": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/name" },
+          "description": "Territories this actor observes without owning, each a key of 'territories': a maintainer watching for bugs and health, a reviewer watching what it reviews. Watching grants nothing - confinement is unchanged, and a watcher that needs a change files a task for the owner - it only steers the surrounding tooling: what context the actor is composed with, what changes and events reach it. An actor may watch a territory it owns, which is redundant and warned."
         }
       },
       "allOf": [
