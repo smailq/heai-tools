@@ -1,0 +1,162 @@
+/* The host view's stylesheet.
+ *
+ * The palette and the metrics are task-manager's, so the two look like the
+ * same application: a recessed page carrying white cards, semantic badge
+ * pills, and a reading type scale. test/style.test.ts pins the tokens to
+ * task-manager's, so a tidy-up toward some other file fails a test.
+ */
+
+* { box-sizing: border-box; margin: 0; }
+
+:root {
+  /* The two surface levels: a card sits above a recessed page, which is what
+     separates the list, the frontmatter and the body without a rule between. */
+  --page: #f6f7f9;
+  --card: #ffffff;
+  --text: #22272e;
+  --muted: #77808b;
+  --accent: #2563eb;
+  --border: #e3e7ec;
+  --sel: #eaf1fe;
+  --danger: #b91c1c;
+
+  /* Badge tints. A status and a priority are what a long list is scanned by,
+     so each is a tinted pill: the colour is the thing being read. */
+  --tint-neutral: #eef1f5;
+  --tint-neutral-fg: #77808b;
+  --tint-red: #fde8e8;
+  --tint-red-fg: #b91c1c;
+  --tint-amber: #fef3c7;
+  --tint-amber-fg: #92400e;
+  --tint-blue: #e0edff;
+  --tint-blue-fg: #1d4ed8;
+  --tint-green: #e7f6ec;
+  --tint-green-fg: #15803d;
+  --tint-purple: #ede9fe;
+  --tint-purple-fg: #6d28d9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --page: #16191d;
+    --card: #1d2126;
+    --text: #e4e7eb;
+    --muted: #949daa;
+    --accent: #7aa5f5;
+    --border: #2c323a;
+    --sel: #22304a;
+    --danger: #f87171;
+
+    --tint-neutral: #2b3138;
+    --tint-neutral-fg: #b6bec9;
+    --tint-red: #43201f;
+    --tint-red-fg: #fca5a5;
+    --tint-amber: #3e2f13;
+    --tint-amber-fg: #fcd34d;
+    --tint-blue: #1c2c48;
+    --tint-blue-fg: #a8c8fb;
+    --tint-green: #16311f;
+    --tint-green-fg: #86efac;
+    --tint-purple: #2d2645;
+    --tint-purple-fg: #c9bcfa;
+  }
+}
+
+body {
+  background: var(--page);
+  color: var(--text);
+  font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a, button, input, select, textarea, .row { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease, transform 100ms ease; }
+button:active:not(:disabled) { transform: translateY(1px); }
+a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+@media (prefers-reduced-motion: reduce) { a, button, input, select, textarea, .row { transition: none; } }
+code { background: var(--tint-neutral); border-radius: 4px; padding: 1px 5px; font-size: 0.88em; }
+
+header { display: flex; align-items: center; gap: 12px; padding: 11px 18px; background: var(--card); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; letter-spacing: -0.01em; white-space: nowrap; }
+header h1 a { color: var(--text); }
+header .count { color: var(--muted); font-size: 13px; margin-left: auto; font-variant-numeric: tabular-nums; }
+
+/* ── Badges ── the state of an actor and the outcome of a run are what the
+   list is scanned by, so each is a tinted pill. */
+.badge { display: inline-block; background: var(--tint-neutral); color: var(--tint-neutral-fg); border-radius: 99px; padding: 1px 9px; font-size: 12px; font-weight: 650; white-space: nowrap; vertical-align: middle; }
+.badge.busy, .badge.running, .badge.gate-violation { background: var(--tint-blue); color: var(--tint-blue-fg); }
+.badge.idle, .badge.succeeded, .badge.gate-clean { background: var(--tint-green); color: var(--tint-green-fg); }
+.badge.blocked, .badge.resume, .badge.queued { background: var(--tint-amber); color: var(--tint-amber-fg); }
+.badge.failed, .badge.lost, .badge.gate-error, .badge.absent { background: var(--tint-red); color: var(--tint-red-fg); }
+.badge.gate-violation { background: var(--tint-red); color: var(--tint-red-fg); }
+.badge.canceled, .badge.stopped { background: var(--tint-purple); color: var(--tint-purple-fg); }
+.muted { color: var(--muted); font-size: 13px; }
+.err { color: var(--danger); font-size: 13px; }
+
+/* ── Master–detail ── the actors in a left pane, the selected one in the right. */
+main { flex: 1; display: flex; min-height: 0; }
+aside { width: 320px; min-width: 320px; overflow-y: auto; background: var(--card); border-right: 1px solid var(--border); }
+.row { display: block; padding: 10px 15px 11px; border-bottom: 1px solid var(--border); color: var(--text); }
+.row:hover { background: var(--page); text-decoration: none; }
+.row.sel { background: var(--sel); box-shadow: inset 3px 0 0 var(--accent); }
+.row .title { display: block; font-weight: 550; line-height: 1.35; }
+.row .meta { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; align-items: center; }
+
+.detail { flex: 1; overflow-y: auto; padding: 28px 36px 56px; }
+.detail > * { max-width: 860px; }
+.detail h1 { font-size: 24px; font-weight: 650; line-height: 1.25; letter-spacing: -0.015em; margin-bottom: 14px; display: flex; gap: 10px; align-items: center; }
+.detail h1 code { font-size: 18px; }
+.detail h2 { font-size: 13px; margin: 28px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.detail ul { padding-left: 20px; }
+.detail .terr li + li { margin-top: 4px; }
+.ctls { display: flex; gap: 14px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+.ctl { display: inline-flex; gap: 8px; align-items: center; }
+.inline { display: inline; margin-left: 8px; }
+.empty { display: flex; height: 100%; max-width: none; align-items: center; justify-content: center; color: var(--muted); font-size: 14px; }
+.empty p { padding: 10px 18px; border: 1px dashed var(--border); border-radius: 99px; background: var(--card); }
+
+/* The log and the context: monospace blocks on a card. The live log grows. */
+pre.log, pre.ctx { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; overflow: auto; font-size: 12.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+pre.log { max-height: 480px; min-height: 80px; }
+pre.ctx { max-height: 360px; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin: 18px 0 8px; }
+
+/* Runs, as a table: id, task, status, gate, when. */
+table.runs { border-collapse: collapse; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 13.5px; }
+table.runs td { padding: 7px 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+table.runs tr:first-child td { border-top: none; }
+
+/* The record, as what it is: a fixed set of keys. */
+.fm { border-collapse: separate; border-spacing: 0; margin-bottom: 22px; width: 100%; background: var(--card); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; font-size: 14px; }
+.fm th { text-align: left; font: 500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); padding: 11px 14px 11px 18px; white-space: nowrap; width: 1%; vertical-align: top; }
+.fm td { padding: 9px 18px 9px 6px; vertical-align: top; }
+.fm td ul { margin-top: 4px; }
+
+.back { display: none; margin-bottom: 14px; color: var(--muted); }
+.back-always { display: inline-block; margin-bottom: 14px; color: var(--muted); }
+@media (max-width: 800px) {
+  .has-detail aside { display: none; }
+  .no-detail .detail { display: none; }
+  aside { width: 100%; min-width: 0; }
+  .back { display: inline-block; }
+}
+main.single { display: block; overflow-y: auto; background: var(--page); }
+main.single .detail { max-width: 900px; margin: 0 auto; }
+
+.problems { padding: 26px 32px; }
+.problems-inline { margin: 0 0 18px; background: var(--card); border: 1px solid var(--danger); border-radius: 10px; padding: 14px 16px; }
+.problems-inline p { color: var(--danger); font-weight: 650; margin-bottom: 8px; }
+.problems-inline pre { white-space: pre-wrap; font-size: 13px; }
+
+/* ── The assign form ── a select of the assignable tasks, or a prompt. */
+.assign { display: flex; flex-direction: column; gap: 14px; max-width: 640px; }
+.assign label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.assign select, .assign textarea { font: inherit; font-size: 14px; color: var(--text); background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 7px 11px; }
+.assign textarea { resize: vertical; line-height: 1.5; }
+.assign select:focus, .assign textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--sel); }
+.cbtn { font: inherit; font-size: 14px; font-weight: 650; align-self: flex-start; padding: 6px 16px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--card); cursor: pointer; }
+.cbtn:hover { filter: brightness(1.08); }
+.dbtn { font: inherit; font-size: 13px; font-weight: 650; padding: 4px 13px; border-radius: 8px; border: 1px solid var(--border); background: var(--card); color: var(--danger); cursor: pointer; }
+.dbtn:hover { border-color: var(--danger); background: var(--tint-red); }
+.dbtn.armed { background: var(--danger); color: var(--card); border-color: var(--danger); }

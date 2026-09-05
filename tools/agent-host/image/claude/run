@@ -1,0 +1,4 @@
+#!/bin/sh
+# The runner contract: the prompt on stdin, the work in $PWD, the outcome in $?.
+# Permission prompts are off because the container is the permission boundary.
+exec claude -p "$(cat)" --dangerously-skip-permissions --output-format text

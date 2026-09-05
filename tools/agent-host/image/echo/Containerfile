@@ -1,0 +1,9 @@
+# No LLM at all: a runner that proves the contract end to end. It reads the
+# prompt, writes a note into the first territory glob it can find, commits,
+# and exits 0 - or, when the prompt mentions "please request", files a request
+# and stops. Used by the walkthrough in the README and by hand when testing.
+FROM docker.io/library/alpine:latest
+RUN apk add --no-cache git
+COPY run /heai/run
+RUN chmod +x /heai/run && mkdir -p /work /heai/runs
+WORKDIR /work

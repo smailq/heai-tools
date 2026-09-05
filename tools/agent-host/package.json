@@ -1,0 +1,28 @@
+{
+  "name": "@heai-tools/agent-host",
+  "version": "0.1.0",
+  "description": "Hosts the architecture map's llm-agent actors, one Apple container each, and hands them tracker tasks",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "agent-host": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/host.ts"
+  },
+  "scripts": {
+    "start": "node src/cli.ts serve",
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}
