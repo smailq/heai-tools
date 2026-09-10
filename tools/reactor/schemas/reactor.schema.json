@@ -1,0 +1,524 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heai-tools:schemas:reactor:1",
+  "title": "heai-tools reactor configuration",
+  "description": "reactor.yaml: the sources that turn what happens into events, the rules that say what to run about them, and the daemon's own settings. Every key is optional and an absent file is an empty configuration. tools/reactor/README.md is the specification, including the checks a loader must make that JSON Schema cannot express: a rule's source must be declared under sources, a webhook's provider must be one this tool ships, and a cron expression must parse.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "sources": {
+      "description": "The sources of events, keyed by the name a rule's on.source refers to and an event's source field carries. Each is one of the five shipped types, chosen by its type key, or a module path exporting create(config). Empty when absent.",
+      "type": [
+        "object",
+        "null"
+      ],
+      "propertyNames": {
+        "$ref": "#/$defs/name"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "rules": {
+      "description": "What to run about an event, in the order they are matched. Every rule that matches an event runs; a rule names what it listens for under on and the command under run. Empty when absent.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/rule"
+      }
+    },
+    "concurrency": {
+      "description": "How many commands run at once across every rule, four by default.",
+      "type": "integer",
+      "minimum": 1,
+      "default": 4
+    },
+    "receiver": {
+      "description": "Where reactor serve listens for webhook posts. It binds loopback by default; reaching it from outside is the deployment's business.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "description": "The address to bind.",
+          "type": "string",
+          "default": "127.0.0.1"
+        },
+        "port": {
+          "description": "The port to bind; --port on reactor serve overrides it.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 65535,
+          "default": 4949
+        }
+      }
+    }
+  },
+  "$defs": {
+    "name": {
+      "title": "a lowercase word like sentry-to-owner",
+      "description": "The name of a source or a rule: lowercase, opening with a letter or digit, and otherwise letters, digits, '.', '_' and '-'.",
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$"
+    },
+    "duration": {
+      "title": "a duration like 5s, 10m, 2h or 1d",
+      "description": "A whole number and a unit - ms, s, m, h or d - as one string; a bare positive number is seconds.",
+      "type": [
+        "string",
+        "number"
+      ],
+      "pattern": "^[0-9]+\\s*(ms|s|m|h|d)$",
+      "exclusiveMinimum": 0
+    },
+    "cron": {
+      "title": "a five-field cron expression",
+      "description": "Five fields - minute, hour, day of month, month, day of week - with ranges, lists, steps, names and the usual aliases; parsed when the source or rule is read.",
+      "type": "string",
+      "minLength": 1
+    },
+    "command": {
+      "title": "a command",
+      "description": "A shell command: a path, a script with its arguments, or a program on PATH.",
+      "type": "string",
+      "pattern": "\\S"
+    },
+    "secret": {
+      "title": "env:NAME, file:path, or the secret itself",
+      "description": "Where a webhook's secret comes from: env:NAME reads an environment variable, file:path reads a file relative to the project directory, and any other string is the secret itself, which is for a test.",
+      "type": "string",
+      "minLength": 1
+    },
+    "source": {
+      "description": "One source, chosen by its type: schedule, git, webhook, poll, cli, or a module path - anything with a '/' in it or ending in .ts or .js, relative to the configuration file - exporting create(config).",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "title": "one of schedule, git, webhook, poll, cli, dir, or a module path",
+          "description": "Which kind of source this is: one of the six shipped types, or a module path relative to the configuration file.",
+          "type": "string",
+          "pattern": "^(schedule|git|webhook|poll|cli|dir)$|/|\\.(ts|js)$"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "schedule"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/scheduleSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "git"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/gitSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "webhook"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/webhookSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "poll"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/pollSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "cli"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/cliSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "dir"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/dirSource"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "type": "string",
+                "pattern": "/|\\.(ts|js)$"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "then": {
+            "$ref": "#/$defs/moduleSource"
+          }
+        }
+      ]
+    },
+    "scheduleSource": {
+      "title": "a schedule source",
+      "description": "A clock: one tick event per cron slot, keyed <source>@<slot>, in the daemon's local time unless utc is true. A slot that passed while nothing was running is noted and never replayed.",
+      "type": "object",
+      "required": [
+        "type",
+        "cron"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "schedule",
+          "const": "schedule"
+        },
+        "cron": {
+          "description": "The slots to fire on.",
+          "$ref": "#/$defs/cron"
+        },
+        "utc": {
+          "description": "Evaluate the expression in UTC rather than the daemon's local time.",
+          "type": "boolean",
+          "default": false
+        },
+        "grace": {
+          "description": "How long after its time a slot still fires; a slot older than this is missed, not fired. Five minutes by default.",
+          "$ref": "#/$defs/duration",
+          "default": "5m"
+        },
+        "every": {
+          "description": "How often reactor serve checks the clock; ten seconds by default.",
+          "$ref": "#/$defs/duration",
+          "default": "10s"
+        }
+      }
+    },
+    "gitSource": {
+      "title": "a git source",
+      "description": "A repository: one commit event per new commit on a watched branch, keyed <branch>@<sha>, with the paths the commit changed; branch-created and branch-deleted as branches come and go. The first poll records where every branch is and emits nothing.",
+      "type": "object",
+      "required": [
+        "type",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "git",
+          "const": "git"
+        },
+        "path": {
+          "description": "The repository, relative to the project directory.",
+          "type": "string",
+          "minLength": 1
+        },
+        "branches": {
+          "description": "The branches to watch, as names or globs; every branch by default.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": [
+            "*"
+          ]
+        },
+        "every": {
+          "description": "How often to poll; a minute by default.",
+          "$ref": "#/$defs/duration",
+          "default": "60s"
+        },
+        "remote": {
+          "description": "A remote to fetch before reading, so the remote's branches are watched instead of the local ones.",
+          "type": "string",
+          "minLength": 1
+        },
+        "maxCommits": {
+          "description": "How many commits to report when a branch moves by more than that; the last ones are reported and the count is noted. Two hundred by default.",
+          "type": "integer",
+          "minimum": 1,
+          "default": 200
+        }
+      }
+    },
+    "webhookSource": {
+      "title": "a webhook source",
+      "description": "One path on the receiver reactor serve runs, one provider, one secret. It cannot poll, so reactor tick reports that it cannot run. The provider verifies the signature and turns the body into { kind, key, payload }; an unsigned or unverifiable post is answered 401 and never an event.",
+      "type": "object",
+      "required": [
+        "type",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "webhook",
+          "const": "webhook"
+        },
+        "path": {
+          "title": "a path starting with /",
+          "description": "The path the service posts to, on the receiver.",
+          "type": "string",
+          "pattern": "^/"
+        },
+        "provider": {
+          "description": "The parser for the service's posts: github, sentry, vercel, or generic, which is the default. An unknown provider is refused when the source is read.",
+          "type": "string",
+          "minLength": 1,
+          "default": "generic"
+        },
+        "secret": {
+          "description": "The secret the provider verifies posts with: env:NAME, file:path, or the secret itself. Without one every post is dropped as unverifiable.",
+          "$ref": "#/$defs/secret"
+        },
+        "kind": {
+          "description": "For the generic provider: a JSON pointer into the body for the event's kind; else the body's kind or type, else event.",
+          "type": "string",
+          "minLength": 1
+        },
+        "key": {
+          "description": "For the generic provider: a JSON pointer into the body for the event's key; else the body's id, else a hash of the body.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "pollSource": {
+      "title": "a poll source",
+      "description": "A URL fetched on an interval: one changed event when what it answers changes, keyed <source>@<time>@<hash>. The first answer is recorded, not reported; a fetch that fails is a note in the cursor and the next interval tries again.",
+      "type": "object",
+      "required": [
+        "type",
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "poll",
+          "const": "poll"
+        },
+        "url": {
+          "description": "The URL to fetch.",
+          "type": "string",
+          "minLength": 1
+        },
+        "every": {
+          "description": "How often to fetch; five minutes by default.",
+          "$ref": "#/$defs/duration",
+          "default": "5m"
+        },
+        "watch": {
+          "title": "status, hash, or a JSON pointer like /status/indicator",
+          "description": "What to compare between answers: status for the status code, hash for a hash of the body, or a JSON pointer into the body. hash by default.",
+          "type": "string",
+          "pattern": "^(status|hash|/.*)$",
+          "default": "hash"
+        },
+        "headers": {
+          "description": "Headers to send with the request, as a mapping of strings.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "timeout": {
+          "description": "How long to wait for an answer; thirty seconds by default.",
+          "$ref": "#/$defs/duration",
+          "default": "30s"
+        }
+      }
+    },
+    "cliSource": {
+      "title": "a cli source",
+      "description": "A named source whose events come only from the command line: reactor emit <source> <kind> appends one. It has no interval and nothing to poll, so under tick and serve it contributes nothing on its own; status shows it with its last event.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "cli",
+          "const": "cli"
+        },
+        "kinds": {
+          "title": "a list of kinds like [task.todo, task.done]",
+          "description": "The kinds that may be emitted into this source; any kind when absent. A kind outside the list is refused by reactor emit.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dirSource": {
+      "title": "a dir source",
+      "description": "A directory of fact files, polled on an interval: every regular file in it that is not a dotfile or .tmp is one event, keyed by its name, modification time and content, then removed or moved into archive. The name up to the first dot is the kind; a JSON object body is the payload, any other body is carried as payload.body. The directory is created when absent.",
+      "type": "object",
+      "required": [
+        "type",
+        "path"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "dir",
+          "const": "dir"
+        },
+        "path": {
+          "description": "The directory, relative to the project directory.",
+          "type": "string",
+          "minLength": 1
+        },
+        "every": {
+          "description": "How often to poll; five seconds by default.",
+          "$ref": "#/$defs/duration",
+          "default": "5s"
+        },
+        "archive": {
+          "description": "A directory to move each file into once its event is logged, named with the event time first; absent, the file is deleted.",
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "moduleSource": {
+      "title": "a module-path source",
+      "description": "The escape hatch: type is a module path relative to the configuration file, and the module exports create(config) returning the source contract. Every other key is the module's own option, handed to it as written.",
+      "type": "object",
+      "required": [
+        "type"
+      ],
+      "properties": {
+        "type": {
+          "description": "The module path, relative to the configuration file: anything with a '/' in it or ending in .ts or .js.",
+          "type": "string",
+          "pattern": "/|\\.(ts|js)$"
+        }
+      },
+      "additionalProperties": true
+    },
+    "rule": {
+      "title": "a rule",
+      "description": "What to run when an event matches: a name, the match under on, the command under run, and the debounce, limit, repeat and timeout that shape how often it runs.",
+      "type": "object",
+      "required": [
+        "name",
+        "run"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The rule's name, unique in the file; it names the action record and the dedupe set.",
+          "$ref": "#/$defs/name"
+        },
+        "on": {
+          "description": "What the rule listens for. source names a declared source; kind matches the event's kind, with * as a wildcard; cron filters a schedule source's ticks to the slots its expression names. Every other key is a dotted path into the payload and the value it must equal, a list matching when it contains the value. Absent, the rule matches every event.",
+          "$ref": "#/$defs/match"
+        },
+        "run": {
+          "description": "The command, run with /bin/sh -c in the project directory with the event in its environment; {{ }} templates in it are rendered first.",
+          "$ref": "#/$defs/command"
+        },
+        "debounce": {
+          "description": "Collapse a burst of matching events into one run after this window, on the last event of the burst.",
+          "$ref": "#/$defs/duration"
+        },
+        "limit": {
+          "title": "a limit like 10/hour",
+          "description": "A cap on runs per window - 10/hour, 3/day, 100/minute, 50/week; events over the cap are recorded as limited, not run and not deduped.",
+          "type": "string",
+          "pattern": "^[0-9]+\\s*/\\s*(minute|hour|day|week)$"
+        },
+        "repeat": {
+          "description": "Run again for an event key the rule has already acted on; by default a rule fires once per key, ever.",
+          "type": "boolean",
+          "default": false
+        },
+        "timeout": {
+          "description": "Kill the command after this long; the record says so.",
+          "$ref": "#/$defs/duration"
+        }
+      }
+    },
+    "match": {
+      "title": "a match",
+      "description": "The keys a rule matches on. The three named here are the tool's; any other key is a path into the payload.",
+      "type": "object",
+      "properties": {
+        "source": {
+          "description": "The name of a declared source.",
+          "type": "string",
+          "minLength": 1
+        },
+        "kind": {
+          "description": "The event's kind, with * as a wildcard: issue.created, pull_request.*, task.todo.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cron": {
+          "description": "For a schedule source: only the slots this expression names.",
+          "$ref": "#/$defs/cron"
+        }
+      },
+      "additionalProperties": true
+    }
+  }
+}

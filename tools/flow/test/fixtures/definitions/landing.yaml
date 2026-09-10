@@ -1,0 +1,11 @@
+name: landing
+states: [proposed, landed, refused, withdrawn]
+initial: proposed
+terminal: [landed, refused, withdrawn]
+links:
+  lane: { required: true }
+  branch: { required: false }
+transitions:
+  - { from: proposed, to: landed,    on: landed }
+  - { from: proposed, to: refused,   on: refused }
+  - { from: proposed, to: withdrawn, on: withdrawn }

@@ -1,0 +1,23 @@
+# A session as an earlier tool recorded it, kept as the test fixture. Blocked is not the end: a run
+# that filed requests waits on them, and a guard lets it resume once every
+# one is done.
+name: run
+states: [queued, running, succeeded, blocked, resumable, failed, canceled, lost]
+initial: queued
+terminal: [succeeded, failed, canceled, lost]
+links:
+  task: { required: false }          # a tracker slug
+  actor: { required: true }          # who works the session
+  branch: { required: false }        # learned after the start
+transitions:
+  - { from: queued,    to: running,   on: started }
+  - { from: queued,    to: canceled,  on: canceled }
+  - { from: running,   to: succeeded, on: exited, when: { exitCode: 0, requests: 0 } }
+  - { from: running,   to: blocked,   on: exited, when: { exitCode: 0 } }
+  - { from: running,   to: failed,    on: exited }
+  - { from: running,   to: canceled,  on: canceled }
+  - { from: running,   to: lost,      on: stale, after: 10m }
+  - { from: blocked,   to: resumable, on: unblocked, requires: { waits-on: { all: [done] } } }
+  - { from: blocked,   to: canceled,  on: canceled }
+  - { from: resumable, to: running,   on: started }
+  - { from: resumable, to: canceled,  on: canceled }

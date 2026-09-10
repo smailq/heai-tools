@@ -1,0 +1,53 @@
+#!/bin/sh
+# notify <dir> <event> [--every <seconds>] -- <settled arguments>
+#
+# What --notify starts detached inside the container: `settled` with the
+# arguments after --, then `fact` with what it printed, as <event>.<workspace>.
+# With --every, no settled fact: a heartbeat fact <event>.<workspace>-<n> with
+# an empty body every so many seconds until the wait ends.
+set -u
+PATH=/heai/bin:/usr/local/bin:$PATH
+# the other two helpers live beside this one, wherever that is
+here=$(cd "$(dirname "$0")" && pwd)
+settled="$here/settled"
+fact="$here/fact"
+if [ $# -lt 3 ]; then
+  echo 'usage: notify <dir> <event> [--every <seconds>] -- <settled arguments>' >&2
+  exit 2
+fi
+dir=$1 event=$2
+shift 2
+every=''
+while [ $# -gt 0 ]; do
+  case $1 in
+    --every) every=$2; shift 2 ;;
+    --) shift; break ;;
+    *) break ;;
+  esac
+done
+if [ $# -lt 2 ]; then
+  echo 'notify: nothing to wait for after --' >&2
+  exit 2
+fi
+target=$2
+
+if [ -z "$every" ]; then
+  body=$("$settled" "$@"); rc=$?
+  [ -n "$body" ] || body='{}'
+  ws=$(printf '%s' "$body" | jq -r '.workspace // empty' 2>/dev/null)
+  [ -n "$ws" ] || ws=${target%%:*}
+  "$fact" "$dir" "$event" "$ws" "$body"
+  exit "$rc"
+fi
+
+ws=${target%%:*}
+"$settled" "$@" >/dev/null 2>&1 &
+pid=$!
+n=0
+while kill -0 "$pid" 2>/dev/null; do
+  sleep "$every"
+  kill -0 "$pid" 2>/dev/null || break
+  n=$((n + 1))
+  "$fact" "$dir" "$event" "$ws-$n" '{}'
+done
+wait "$pid"

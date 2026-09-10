@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heai-tools:schemas:tasks:1",
+  "title": "heai-tools tasks configuration",
+  "description": "tasks.yaml, beside a tracker's items/: the one part of a tracker that is about the repository rather than the tasks. Every key is optional and an absent file is an empty configuration. tools/tasks/README.md is the specification.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "map": {
+      "title": "a path",
+      "description": "The architecture map whose territories `territory` may name, and from which each territory's owner is read. Relative to the tracker directory. Without it, `territory` accepts any non-empty value.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

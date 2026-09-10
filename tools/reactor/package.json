@@ -1,0 +1,25 @@
+{
+  "name": "@heai-tools/reactor",
+  "version": "0.1.0",
+  "description": "Reacts to things that happen - a clock reaching a time, a branch moving, a service posting, a URL answering differently, a script or a person emitting an event - by running a script with the event in its environment",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "reactor": "./src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}

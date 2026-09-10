@@ -1,0 +1,12 @@
+# An extended image: the base plus a project's toolchains and agents.
+# `pod build <tag>` passes the base's tag as BASE.
+ARG BASE=heai/pod-base
+FROM ${BASE}
+
+RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+# each agent, and its Herdr integration so Herdr reads the agent's state from the agent's own reports
+RUN npm install -g @anthropic-ai/claude-code @openai/codex \
+ && herdr integration install claude \
+ && herdr integration install codex

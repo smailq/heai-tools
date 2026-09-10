@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3                                        2s  13:41:00
+ tasks ── all 11 of 11 ──────────────────────────────── items/ changed 3m ago│ task ── blocked · document-tabs ───────── modified 2026-09-06
+ status       pri     slug                                                   │ title       Document tabs
+ in-progress  high    add-place-entity                                       │ status      blocked
+ in-review    -       inline-images-from-eml                                 │ priority    high
+ blocked      high    document-tabs                ← help-requested-by-web-ui│ territory   ui  → ui-owner
+ blocked      -       merge-two-entities           ← never-filed (blocker mi…│ created     2026-08-28
+ blocked      -       multiple-workspaces          ← ontology-entity-identit…│ modified    2026-09-06
+ todo         high    do-the-thing                                           │ blocked by  help-requested-by-web-ui  (todo)
+ todo         -       help-requested-by-web-ui                               │ file        ../tracker/testdata/tracker/items/document-tabs…
+ backlog      -       receipts-rollup-view                                   │ ── body ─────────────────────────────────────────────────────
+ done         low     old-and-done                                           │ Tabs.
+ canceled     -       ontology-entity-identity                               │ 
+ shipping     soon    broken                       invalid: missing frontmat…│ Blocked by [help-requested-by-web-ui](help-requested-by-web-
+                                                                             │ ui.md), requested by `web-ui` in run `2026`.
+                                                                             │
+                                                                             │
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2 · running 1 · clean  flow 4s ago
+ sessions 3 open of 4   running 1 · blocked 2 · clean 1   workspaces 3 (blocked 1 · idle 1 · running 1)                         flow 4s ago
+ ↑↓ move  ⇥ task  ⏎ expand  e edit  a start  p hide  b active  S sort  1-3 pane  s tick  / filter  +/- interval  r reload  ? help  q quit

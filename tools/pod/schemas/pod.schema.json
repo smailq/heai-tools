@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heai-tools:schemas:pod:1",
+  "title": "heai-tools pod configuration",
+  "description": "pod.yaml, in the project directory: the runtime, the container's default name, the base image and the extended images built on it, and what every `up` mounts and grants. Every key is optional and an absent file is an empty configuration. tools/pod/README.md is the specification.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "runtime": {
+      "title": "apple, docker or podman",
+      "description": "The container runtime on the host. Default: apple on macOS, docker elsewhere.",
+      "enum": ["apple", "docker", "podman"]
+    },
+    "name": {
+      "title": "a container name",
+      "description": "The default --container.",
+      "type": "string",
+      "minLength": 1
+    },
+    "base": {
+      "title": "an image tag",
+      "description": "The base image's tag; what `build base` tags and what extended images are built FROM.",
+      "type": "string",
+      "minLength": 1
+    },
+    "baseDir": {
+      "title": "a path",
+      "description": "The directory holding the base Containerfile, relative to the project directory; the tool's own image/ when unset.",
+      "type": "string",
+      "minLength": 1
+    },
+    "images": {
+      "title": "a mapping of image tag to directory",
+      "description": "Extended images built FROM the base: each key is the tag, each value the directory holding its Containerfile, relative to the project directory.",
+      "type": "object",
+      "propertyNames": { "minLength": 1 },
+      "additionalProperties": {
+        "title": "a path",
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "envFile": {
+      "title": "a path",
+      "description": "An env file handed to the runtime unread on `up`; credentials live here, not in an image.",
+      "type": "string",
+      "minLength": 1
+    },
+    "mounts": {
+      "title": "a list of host:container strings",
+      "description": "Bind mounts added to every `up`, each `host:container`.",
+      "type": "array",
+      "items": {
+        "title": "host:container",
+        "type": "string",
+        "pattern": "^[^:]+:.+$"
+      }
+    },
+    "resources": {
+      "title": "a mapping of cpus and memory",
+      "description": "Limits handed to the runtime when the container is created.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "cpus": {
+          "title": "a number",
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "memory": {
+          "title": "a size like 12G",
+          "type": ["string", "number"],
+          "pattern": "^[0-9]+[KMGkmg]?[Bb]?$"
+        }
+      }
+    }
+  }
+}

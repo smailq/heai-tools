@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3 2s  13:4
+ tasks ── all 11 of 11 ─────────────────────────────────────────────────── items/ changed 3m ago
+ status       pri     slug                  territory       routes to                           
+ in-progress  high    add-place-entity      core,desktop    core-reviewer,d…                    
+ in-review    -       inline-images-from-…  mail            mail-owner                          
+ blocked      high    document-tabs         ui              ui-owner          ← help-requested-…
+ blocked      -       merge-two-entities    core            core-reviewer     ← never-filed (bl…
+ blocked      -       multiple-workspaces   core,desktop    core-reviewer,d…  ← ontology-entity…
+ todo         high    do-the-thing          api             api-owner                           
+ todo         -       help-requested-by-w…  core            core-reviewer                       
+ backlog      -       receipts-rollup-view  -               (untriaged)                         
+ done         low     old-and-done          website         website-owner                       
+ canceled     -       ontology-entity-ide…  ontology        ontology-owner                      
+ shipping     soon    broken                -               (untriaged)       invalid: missing …
+
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1) flow 4s ago
+ sessions 3 open of 4   running 1 · blocked 2 · clean 1   workspaces 3 (blocked 1 · flow 4s ago
+ ↑↓ move  ⏎ open  e edit  a start  b active  S sort  1-3 pane  s tick  / filter  ? help  q quit

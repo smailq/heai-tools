@@ -1,0 +1,16 @@
+# A version cut from a promoted head: final checks, a tag, and the publish
+# command. Only a person starts one; the hook does the rest.
+name: release
+states: [open, released, failed]
+initial: open
+terminal: [released, failed]
+links:
+  head:    { required: true }
+  version: { required: true }
+  tag:     { required: false }
+transitions:
+  - { from: open, to: released, on: published, by: [release.sh] }
+  - { from: open, to: failed,   on: failed,    by: [release.sh] }
+  - { from: open, to: failed,   on: stale, after: 6h }
+hooks:
+  open: { run: scripts/release/release.sh }

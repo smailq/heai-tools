@@ -1,0 +1,21 @@
+# One branch brought into main. A hook announces the proposal to the reactor,
+# whose rules say which territories land without a person; the rest wait for one.
+name: landing
+states: [proposed, landed, refused, withdrawn]
+initial: proposed
+terminal: [landed, refused, withdrawn]
+links:
+  branch:    { required: true }        # the branch that landed
+  actor:     { required: true }        # who the work is attributed to
+  territory: { required: true }        # from `architect owner` over the changed paths; what the rules match on
+  session:   { required: false }       # the session that produced it
+  task:      { required: false }       # the tracker slug, when there is one
+  pr:        { required: false }       # the pull request, under a GitHub host
+transitions:
+  - { from: proposed, to: landed,    on: merged,    by: [human, land.sh, merged.sh] }
+  - { from: proposed, to: refused,   on: refused,   by: [human] }
+  - { from: proposed, to: withdrawn, on: withdrawn, by: [human, cancel.sh] }
+hooks:
+  proposed: { run: scripts/landing/announce.sh }
+  landed:   { run: scripts/checkpoint/start.sh }
+  refused:  { run: scripts/session/requeue.sh 0 }

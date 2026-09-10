@@ -1,0 +1,4 @@
+{"seq":0,"at":"2026-09-04T16:59:52.000Z","event":"start","from":null,"to":"queued","by":"session.sh","data":{"links":{"actor":"beta","task":"t2"}}}
+{"seq":1,"at":"2026-09-04T16:59:54.000Z","event":"started","from":"queued","to":"running","by":"session.sh","data":{}}
+{"seq":2,"at":"2026-09-04T16:59:56.000Z","event":"link","from":"running","to":"running","by":"session.sh","data":{"links":{"branch":"agent/beta/t2"}}}
+{"seq":3,"at":"2026-09-04T16:59:58.000Z","event":"exited","from":"running","to":"blocked","by":"session.sh","data":{"exitCode":0,"requests":1},"note":"filed help-requested-by-beta"}

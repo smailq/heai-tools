@@ -1,0 +1,16 @@
+#!/bin/sh
+# A fake herdr for the helpers' tests: records each argv to
+# $FAKE_HERDR_DIR/calls.log and answers `herdr <group> <command> ...` with
+# $FAKE_HERDR_DIR/<group>-<command>.json on stdout, or, when
+# <group>-<command>.err.json exists instead, with that on stderr and exit 1,
+# which is what the real one does.
+printf '%s\n' "$*" >> "$FAKE_HERDR_DIR/calls.log"
+key="$1-$2"
+if [ -f "$FAKE_HERDR_DIR/$key.err.json" ]; then
+  cat "$FAKE_HERDR_DIR/$key.err.json" >&2
+  exit 1
+fi
+if [ -f "$FAKE_HERDR_DIR/$key.json" ]; then
+  cat "$FAKE_HERDR_DIR/$key.json"
+fi
+exit 0

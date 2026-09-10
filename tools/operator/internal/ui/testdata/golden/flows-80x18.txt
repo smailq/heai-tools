@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  ses
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
+ flows ── 4 stuck older than 1h · 5 open ─────────────────────────── flow 4s ago
+ definition  state       id                              idle   stands          
+ landing     proposed    20260906-000200-landing-04e8    3h     -               
+ request     todo        20260906-030500-request-9a01    2h     -               
+ session     blocked     20260903-101010-session-1f2e    3d     canceled        
+ session     blocked     20260906-024801-session-77f0    2h     todo            
+ ── all open, by definition ────────────────────────────────────────────────────
+ landing     proposed   1
+ request     todo       1
+ session     blocked    2   running    1
+
+
+
+
+ sessions 3 open of 4   running 1 · blocked 2 · clean 1   workspace flow 4s ago
+ ↑↓ move  ⏎ trace  1-3 pane  s tick  / filter  +/- interval  ? help  q quit

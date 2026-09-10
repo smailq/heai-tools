@@ -1,0 +1,12 @@
+# A passing head moved to the release branch. Its parent is the checkpoint,
+# so what promoted is exactly what was checked.
+name: promotion
+states: [proposed, promoted, refused]
+initial: proposed
+terminal: [promoted, refused]
+links:
+  head:       { required: true }       # the head that was promoted
+  checkpoint: { required: true }
+transitions:
+  - { from: proposed, to: promoted, on: merged,  by: [human, promote.sh] }
+  - { from: proposed, to: refused,  on: refused, by: [human] }

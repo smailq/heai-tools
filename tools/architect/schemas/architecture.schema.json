@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:heai-tools:schemas:architecture:1",
+  "title": "heai-tools architecture map",
+  "description": "The single source of truth for a software system's architecture across one or more repositories: which actor owns which paths, which territories may depend on which, and the inline context that steers each owning actor. A repository here is a named, path-addressable tree; no particular version-control system or host is assumed. tools/architect/README.md is the specification, including the rules a validator must enforce that JSON Schema cannot express.",
+  "type": "object",
+  "required": ["version", "actors", "repositories", "territories"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "Schema version of this architecture map.",
+      "const": 1
+    },
+    "actors": {
+      "description": "Everything that can own a territory, keyed by name - the names territories reference in 'owner'. One namespace for every kind of owner, so a name is unique by construction and an owner resolves in a single lookup; each actor's 'type' says what kind of owner it is. Declaring an actor grants it nothing by itself; territories assign the paths.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/actor" }
+    },
+    "repositories": {
+      "description": "The repositories this map governs, keyed by a short local name that scope entries reference. A repository is a named, path-addressable tree - no particular version-control system is assumed. A monorepo declares exactly one entry.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/repository" }
+    },
+    "territories": {
+      "description": "The ownership territories, keyed by name - the name downstream tooling uses to refer to a territory.",
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": { "$ref": "#/$defs/name" },
+      "additionalProperties": { "$ref": "#/$defs/territory" }
+    },
+    "unowned": {
+      "description": "Posture for paths in a governed repository that match no territory. 'fail' (the default) makes an unowned path a scope gate violation, keeping the map exhaustive; 'allow' permits unowned paths, so a repository can adopt the map one territory at a time. A repository's own 'unowned' overrides this for that repository. The posture governs unowned paths only: a change that reaches into a territory its actor does not own fails under either.",
+      "enum": ["fail", "allow"],
+      "default": "fail"
+    },
+    "undeclaredDependencies": {
+      "description": "Posture for a dependency the code takes that the importing territory's 'dependsOn' does not declare. 'fail' (the default) makes such a dependency a violation, keeping the declared graph and the code in lockstep; 'warn' reports it as an advisory finding, so the map can land on a codebase whose imports it does not yet describe and each stray edge is declared or severed over time. A repository's or territory's own 'undeclaredDependencies' overrides this. The posture governs dependency edges only: a change that reaches into a territory its actor does not own fails under either.",
+      "enum": ["fail", "warn"],
+      "default": "fail"
+    }
+  },
+  "$defs": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]*$",
+      "description": "A map-local name for an actor, a repository, or a territory: lowercase, opening with a letter or digit, and otherwise letters, digits, '.', '_' and '-'."
+    },
+    "actor": {
+      "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {
+          "description": "What kind of owner this actor is. 'human' marks a person accountable for the territories they own - typically the paths that govern what agents may do; 'llm-agent' works inside the territories it owns, steered by its context. Every actor is confined to what it owns, whatever its type. This enum is where further kinds of owner are added.",
+          "enum": ["human", "llm-agent"]
+        },
+        "identity": {
+          "type": "string",
+          "minLength": 1,
+          "description": "@handle or email - whatever the surrounding tooling resolves; host integrations may map it to a platform account. Required for type 'human'; optional for other actors, which carry one only where they act under an account of their own."
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Actor-specific context, inline as markdown: the actor's role, focus, and standing guidance that applies across every territory it owns. Required for type 'llm-agent', which the map steers; optional for the rest."
+        },
+        "watches": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/name" },
+          "description": "Territories this actor observes without owning, each a key of 'territories': a maintainer watching for bugs and health, a reviewer watching what it reviews. Watching grants nothing - confinement is unchanged, and a watcher that needs a change files a task for the owner - it only steers the surrounding tooling: what context the actor is composed with, what changes and events reach it. An actor may watch a territory it owns, which is redundant and warned."
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "human" } } },
+          "then": { "required": ["identity"], "properties": { "identity": true } }
+        },
+        {
+          "if": { "required": ["type"], "properties": { "type": { "const": "llm-agent" } } },
+          "then": { "required": ["context"], "properties": { "context": true } }
+        }
+      ]
+    },
+    "repository": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remotePath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where the repository lives, for tools that need to reach it: a URL or host path, e.g. 'src.example.com/team/app'. Optional - a map governing a tree that is simply present, or has no remote home, names it and says no more."
+        },
+        "localPath": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Where a checkout of this repository sits on the machine reading the map: an absolute path, or one relative to the directory holding the map. Optional - tools that only reason about the map need nothing, while tools that read the tree resolve it here instead of being told on every invocation. It is a local convenience, not part of the architecture: a map is equally valid on a machine where the path does not exist."
+        },
+        "unowned": {
+          "description": "Overrides the map-level 'unowned' posture for this repository, so a newly onboarded repository can be mid-adoption while the others stay exhaustive.",
+          "enum": ["fail", "allow"]
+        },
+        "undeclaredDependencies": {
+          "description": "Overrides the map-level 'undeclaredDependencies' posture for dependencies whose importing side lives in this repository, so a newly onboarded repository's stray edges can be advisory while the others stay enforced.",
+          "enum": ["fail", "warn"]
+        }
+      }
+    },
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^/](.*[^/])?$",
+      "description": "Repo-root-relative glob, with no leading or trailing '/'. '**' matches zero or more path segments and is always a whole segment, '*' stays within one segment, '?' is one character; a bare filename matches only at the repository root. '[', '{' and '!' carry no special meaning and match themselves. Dot-prefixed paths are ordinary paths."
+    },
+    "globList": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/glob" }
+    },
+    "scopeEntry": {
+      "type": "object",
+      "required": ["repository", "globs"],
+      "additionalProperties": false,
+      "properties": {
+        "repository": { "$ref": "#/$defs/name", "description": "A key of 'repositories'." },
+        "globs": { "$ref": "#/$defs/globList" },
+        "exclude": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": false,
+          "description": "What this entry subtracts from its own 'globs', within the same repository, so a territory can claim a whole tree and carve out what other territories own. A path belongs to the entry when it matches at least one glob and no exclusion. Exclusion only ever removes paths from this entry; it says nothing about who owns the excluded path, which belongs to whichever territory claims it, or is unowned. Subtraction resolves before the no-overlap rule, which compares the path sets that remain.",
+          "properties": {
+            "globs": {
+              "$ref": "#/$defs/globList",
+              "description": "Patterns subtracted directly."
+            },
+            "territories": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "$ref": "#/$defs/name" },
+              "description": "Territories whose claim this entry yields to, each a key of 'territories'. Subtracts the globs that territory's scope declares for this repository, so a catch-all need not restate its siblings' patterns. Not recursive: it subtracts that territory's declared globs, not that territory's own exclusions."
+            }
+          }
+        }
+      }
+    },
+    "territory": {
+      "type": "object",
+      "required": ["scope"],
+      "additionalProperties": false,
+      "anyOf": [{ "required": ["owner"] }, { "required": ["parent"] }],
+      "properties": {
+        "parent": {
+          "$ref": "#/$defs/name",
+          "description": "A key of 'territories', making this territory a child carved out of that one. A child's declared globs must fall within its parent's declared globs, and the parent's effective scope is what remains after each child's declared globs are subtracted - the no-overlap rule compares effective scopes - so a child sits inside its parent without overlap and without the parent writing a mirroring 'exclude'. Like 'exclude.territories', the subtraction is not recursive: the parent loses the child's declared globs, not the child's own exclusions. 'owner' and the 'undeclaredDependencies' posture default from the nearest ancestor that sets them, and ancestor contexts layer onto the child's own. Dependency edges do not flow: 'dependsOn' names the child or the parent exactly, and depending on one grants nothing about the other. The relation must be a forest - acyclic, no territory its own parent."
+        },
+        "owner": {
+          "$ref": "#/$defs/name",
+          "description": "A key of 'actors'. Every actor is confined to the territories it owns; a human-owned territory is where the paths that govern what llm-agents may do belong. Optional on a territory with a 'parent': left out, it defaults to the nearest ancestor's owner; declared, it assigns this territory's owner outright, and is what this territory's own children default from. Required on a territory without a parent."
+        },
+        "scope": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/scopeEntry" },
+          "description": "Explicit per-repository path sets; each entry names its repository. A territory may span repositories."
+        },
+        "dependsOn": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/name" },
+          "description": "The territories this one may import from (or depend on packages of), each a key of 'territories'. A territory that declares none may depend on no other territory. Edges are direct and do not compose: naming B does not grant access to what B depends on. Within one repository these are import rules enforceable by graph tools, both sides resolving from path to territory; across repositories they constrain declared package dependencies, with the resolution of a package name to a territory left to the surrounding tooling. Every territory's declarations together form the system's dependency graph, which must be acyclic.",
+          "$comment": "Declared on the territory so a territory's full definition is readable in one place."
+        },
+        "undeclaredDependencies": {
+          "description": "Overrides the 'undeclaredDependencies' posture for dependencies this territory's code takes, so one legacy territory can be advisory while the rest of the map stays enforced. The most specific setting wins: this one, else the nearest ancestor territory's, else the importing repository's, else the map's.",
+          "enum": ["fail", "warn"]
+        },
+        "context": {
+          "type": "string",
+          "minLength": 1,
+          "description": "The territory's context, inline as markdown: the invariants, review discipline, and background needed to work in and review the territory. Optional for every territory, whoever owns it."
+        }
+      }
+    }
+  }
+}

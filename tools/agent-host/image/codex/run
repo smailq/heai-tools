@@ -1,3 +1,0 @@
-#!/bin/sh
-# The runner contract: the prompt on stdin, the work in $PWD, the outcome in $?.
-exec codex exec --dangerously-bypass-approvals-and-sandbox "$(cat)"

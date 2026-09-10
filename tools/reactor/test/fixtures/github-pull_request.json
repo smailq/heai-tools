@@ -1,0 +1,1 @@
+{"action":"closed","number":42,"pull_request":{"number":42,"title":"Cache the index","merged":true,"merge_commit_sha":"6dcb09b5b57875f334f61aebed695e2e4193db5e","head":{"ref":"agent/alpha/cache-the-index"},"base":{"ref":"main"}},"repository":{"full_name":"acme/awareness3"}}

@@ -1,0 +1,86 @@
+{
+  "id": "20260906-024801-session-77f0",
+  "definition": "session",
+  "state": "blocked",
+  "terminal": false,
+  "since": "2026-09-09T11:41:00.000Z",
+  "startedAt": "2026-09-09T11:37:00.000Z",
+  "seq": 4,
+  "links": {
+    "actor": "web-ui",
+    "task": "document-tabs",
+    "repo": "app",
+    "branch": "agent/web-ui/document-tabs"
+  },
+  "parent": null,
+  "waitsOn": [
+    "20260906-030500-request-9a01"
+  ],
+  "touchedAt": null,
+  "expiresAt": null,
+  "hooks": {},
+  "problems": [],
+  "journal": [
+    {
+      "seq": 0,
+      "at": "2026-09-09T11:37:00.000Z",
+      "event": "start",
+      "from": null,
+      "to": "queued",
+      "by": "pick.sh",
+      "data": {
+        "links": {
+          "actor": "web-ui",
+          "task": "document-tabs",
+          "repo": "app",
+          "branch": "agent/web-ui/document-tabs"
+        }
+      }
+    },
+    {
+      "seq": 1,
+      "at": "2026-09-09T11:38:00.000Z",
+      "event": "started",
+      "from": "queued",
+      "to": "running",
+      "by": "start.sh",
+      "data": {}
+    },
+    {
+      "seq": 2,
+      "at": "2026-09-09T11:39:00.000Z",
+      "event": "exited",
+      "from": "running",
+      "to": "exited",
+      "by": "inbox-fixture",
+      "data": {
+        "exitCode": 0
+      }
+    },
+    {
+      "seq": 3,
+      "at": "2026-09-09T11:40:00.000Z",
+      "event": "link",
+      "from": "exited",
+      "to": "exited",
+      "by": "finish.sh",
+      "data": {
+        "waitsOn": [
+          "20260906-030500-request-9a01"
+        ]
+      }
+    },
+    {
+      "seq": 4,
+      "at": "2026-09-09T11:41:00.000Z",
+      "event": "gated",
+      "from": "exited",
+      "to": "blocked",
+      "by": "finish.sh",
+      "data": {
+        "verdict": "clean",
+        "requested": true
+      }
+    }
+  ]
+}

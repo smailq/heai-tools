@@ -1,0 +1,28 @@
+{
+  "name": "@heai-tools/architect",
+  "version": "0.1.0",
+  "description": "The architecture map as one tool: the reference validator, the map queries other tools need, and the scope gate that checks a diff against its ownership boundaries, as a command and as a library",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "architect": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}

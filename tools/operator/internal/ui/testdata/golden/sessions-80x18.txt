@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  ses
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo flow 4s ago
+ sessions ── 3 open of 4 ─────────────────────────────────────────── flow 4s ago
+ id                            actor           task            state    
+ 20260906-031244-session-9a1c  desktop-owner   add-place-ent…  running          
+ 20260906-024801-session-77f0  web-ui          document-tabs   blocked  
+ 20260905-235010-session-e4a2  web-ui          category-butt…  clean    
+ 20260903-101010-session-1f2e  core-reviewer   merge-two-ent…  blocked  
+
+
+
+
+ ── workspaces 3 · pod list ────────────────────────────────────────────────────
+ w3     desktop-owner/add-place-entity  claude desktop-owner    running 
+ w1     web-ui/document-tabs            claude web-ui           idle    
+ w2     core-reviewer/merge-two-entit…  claude core-reviewer    blocked 
+ ↑↓ move  ⏎ trace  c cancel  1-3 pane  s tick  / filter  ? help  q quit

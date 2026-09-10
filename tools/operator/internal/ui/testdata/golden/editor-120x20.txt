@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3                    2s  13:41:00
+ tasks ── all 11 of 11 ───────────────────── items/ changed 3m ago│ task ── blocked · document-tabs ──── modified 2026-…
+ status       pri     slug                                        │ title       Document tabs
+ in-progress  high    add-place-entity                            │ status      blocked
+ in-review    -       inline-images-from-…                        │ priority    high
+ blocked      high    document-tabs         ← help-requested-by-w…│ territory   ui  → ui-owner
+ blocked      -       merge-two-entities    ← never-filed (blocke…│ created     2026-08-28
+ blocked      -       multiple-workspaces   ← ontology-entity-ide…│ modified    2026-09-06
+ todo         high    do-the-thing                                │ blocked by  help-requested-by-web-ui  (todo)
+ todo         -       help-requested-by-w…                        │ file        ../tracker/testdata/tracker/items/docu…
+ backlog      -       receipts-rollup-view                        │ ── body ─────────────────── lines 1-3 of 5 · 2 more 
+ done         low     old-and-done                                │ Tabs.
+ canceled     -       ontology-entity-ide…                        │ 
+ shipping     soon    broken                invalid: missing fron…│ Blocked by [help-requested-by-web-ui](help-
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
+ sessions 3 open of 4   running 1 · blocked 2 · clean 1   workspaces 3 (blocked 1 · idle 1 · running 1)     flow 4s ago
+ edit ── document-tabs   ──────────────────────────────────────────────────────── ⏎ apply through tasks set · esc cancel
+ status     in-progress   in-review   blocked   todo   backlog   done   canceled 
+ priority   -   urgent  [high]  medium   low 
+ ←→ choose  ↑↓ row  1-7 pick  ⏎ apply  esc cancel

@@ -1,0 +1,16 @@
+#!/bin/sh
+# fact <dir> <event> <suffix> [<json>]
+# One fact file, flow's inbox protocol: written as <event>.<suffix>.tmp, then
+# renamed to <event>.<suffix>, so a reader never sees a torn file. The body
+# is one JSON object, {} when none is given.
+set -eu
+if [ $# -lt 3 ]; then
+  echo 'usage: fact <dir> <event> <suffix> [<json>]' >&2
+  exit 2
+fi
+dir=$1 event=$2 suffix=$3
+body=${4:-'{}'}
+mkdir -p "$dir"
+tmp="$dir/$event.$suffix.tmp"
+printf '%s\n' "$body" > "$tmp"
+mv -f "$tmp" "$dir/$event.$suffix"

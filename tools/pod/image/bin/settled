@@ -1,0 +1,94 @@
+#!/bin/sh
+# settled wait   <target> [--until <state>]... [--timeout <ms>]
+# settled prompt <target> <text> [--timeout <ms>]
+# settled run    <pane> <sentinel> [--timeout <ms>]
+#
+# Waits for an agent or a command to settle and prints one JSON object,
+# { workspace, pane, agent, state, exitCode }, which is the body of the fact
+# `notify` writes. The exit status is exitCode: 0 idle, done or a command that
+# exited 0; 1 blocked or a failing command; 2 a timeout, a stalled prompt or a
+# target that is gone. It calls herdr and lifts fields out with jq, nothing else.
+set -u
+PATH=/heai/bin:/usr/local/bin:$PATH
+if [ $# -lt 2 ]; then
+  echo 'usage: settled wait|prompt|run <target> ...' >&2
+  exit 2
+fi
+mode=$1 target=$2
+shift 2
+
+err=$(mktemp)
+trap 'rm -f "$err"' EXIT
+
+# emit <workspace> <pane> <agent> <state> <exitCode>: print the body and exit with the code
+emit() {
+  jq -cn --arg ws "$1" --arg pane "$2" --arg agent "$3" --arg state "$4" --argjson code "$5" \
+    '{workspace: (if $ws == "" then null else $ws end), pane: (if $pane == "" then null else $pane end), agent: (if $agent == "" then null else $agent end), state: $state, exitCode: $code}'
+  exit "$5"
+}
+
+code_for() {
+  case $1 in
+    idle|done) echo 0 ;;
+    blocked) echo 1 ;;
+    timeout|lost|stalled) echo 2 ;;
+    *) echo 1 ;;
+  esac
+}
+
+# the state a herdr error stands for, from the JSON it wrote on stderr
+err_state() {
+  c=$(jq -r '.error.code // empty' "$1" 2>/dev/null)
+  case $c in
+    timeout) echo timeout ;;
+    agent_blocked) echo blocked ;;
+    agent_prompt_stalled) echo stalled ;;
+    ''|*not_found|server_not_running) echo lost ;;
+    *) echo "$c" ;;
+  esac
+}
+
+case $mode in
+  wait|prompt)
+    info=$(herdr agent get "$target" 2>/dev/null) || info=''
+    ws=$(printf '%s' "$info" | jq -r '.result.agent.workspace_id // empty' 2>/dev/null)
+    pane=$(printf '%s' "$info" | jq -r '.result.agent.pane_id // empty' 2>/dev/null)
+    agent=$(printf '%s' "$info" | jq -r '.result.agent.name // empty' 2>/dev/null)
+    case $target in
+      *:*) [ -n "$ws" ] || ws=${target%%:*}; [ -n "$pane" ] || pane=$target ;;
+      *) [ -n "$agent" ] || agent=$target ;;
+    esac
+    if [ "$mode" = wait ]; then
+      out=$(herdr agent wait "$target" "$@" 2>"$err"); rc=$?
+    else
+      if [ $# -lt 1 ]; then echo 'usage: settled prompt <target> <text> [--timeout <ms>]' >&2; exit 2; fi
+      text=$1; shift
+      out=$(herdr agent prompt "$target" "$text" --wait "$@" 2>"$err"); rc=$?
+    fi
+    if [ "$rc" -eq 0 ]; then
+      state=$(printf '%s' "$out" | jq -r '.result.agent.agent_status // "unknown"' 2>/dev/null)
+      [ -n "$state" ] || state=unknown
+    else
+      state=$(err_state "$err")
+    fi
+    emit "$ws" "$pane" "$agent" "$state" "$(code_for "$state")"
+    ;;
+  run)
+    if [ $# -lt 1 ]; then echo 'usage: settled run <pane> <sentinel> [--timeout <ms>]' >&2; exit 2; fi
+    sentinel=$1; shift
+    ws=${target%%:*} pane=$target
+    out=$(herdr pane wait-output "$pane" --regex "${sentinel}=[0-9]+" "$@" 2>"$err"); rc=$?
+    if [ "$rc" -eq 0 ]; then
+      line=$(printf '%s' "$out" | jq -r '.result.matched_line // empty' 2>/dev/null)
+      n=${line##*=}
+      case $n in ''|*[!0-9]*) n=1 ;; esac
+      emit "$ws" "$pane" '' exited "$n"
+    else
+      emit "$ws" "$pane" '' "$(err_state "$err")" 2
+    fi
+    ;;
+  *)
+    echo "settled: $mode is not wait, prompt or run" >&2
+    exit 2
+    ;;
+esac

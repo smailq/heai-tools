@@ -1,0 +1,71 @@
+[
+  {
+    "name": "platform",
+    "owner": "smailq",
+    "declaredOwner": "smailq",
+    "parent": null,
+    "globs": [
+      {
+        "repository": "awareness3",
+        "globs": [
+          "architecture.yaml",
+          ".github/**"
+        ]
+      }
+    ],
+    "dependsOn": [],
+    "hasContext": true
+  },
+  {
+    "name": "core",
+    "owner": "core-reviewer",
+    "declaredOwner": "core-reviewer",
+    "parent": null,
+    "globs": [
+      {
+        "repository": "awareness3",
+        "globs": [
+          "packages/core/**"
+        ]
+      }
+    ],
+    "dependsOn": [
+      "ontology"
+    ],
+    "hasContext": true
+  },
+  {
+    "name": "core-lib",
+    "owner": "core-reviewer",
+    "declaredOwner": null,
+    "parent": "core",
+    "globs": [
+      {
+        "repository": "awareness3",
+        "globs": [
+          "packages/core/lib/**"
+        ]
+      }
+    ],
+    "dependsOn": [],
+    "hasContext": false
+  },
+  {
+    "name": "desktop",
+    "owner": "desktop-owner",
+    "declaredOwner": "desktop-owner",
+    "parent": null,
+    "globs": [
+      {
+        "repository": "awareness3",
+        "globs": [
+          "apps/desktop/**"
+        ]
+      }
+    ],
+    "dependsOn": [
+      "core"
+    ],
+    "hasContext": true
+  }
+]

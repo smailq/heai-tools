@@ -1,0 +1,130 @@
+[
+  {
+    "id": "20260906-031244-session-9a1c",
+    "definition": "session",
+    "state": "running",
+    "terminal": false,
+    "since": "2026-09-09T13:35:00.000Z",
+    "startedAt": "2026-09-09T13:34:00.000Z",
+    "seq": 1,
+    "links": {
+      "actor": "desktop-owner",
+      "task": "add-place-entity",
+      "repo": "app",
+      "branch": "agent/desktop-owner/add-place-entity"
+    },
+    "parent": null,
+    "waitsOn": [],
+    "touchedAt": "2026-09-09T13:37:00.000Z",
+    "expiresAt": "2026-09-09T13:47:00.000Z"
+  },
+  {
+    "id": "20260906-030500-request-9a01",
+    "definition": "request",
+    "state": "todo",
+    "terminal": false,
+    "since": "2026-09-09T11:40:00.000Z",
+    "startedAt": "2026-09-09T11:40:00.000Z",
+    "seq": 0,
+    "links": {
+      "task": "help-requested-by-web-ui"
+    },
+    "parent": "20260906-024801-session-77f0",
+    "waitsOn": [],
+    "touchedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "20260906-024801-session-77f0",
+    "definition": "session",
+    "state": "blocked",
+    "terminal": false,
+    "since": "2026-09-09T11:41:00.000Z",
+    "startedAt": "2026-09-09T11:37:00.000Z",
+    "seq": 4,
+    "links": {
+      "actor": "web-ui",
+      "task": "document-tabs",
+      "repo": "app",
+      "branch": "agent/web-ui/document-tabs"
+    },
+    "parent": null,
+    "waitsOn": [
+      "20260906-030500-request-9a01"
+    ],
+    "touchedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "20260906-000200-landing-04e8",
+    "definition": "landing",
+    "state": "proposed",
+    "terminal": false,
+    "since": "2026-09-09T10:41:00.000Z",
+    "startedAt": "2026-09-09T10:41:00.000Z",
+    "seq": 0,
+    "links": {
+      "lane": "core",
+      "branch": "agent/web-ui/category-buttons"
+    },
+    "parent": "20260905-235010-session-e4a2",
+    "waitsOn": [],
+    "touchedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "20260905-235010-session-e4a2",
+    "definition": "session",
+    "state": "clean",
+    "terminal": true,
+    "since": "2026-09-09T09:41:00.000Z",
+    "startedAt": "2026-09-09T09:38:00.000Z",
+    "seq": 3,
+    "links": {
+      "actor": "web-ui",
+      "task": "category-buttons",
+      "repo": "app"
+    },
+    "parent": null,
+    "waitsOn": [],
+    "touchedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "20260903-104400-request-c3d4",
+    "definition": "request",
+    "state": "canceled",
+    "terminal": true,
+    "since": "2026-09-07T13:41:00.000Z",
+    "startedAt": "2026-09-07T13:40:00.000Z",
+    "seq": 1,
+    "links": {
+      "task": "ontology-entity-identity"
+    },
+    "parent": "20260903-101010-session-1f2e",
+    "waitsOn": [],
+    "touchedAt": null,
+    "expiresAt": null
+  },
+  {
+    "id": "20260903-101010-session-1f2e",
+    "definition": "session",
+    "state": "blocked",
+    "terminal": false,
+    "since": "2026-09-06T13:41:00.000Z",
+    "startedAt": "2026-09-06T13:37:00.000Z",
+    "seq": 4,
+    "links": {
+      "actor": "core-reviewer",
+      "task": "merge-two-entities",
+      "repo": "app",
+      "branch": "agent/core-reviewer/merge-two-entities"
+    },
+    "parent": null,
+    "waitsOn": [
+      "20260903-104400-request-c3d4"
+    ],
+    "touchedAt": null,
+    "expiresAt": null
+  }
+]

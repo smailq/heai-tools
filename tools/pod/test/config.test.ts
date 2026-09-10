@@ -1,0 +1,83 @@
+import { test } from 'node:test'
+import assert from 'node:assert/strict'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { defaultRuntime, ensureState, parseConfig, parseDuration, parseEnv, readConfig, resolvePaths, SCHEMA_PATH, schemaProblems, UsageError } from '../src/config.ts'
+import { parseMount } from '../src/box.ts'
+import { makeWorld } from './helpers.ts'
+
+test('paths: --dir, then HEAI_DIR, then an explicit map\'s directory, then the cwd; .heai/architecture.yaml wins when it exists', () => {
+  const w = makeWorld()
+  const p = resolvePaths({}, { HEAI_DIR: w.dir }, '/elsewhere')
+  assert.deepEqual(p, { dir: w.dir, map: w.map, state: join(w.dir, 'pod'), config: join(w.dir, 'pod.yaml') })
+  assert.equal(resolvePaths({ dir: '/x' }, { HEAI_DIR: w.dir }, '/elsewhere').dir, '/x', '--dir beats HEAI_DIR')
+  assert.equal(resolvePaths({}, { HEAI_MAP: '/p/architecture.yaml' }, '/elsewhere').dir, '/p', 'an explicit map places the directory')
+  assert.equal(resolvePaths({}, {}, w.dir).dir, w.dir, 'else the cwd')
+  assert.equal(resolvePaths({ state: 's' }, {}, w.dir).state, join(w.dir, 's'))
+  assert.equal(resolvePaths({}, { HEAI_POD_STATE: '/st' }, w.dir).state, '/st')
+  mkdirSync(join(w.dir, '.heai'))
+  writeFileSync(join(w.dir, '.heai', 'architecture.yaml'), 'version: 1\n')
+  assert.equal(resolvePaths({}, {}, w.dir).map, join(w.dir, '.heai', 'architecture.yaml'))
+  assert.equal(resolvePaths({}, {}, w.dir).state, join(w.dir, 'pod'), 'the state stays in the project directory, not in .heai/')
+})
+
+test('configuration: checked against the schema, ~ expanded, absent file is {}', () => {
+  const w = makeWorld()
+  const path = join(w.dir, 'pod.yaml')
+  assert.deepEqual(readConfig(path), {})
+  writeFileSync(path, 'runtime: docker\nname: heai-aw3\nbase: aw3/base\nbaseDir: ~/aw3/base\nimages:\n  aw3/workshop: ~/aw3/images/workshop\n  aw3/ops: images/ops\nenvFile: ~/.heai/aw3.env\nmounts:\n  - ~/aw3/flow/flows:/heai/flow\nresources: { cpus: 6, memory: 12G }\n')
+  const c = readConfig(path)
+  assert.equal(c.runtime, 'docker')
+  assert.equal(c.name, 'heai-aw3')
+  assert.equal(c.base, 'aw3/base')
+  assert.ok(c.baseDir!.endsWith('/aw3/base') && !c.baseDir!.startsWith('~'))
+  assert.ok(c.images!['aw3/workshop']!.endsWith('/aw3/images/workshop') && !c.images!['aw3/workshop']!.startsWith('~'))
+  assert.equal(c.images!['aw3/ops'], 'images/ops')
+  assert.ok(c.envFile!.endsWith('/.heai/aw3.env') && !c.envFile!.startsWith('~'))
+  assert.ok(c.mounts![0]!.endsWith('/aw3/flow/flows:/heai/flow') && !c.mounts![0]!.startsWith('~'))
+  assert.deepEqual(c.resources, { cpus: 6, memory: '12G' })
+  assert.throws(() => parseConfig('mounts: nope\n'), /\/mounts: must be a list of host:container strings/)
+  assert.throws(() => parseConfig('mounts: [nocolon]\n'), /\/mounts\/0: must be host:container/)
+  assert.throws(() => parseConfig('images: [a, b]\n'), /\/images: must be a mapping of image tag to directory/)
+  assert.throws(() => parseConfig('images: { x: 1 }\n'), /\/images\/x: must be a path/)
+  assert.throws(() => parseConfig('resources: { cpus: six }\n'), /\/resources\/cpus: must be a number/)
+  assert.throws(() => parseConfig('resources: { disk: 1 }\n'), /\/resources: unknown key "disk"; the keys are cpus, memory/)
+  assert.throws(() => parseConfig('runtime: lxc\n'), /\/runtime: must be apple, docker or podman/)
+  assert.throws(() => parseConfig('image: aw3/workshop\n'), /\/: unknown key "image"; the keys are runtime, name, base/)
+  assert.throws(() => parseConfig('- a list\n'), /must be a mapping/)
+  assert.throws(() => parseConfig('a: [\n'), /not valid YAML/)
+  assert.equal(schemaProblems({ runtime: 1, name: '' }).length, 2, 'every problem at once')
+  assert.deepEqual(schemaProblems({}), [])
+  assert.deepEqual(parseConfig(''), {})
+  assert.deepEqual(parseConfig('resources: { memory: 12 }\n'), { resources: { memory: '12' } })
+  assert.ok(existsSync(SCHEMA_PATH), 'the schema ships with the tool')
+  writeFileSync(path, '')
+  assert.deepEqual(readConfig(path), {})
+})
+
+test('the state directory: repos, worktrees, inbox and a .gitignore of *', () => {
+  const w = makeWorld()
+  const s = ensureState(w.state)
+  assert.deepEqual(s, { root: w.state, repos: join(w.state, 'repos'), worktrees: join(w.state, 'worktrees'), inbox: join(w.state, 'inbox') })
+  for (const d of [s.repos, s.worktrees, s.inbox]) assert.ok(existsSync(d))
+  assert.equal(readFileSync(join(w.state, '.gitignore'), 'utf8'), '*\n')
+  writeFileSync(join(w.state, '.gitignore'), '*\n!keep\n')
+  ensureState(w.state)
+  assert.equal(readFileSync(join(w.state, '.gitignore'), 'utf8'), '*\n!keep\n', 'an edited .gitignore is left alone')
+})
+
+test('small parsers: durations, env pairs, mounts, the default runtime', () => {
+  assert.equal(parseDuration('60s'), 60_000)
+  assert.equal(parseDuration('5m'), 300_000)
+  assert.equal(parseDuration('2h'), 7_200_000)
+  assert.equal(parseDuration('1500'), 1500)
+  assert.equal(parseDuration('1500ms'), 1500)
+  assert.equal(parseDuration('soon'), null)
+  assert.deepEqual(parseEnv(['A=1', 'B=x=y']), { A: '1', B: 'x=y' })
+  assert.throws(() => parseEnv(['nope']), UsageError)
+  assert.deepEqual(parseMount('/a/b:/c'), { host: '/a/b', container: '/c' })
+  assert.throws(() => parseMount('/a/b'), UsageError)
+  assert.throws(() => parseMount(':/c'), UsageError)
+  assert.equal(defaultRuntime('darwin'), 'apple')
+  assert.equal(defaultRuntime('linux'), 'docker')
+})

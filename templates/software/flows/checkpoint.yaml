@@ -1,0 +1,16 @@
+# A head of main checked as a whole. The checks' logs are the script's files
+# beside the flow; the flow carries the verdict.
+name: checkpoint
+states: [open, pass, fail]
+initial: open
+terminal: [pass, fail]
+links:
+  head:    { required: true }          # the commit the checks ran against
+  landing: { required: false }         # the landing that produced it, when one did
+transitions:
+  - { from: open, to: pass, on: checked, when: { failed: 0 }, by: [check.sh] }
+  - { from: open, to: fail, on: checked, by: [check.sh] }
+  - { from: open, to: fail, on: stale, after: 6h }
+hooks:
+  open: { run: scripts/checkpoint/check.sh }
+  fail: { run: scripts/checkpoint/file.sh }

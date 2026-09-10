@@ -16,12 +16,14 @@ The normative statement is the [design principles](../README.md#design-principle
 A tool must not import source from another tool.
 Where two tools need the same logic, either publish it or implement it twice on purpose - a copy whose divergence is caught by tests beats a shared library that couples release cycles across ecosystems.
 
-Tools read [`../schemas/architecture.schema.json`](../schemas/architecture.schema.json) and [`../docs/architecture-map.md`](../docs/architecture-map.md) as their contract, not each other.
+Tools read [`architect/schemas/architecture.schema.json`](architect/schemas/architecture.schema.json) and the map's rules in [`architect/README.md`](architect/README.md) as their contract, not each other.
 
 ## Tools
 
-- [`map-check`](map-check) - the reference validator for the map, as a command and a library, with the owner, territory, actor and context queries other tools shell out for.
-- [`scope-gate`](scope-gate) - checks a diff against the map's ownership boundaries.
-- [`map-editor`](map-editor) - a web editor for visualizing and editing the map.
-- [`task-manager`](task-manager) - a file-based task tracker for a repository, managed by an agent.
-- [`agent-host`](agent-host) - hosts the map's llm-agent actors, one Apple container each, and hands them tracker tasks.
+- [`architect`](architect) - the reference validator for the map, the owner, territory, actor and context queries other tools shell out for, and the scope gate that checks a diff against the map's ownership boundaries, as a command and a library.
+- [`map-editor`](_map-editor) - a web editor for visualizing and editing the map.
+- [`tasks`](tasks) - a file-based task tracker for a repository, managed by an agent.
+- [`reactor`](reactor) - the one daemon, and a router: ticks, commits, webhooks, polls and `reactor emit` become events, and each event runs the one script its rule names.
+- [`pod`](pod) - one persistent container running Herdr, a worktree per piece of work, an agent or a command in it, and a fact file when it settles.
+- [`flow`](flow) - a state machine per record and a graph of records: a definition per process with one script per state, an append-only journal per flow, the script run on each state entered, and one command that says what state anything is in, what it waits on, and what is stuck.
+- [`operator`](operator) - an `htop`-shaped terminal view of the tools' state: tasks, flows and sessions, read from their files and CLIs.

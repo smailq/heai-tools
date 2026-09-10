@@ -1,9 +1,0 @@
-# The default image: Claude Code as the harness.
-FROM docker.io/library/node:22-bookworm-slim
-RUN apt-get update \
- && apt-get install -y --no-install-recommends git ca-certificates ripgrep \
- && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @anthropic-ai/claude-code && npm cache clean --force
-COPY run /heai/run
-RUN chmod +x /heai/run && mkdir -p /work /heai/runs
-WORKDIR /work

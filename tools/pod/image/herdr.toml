@@ -1,0 +1,18 @@
+# The in-container Herdr configuration; HERDR_CONFIG_PATH points here.
+# `herdr --default-config` prints every key.
+
+[server]
+# the virtual terminal size while no client is attached
+headless_cols = 160
+headless_rows = 50
+
+[terminal]
+default_shell = "/bin/bash"
+
+[worktrees]
+# every `worktree create` lands under <directory>/<repository>/<branch>
+directory = "/worktrees"
+
+[session]
+# a container restarted by `down` and `up` brings each agent's own conversation back into its pane
+resume_agents_on_restore = true

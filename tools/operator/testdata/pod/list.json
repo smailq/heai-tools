@@ -1,0 +1,23 @@
+[
+  {
+    "id": "w3",
+    "label": "desktop-owner/add-place-entity",
+    "repo": "app",
+    "branch": "agent/desktop-owner/add-place-entity",
+    "agent": { "kind": "claude", "name": "desktop-owner", "state": "running" }
+  },
+  {
+    "id": "w1",
+    "label": "web-ui/document-tabs",
+    "repo": "app",
+    "branch": "agent/web-ui/document-tabs",
+    "agent": { "kind": "claude", "name": "web-ui", "state": "idle" }
+  },
+  {
+    "id": "w2",
+    "label": "core-reviewer/merge-two-entities",
+    "repo": "app",
+    "branch": "agent/core-reviewer/merge-two-entities",
+    "agent": { "kind": "claude", "name": "core-reviewer", "state": "blocked" }
+  }
+]

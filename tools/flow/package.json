@@ -1,0 +1,28 @@
+{
+  "name": "@heai-tools/flow",
+  "version": "0.1.0",
+  "description": "Tracks a multi-stage process as a state machine per record and a graph of records: a definition, an append-only journal per flow, and one command that says where anything is",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "flow": "./src/cli.ts"
+  },
+  "exports": {
+    ".": "./src/store.ts"
+  },
+  "scripts": {
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}

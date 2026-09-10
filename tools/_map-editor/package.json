@@ -1,0 +1,28 @@
+{
+  "name": "@heai-tools/map-editor",
+  "version": "0.1.0",
+  "description": "Web editor for visualizing and editing the architecture map",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "map-editor": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "node src/server.ts",
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@heai-tools/architect": "file:../architect",
+    "cytoscape": "^3.34.2",
+    "cytoscape-fcose": "^2.2.0",
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}

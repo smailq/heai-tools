@@ -1,0 +1,4 @@
+root@heai-workshop agent-api-owner-t1 % printf "%s\n" hello; false; echo "__heai_exit=$?"
+hello
+__heai_exit=1
+root@heai-workshop agent-api-owner-t1 %

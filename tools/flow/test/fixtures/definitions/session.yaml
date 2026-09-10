@@ -1,0 +1,36 @@
+# A session: one flow per agent session about a task, with a hook naming
+# the script flow starts on entering each state. The scripts do not exist under a test's project
+# directory, so a test that starts one records exit 127 for queued.
+name: session
+states: [queued, running, waiting, exited, clean, violation, blocked, resumable, failed, canceled, lost]
+initial: queued
+terminal: [clean, violation, failed, canceled, lost]
+links:
+  actor: { required: true }
+  task:  { required: true }
+  repo:  { required: true }
+  workspace: { required: false }
+  branch:    { required: false }
+transitions:
+  - { from: queued,    to: running,   on: started }
+  - { from: running,   to: waiting,   on: exited,   when: { state: blocked } }
+  - { from: running,   to: exited,    on: exited,   when: { exitCode: 0 } }
+  - { from: running,   to: failed,    on: exited }
+  - { from: running,   to: lost,      on: stale,    after: 10m }
+  - { from: waiting,   to: running,   on: answered }
+  - { from: waiting,   to: exited,    on: exited,   when: { exitCode: 0 } }
+  - { from: waiting,   to: failed,    on: exited }
+  - { from: exited,    to: failed,    on: gated,    when: { verdict: error } }
+  - { from: exited,    to: blocked,   on: gated,    when: { requested: true } }
+  - { from: exited,    to: clean,     on: gated,    when: { verdict: clean } }
+  - { from: exited,    to: violation, on: gated }
+  - { from: blocked,   to: resumable, on: unblocked, requires: { waits-on: { all: [done] } } }
+  - { from: resumable, to: running,   on: started }
+  - { from: [queued, running, waiting, blocked, resumable], to: canceled, on: canceled }
+hooks:
+  queued:    { run: scripts/session/start.sh }
+  exited:    { run: scripts/session/finish.sh }
+  resumable: { run: scripts/session/start.sh }
+  waiting:   { run: scripts/session/ask.sh }
+  clean:     { run: scripts/lanes/land.sh }
+  lost:      { run: scripts/session/requeue.sh }

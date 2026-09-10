@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3 2s  13:41:00
+ task ── blocked · document-tabs ─────────────────────────────────────────────── modified 2026-09-06
+ title       Document tabs
+ status      blocked
+ priority    high
+ territory   ui  → ui-owner
+ created     2026-08-28
+ modified    2026-09-06
+ blocked by  help-requested-by-web-ui  (todo)
+ file        ../tracker/testdata/tracker/items/document-tabs.md
+ ── body ───────────────────────────────────────────────────────────────────────────────────────────
+ Tabs.
+ 
+ Blocked by [help-requested-by-web-ui](help-requested-by-web-ui.md), requested by `web-ui` in run
+ `2026`.
+
+
+ ↑↓ scroll  e edit  a start  esc back  q quit

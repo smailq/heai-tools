@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heai.tools/schemas/flow.schema.json",
+  "title": "flow.yaml",
+  "description": "flow.yaml: where the definitions are. Every key is optional and an absent file means the defaults.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "flows": {
+      "title": "a directory",
+      "description": "The directory holding the definitions, one YAML file each, relative to this file unless absolute. flows under the project directory by default. Every .yaml or .yml file in it is a definition, found by the name it declares.",
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

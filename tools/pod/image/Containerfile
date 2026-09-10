@@ -1,0 +1,27 @@
+# image/Containerfile - the base image: Herdr, git, jq and the in-container helpers.
+# `pod build base` builds it and passes image/HERDR_VERSION as HERDR_VERSION.
+# Project tools go in extended images built FROM this one; see example/Containerfile.
+FROM docker.io/library/debian:bookworm-slim
+ARG HERDR_VERSION=0.9.0
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git ca-certificates curl jq ripgrep openssh-client procps \
+ && rm -rf /var/lib/apt/lists/*
+
+# the herdr binary, pinned: the same release for every build of this file
+RUN arch="$(uname -m)" \
+ && curl -fsSL "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-${arch}" -o /usr/local/bin/herdr \
+ && chmod +x /usr/local/bin/herdr
+
+COPY herdr.toml /etc/herdr/config.toml
+COPY bin/ /heai/bin/
+RUN chmod +x /heai/bin/* \
+ && mkdir -p /repos /worktrees /heai/inbox /root/.config/herdr \
+ && git config --system safe.directory '*' \
+ && git config --system user.name heai \
+ && git config --system user.email heai@localhost
+
+ENV PATH=/heai/bin:$PATH HERDR_CONFIG_PATH=/etc/herdr/config.toml HOME=/root
+WORKDIR /repos
+ENTRYPOINT ["herdr", "server"]
+

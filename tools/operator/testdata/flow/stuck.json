@@ -1,0 +1,103 @@
+[
+  {
+    "flow": {
+      "id": "20260906-000200-landing-04e8",
+      "definition": "landing",
+      "state": "proposed",
+      "terminal": false,
+      "since": "2026-09-09T10:41:00.000Z",
+      "startedAt": "2026-09-09T10:41:00.000Z",
+      "seq": 0,
+      "links": {
+        "lane": "core",
+        "branch": "agent/web-ui/category-buttons"
+      },
+      "parent": "20260905-235010-session-e4a2",
+      "waitsOn": [],
+      "touchedAt": null,
+      "expiresAt": null
+    },
+    "idleMs": 10832526,
+    "waits": []
+  },
+  {
+    "flow": {
+      "id": "20260906-030500-request-9a01",
+      "definition": "request",
+      "state": "todo",
+      "terminal": false,
+      "since": "2026-09-09T11:40:00.000Z",
+      "startedAt": "2026-09-09T11:40:00.000Z",
+      "seq": 0,
+      "links": {
+        "task": "help-requested-by-web-ui"
+      },
+      "parent": "20260906-024801-session-77f0",
+      "waitsOn": [],
+      "touchedAt": null,
+      "expiresAt": null
+    },
+    "idleMs": 7292526,
+    "waits": []
+  },
+  {
+    "flow": {
+      "id": "20260903-101010-session-1f2e",
+      "definition": "session",
+      "state": "blocked",
+      "terminal": false,
+      "since": "2026-09-06T13:41:00.000Z",
+      "startedAt": "2026-09-06T13:37:00.000Z",
+      "seq": 4,
+      "links": {
+        "actor": "core-reviewer",
+        "task": "merge-two-entities",
+        "repo": "app",
+        "branch": "agent/core-reviewer/merge-two-entities"
+      },
+      "parent": null,
+      "waitsOn": [
+        "20260903-104400-request-c3d4"
+      ],
+      "touchedAt": null,
+      "expiresAt": null
+    },
+    "idleMs": 259232526,
+    "waits": [
+      {
+        "id": "20260903-104400-request-c3d4",
+        "state": "canceled"
+      }
+    ]
+  },
+  {
+    "flow": {
+      "id": "20260906-024801-session-77f0",
+      "definition": "session",
+      "state": "blocked",
+      "terminal": false,
+      "since": "2026-09-09T11:41:00.000Z",
+      "startedAt": "2026-09-09T11:37:00.000Z",
+      "seq": 4,
+      "links": {
+        "actor": "web-ui",
+        "task": "document-tabs",
+        "repo": "app",
+        "branch": "agent/web-ui/document-tabs"
+      },
+      "parent": null,
+      "waitsOn": [
+        "20260906-030500-request-9a01"
+      ],
+      "touchedAt": null,
+      "expiresAt": null
+    },
+    "idleMs": 7232526,
+    "waits": [
+      {
+        "id": "20260906-030500-request-9a01",
+        "state": "todo"
+      }
+    ]
+  }
+]

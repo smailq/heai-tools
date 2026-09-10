@@ -1,0 +1,76 @@
+{
+  "path": "/private/tmp/claude-501/-Users-smailq-Code-heai-tools/41b86f3f-5567-4ff6-b3d4-247e8bf2491d/scratchpad/proj/architecture.yaml",
+  "valid": true,
+  "errors": [],
+  "warnings": [
+    "no human-owned territory: the map protects everything else, so it must fall inside one itself"
+  ],
+  "map": {
+    "version": 1,
+    "repositories": {
+      "app": {
+        "remotePath": "github.com/example/app",
+        "localPath": "../app"
+      },
+      "docs": {
+        "remotePath": "github.com/example/docs",
+        "localPath": "../docs"
+      }
+    },
+    "actors": {
+      "web-ui": {
+        "type": "llm-agent",
+        "context": "Owns the UI."
+      },
+      "core-reviewer": {
+        "type": "llm-agent",
+        "context": "Owns core."
+      },
+      "desktop-owner": {
+        "type": "llm-agent",
+        "context": "Owns desktop."
+      }
+    },
+    "territories": {
+      "ui": {
+        "owner": "web-ui",
+        "scope": [
+          {
+            "repository": "app",
+            "globs": [
+              "ui/**"
+            ]
+          }
+        ]
+      },
+      "core": {
+        "owner": "core-reviewer",
+        "scope": [
+          {
+            "repository": "app",
+            "globs": [
+              "core/**"
+            ]
+          }
+        ]
+      },
+      "desktop": {
+        "owner": "desktop-owner",
+        "scope": [
+          {
+            "repository": "app",
+            "globs": [
+              "desktop/**"
+            ]
+          },
+          {
+            "repository": "docs",
+            "globs": [
+              "**"
+            ]
+          }
+        ]
+      }
+    }
+  }
+}

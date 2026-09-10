@@ -1,0 +1,15 @@
+# A request one worker filed for another: a task with a
+# rule written down - only the landing script marks it done.
+name: request
+states: [todo, in-progress, in-review, done, canceled]
+initial: todo
+terminal: [done, canceled]
+links:
+  task: { required: true }
+transitions:
+  - { from: todo,        to: in-progress, on: picked }
+  - { from: todo,        to: canceled,    on: canceled }
+  - { from: in-progress, to: in-review,   on: finished }
+  - { from: in-progress, to: canceled,    on: canceled }
+  - { from: in-review,   to: done,        on: landed, by: [land.sh] }
+  - { from: in-review,   to: in-progress, on: reopened }
