@@ -82,12 +82,12 @@ export function chain(w: World) {
   clock.tick(1000)
   store.advance(run1, { event: 'exited', data: { exitCode: 0, requests: 1 }, by: 'session.sh', note: 'filed help-requested-by-beta' })
   clock.tick(1000)
-  const req = store.start({ definition: 'request', id: '20260902-165954-req-9a01', links: { task: 'help-requested-by-beta' }, parent: run1, by: 'session.sh' }).id
+  const req = store.start({ definition: 'request', id: '20260902-165954-req-9a01', links: { task: 'help-requested-by-beta', 'filed-by': run1 }, by: 'session.sh' }).id
   clock.tick(1000)
   store.link(run1, { waitsOn: [req] }, 'session.sh')
   clock.tick(60_000)
   clock.tick(1000)
-  const run2 = store.start({ definition: 'run', id: '20260902-171003-run-a7c2', links: { actor: 'alpha', task: 'help-requested-by-beta' }, parent: req, by: 'session.sh' }).id
+  const run2 = store.start({ definition: 'run', id: '20260902-171003-run-a7c2', links: { actor: 'alpha', task: 'help-requested-by-beta', request: req }, by: 'session.sh' }).id
   clock.tick(1000)
   store.advance(run2, { event: 'started', data: {}, by: 'session.sh' })
   clock.tick(1000)
@@ -98,7 +98,7 @@ export function chain(w: World) {
   clock.tick(1000)
   store.advance(req, { event: 'finished', data: {}, by: 'session.sh' })
   clock.tick(1000)
-  const landing = store.start({ definition: 'landing', id: '20260902-171230-land-04e8', links: { lane: 'core', branch: 'agent/alpha/help-requested-by-beta' }, parent: run2, by: 'land.sh' }).id
+  const landing = store.start({ definition: 'landing', id: '20260902-171230-land-04e8', links: { lane: 'core', branch: 'agent/alpha/help-requested-by-beta', run: run2 }, by: 'land.sh' }).id
   clock.tick(1000)
   store.advance(landing, { event: 'landed', data: {}, by: 'land.sh' })
   clock.tick(1000)

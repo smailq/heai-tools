@@ -1,20 +1,20 @@
  operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3  reactor 3/1h ✗1       2s  13:41:00
  tasks    11   in-progress 1 · in-review 1 · blocked 3 · todo 2 · backlog 1 · done 1 · canceled 1 items/ changed 3m ago
- flows ── 4 stuck older than 1h · 5 open ─────────────────────────────────────────────────────────────────── flow 4s ago
- definition  state       id                              idle   waits on                      stands                    
- landing     proposed    20260906-000200-landing-04e8    3h     -                             -                         
- request     todo        20260906-030500-request-9a01    2h     -                             -                         
- session     blocked     20260903-101010-session-1f2e    3d     task ontology-entity-identi…  canceled                  
- session     blocked     20260906-024801-session-77f0    2h     task help-requested-by-web-…  todo                      
- ── all open, by definition ────────────────────────────────────────────────────────────────────────────────────────────
- landing     proposed   1
- request     todo       1
- session     blocked    2   running    1
-
-
-
-
-
+ flows ── 5 open of 7 · 4 stuck older than 1h ──────── flow 4s ago│ flow ── session · blocked ────────────── in state 2h
+ definition          state         age     started   duration     │ id          20260906-024801-session-77f0
+ session             running       6m      7m        -            │ state       blocked  started 2h ago · seq 4
+ request             todo          2h      2h        -            │ stuck       idle 2h · waits stand at todo
+ session             blocked       2h      2h        -            │ ── links ───────────────────────────────────────────
+ landing             proposed      3h      3h        -            │ actor       web-ui
+ session             clean         4h      4h        3m           │ branch      agent/web-ui/document-tabs
+ request             canceled      2d      2d        1m           │ repo        app
+ session             blocked       3d      3d        -            │ task        document-tabs
+                                                                  │ waits on    task help-requested-by…  (todo)
+                                                                  │ ── trace ────────────────── moves 1-3 of 6 · 3 more 
+                                                                  │ seq  change            result                      
+                                                                  │ 0    → queued
+                                                                  │ 1    queued → running
+                                                                  │ 2    running → exited  exitCode=0
  pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (blocked 1 · idle 1 · working 1)              pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
- ↑↓ move  ⏎ trace  d definition  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ ↑↓ move  → flow  ⏎ trace  p hide  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

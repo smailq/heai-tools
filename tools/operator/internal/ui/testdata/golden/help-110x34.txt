@@ -4,9 +4,9 @@
  ↑ ↓  j k        move
  pgup pgdn  g G  page, first, last
  enter           open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)
- p               show or hide the task pane
- tab             focus the task pane, to scroll it
- d               in flows: choose what the table lists - the stuck report, or one definition's flows
+ →  l            move to the pane beside the list; again from there, it opens full width
+ p               show or hide the detail pane beside the tasks and flows lists
+ tab             focus the detail pane, to scroll it
  esc             back, or clear the filter
  b               every status ↔ the active ones (in-progress, in-review, blocked, todo)
  S               sort tasks: pick-up, age, slug, territory

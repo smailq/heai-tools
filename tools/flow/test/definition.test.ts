@@ -10,7 +10,7 @@ test('a definition parses into states, links and transitions, and keeps its text
   assert.equal(run.name, 'run')
   assert.equal(run.initial, 'queued')
   assert.deepEqual(run.terminal, ['succeeded', 'failed', 'canceled', 'lost'])
-  assert.deepEqual(run.links, { task: { required: false }, actor: { required: true }, branch: { required: false } })
+  assert.deepEqual(run.links, { task: { required: false }, actor: { required: true }, branch: { required: false }, request: { required: false } })
   assert.equal(run.transitions.length, 11)
   const lost = run.transitions.find((t) => t.to === 'lost')!
   assert.equal(lost.after, 600_000)
@@ -40,7 +40,7 @@ test('a definition that does not validate is refused with every problem named', 
   refuses(`name: t\nstates: [a]\ninitial: a\nterminal: [a]\ntransitions: []`, /initial state a cannot be terminal/)
   refuses(`${base}extra: 1\ntransitions: [{ from: a, to: b, on: go }]`, /unknown key "extra"/)
   refuses(`${base}transitions: [{ from: a, to: b, on: go, after: soon }]`, /after must be a duration/)
-  refuses(`${base}links: { parent: {} }\ntransitions: [{ from: a, to: b, on: go }]`, /reserved for flow-to-flow links/)
+  refuses(`${base}links: { waits-on: {} }\ntransitions: [{ from: a, to: b, on: go }]`, /reserved for flow-to-flow links/)
   refuses(`${base}transitions: [{ from: a, to: b, on: go, requires: { waits-on: { any: [b] } } }]`, /requires must be/)
   refuses(`not: [valid`, /not valid YAML/)
   // Two problems, both reported.

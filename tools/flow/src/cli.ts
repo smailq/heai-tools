@@ -12,10 +12,10 @@ import { humanize } from './cli-format.ts'
 
 const USAGE = `heai-flow - a state machine per record, a journal per flow, and one command that says where anything is
 
-  heai-flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."]
+  heai-flow start <definition> [--id <id>] [--link name=value ...] [--waits-on <flow> ...] [--by <who>] [--note "..."]
   heai-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
   heai-flow touch <id>                            the heartbeat: an \`after\` counts from the last touch
-  heai-flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>]
+  heai-flow link <id> [name=value ...] [--waits-on <flow> ...] [--by <who>]
   heai-flow show <id> [--json]                    state, links, the journal, and the actions
   heai-flow list [<definition>] [--in <state>] [--link name=value] [--json]
   heai-flow trace <id | name=value> [--json]      one timeline across every linked flow
@@ -57,7 +57,7 @@ export function resolvePaths(values: Record<string, string | undefined>, cwd = p
 const pad = (s: string, n: number): string => (s.length >= n ? s : s + ' '.repeat(n - s.length))
 const when = (s: string | null): string => (s ? s.slice(0, 19).replace('T', ' ') : '-')
 const fmtLinks = (s: Snapshot): string =>
-  [...Object.entries(s.links).map(([k, v]) => `${k}=${v}`), ...(s.parent ? [`parent=${s.parent}`] : []), ...s.waitsOn.map((w) => `waits-on=${w}`)].join(' ')
+  [...Object.entries(s.links).map(([k, v]) => `${k}=${v}`), ...s.waitsOn.map((w) => `waits-on=${w}`)].join(' ')
 
 function parseLinks(pairs: string[]): Record<string, string> {
   const out: Record<string, string> = {}
@@ -103,7 +103,6 @@ function showFlow(store: Store, id: string): void {
   console.log(`definition  ${s.definition}`)
   console.log(`state       ${s.state}${s.terminal ? ' (terminal)' : ''}  since ${when(s.since)}${s.touchedAt ? `  touched ${when(s.touchedAt)}` : ''}${s.expiresAt ? `  expires ${when(s.expiresAt)}` : ''}`)
   if (Object.keys(s.links).length) console.log(`links       ${Object.entries(s.links).map(([k, v]) => `${k}=${v}`).join(' ')}`)
-  if (s.parent) console.log(`parent      ${s.parent}`)
   if (s.waitsOn.length) console.log(`waits on    ${s.waitsOn.map((w) => `${w}:${store.get(w)?.state ?? '?'}`).join(', ')}`)
   for (const p of f.problems) console.log(`problem     ${p}`)
   console.log('journal')
@@ -125,7 +124,6 @@ async function main(argv: string[]): Promise<number> {
       definition: { type: 'string' },
       id: { type: 'string' },
       link: { type: 'string', multiple: true },
-      parent: { type: 'string' },
       'waits-on': { type: 'string', multiple: true },
       by: { type: 'string' },
       note: { type: 'string' },
@@ -165,7 +163,6 @@ async function main(argv: string[]): Promise<number> {
         definitionPath: values.definition,
         id: values.id,
         links: parseLinks(values.link ?? []),
-        parent: values.parent,
         waitsOn: values['waits-on'] ?? [],
         by,
         note: values.note
@@ -197,7 +194,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'link': {
       const links = parseLinks(positionals.slice(2))
-      const line = store.link(positionals[1]!, { links, parent: values.parent, waitsOn: values['waits-on'] }, by, values.note)
+      const line = store.link(positionals[1]!, { links, waitsOn: values['waits-on'] }, by, values.note)
       if (line) process.stdout.write(JSON.stringify(line) + '\n')
       else console.log('Nothing to link: every link given is already recorded')
       return 0

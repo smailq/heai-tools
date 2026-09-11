@@ -10,9 +10,9 @@
       "seq": 0,
       "links": {
         "lane": "core",
-        "branch": "agent/web-ui/category-buttons"
+        "branch": "agent/web-ui/category-buttons",
+        "session": "20260905-235010-session-e4a2"
       },
-      "parent": "20260905-235010-session-e4a2",
       "waitsOn": [],
       "touchedAt": null,
       "expiresAt": null
@@ -32,7 +32,6 @@
       "links": {
         "task": "help-requested-by-web-ui"
       },
-      "parent": "20260906-024801-session-77f0",
       "waitsOn": [],
       "touchedAt": null,
       "expiresAt": null
@@ -55,7 +54,6 @@
         "repo": "app",
         "branch": "agent/core-reviewer/merge-two-entities"
       },
-      "parent": null,
       "waitsOn": [
         "20260903-104400-request-c3d4"
       ],
@@ -85,7 +83,6 @@
         "repo": "app",
         "branch": "agent/web-ui/document-tabs"
       },
-      "parent": null,
       "waitsOn": [
         "20260906-030500-request-9a01"
       ],

@@ -9,6 +9,7 @@ links:
   task: { required: false }          # a tracker slug
   actor: { required: true }          # who works the session
   branch: { required: false }        # learned after the start
+  request: { required: false }       # the request this run works, when it works one
 transitions:
   - { from: queued,    to: running,   on: started }
   - { from: queued,    to: canceled,  on: canceled }

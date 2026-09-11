@@ -2,7 +2,7 @@
 
 An `htop`-shaped terminal view of what the heai tools are doing: one screen, refreshed on its own clocks, that reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing: every key on it moves, opens, filters or reloads, and every change to a task, a flow or the reactor is made at the shell with that tool's own command.
 
-Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, what `flow` says is stuck, and on request every flow of one definition the project declares; **pod**, the container and every workspace in it; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
+Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every workspace in it; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
 One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
 The name is the Matrix's: the one at the console watching the crew inside.
@@ -55,7 +55,7 @@ A file that does not meet the tracker's format is listed too, in red, with its f
 Columns leave as the terminal narrows - age first, then routes to, then territory, then priority - and the key bar drops its least-used keys before it drops help and quit.
 
 **The task pane.** From 100 columns the screen splits: the list on the left, and on the right the task under the cursor - its frontmatter as a table, its territories with the actor each routes to, its blocker and that blocker's status, the file's path, and its body, wrapped to the pane.
-Moving the cursor changes the task; **Tab** moves focus to the task pane so `↑` `↓` and `pgup` `pgdn` scroll a long body, and the rule above the body says which lines are showing.
+Moving the cursor changes the task; **`→`** or `l` moves to the task pane - `⇥` does the same - so `↑` `↓` and `pgup` `pgdn` scroll a long body, and the rule above the body says which lines are showing; `→` again from there opens the task full width, and `esc` goes back to the list.
 The list keeps its status, priority and slug columns and its blocker notes, and gives the rest of its columns to the task pane, which shows them in full.
 
 ```
@@ -74,45 +74,44 @@ Under 100 columns the list has the screen to itself, and **Enter** opens the tas
 ### flows
 
 ```
- flows ── 2 stuck older than 1h · 19 open ──────────────────────────────────────────────────────────── flow 4s ago
- definition  state       id                              idle   waits on                      stands
- session     blocked     20260903-101010-session-1f2e    3d     task ontology-entity-identity  canceled
- session     blocked     20260906-024801-session-77f0    2h     task help-requested-by-web-ui  todo
- ── all open, by definition ────────────────────────────────────────────────────────────────────────────────────
- landing     proposed   1
- session     blocked    2   running    1
+ flows ── 5 open of 7 · 4 stuck older than 1h ──────── flow 4s ago│ flow ── request · todo ───────────────── in state 2h
+ definition          state         age     started   duration     │ id          20260906-030500-request-9a01
+ session             running       6m      7m        -            │ state       todo  started 2h ago · seq 0
+ session             blocked       2h      2h        -            │ parent      20260906-024801-session-77f0
+ └ request           todo          2h      2h        -            │ stuck       idle 2h
+ session             clean         4h      4h        3m           │ ── links ───────────────────────────────────────────
+ └ landing           proposed      3h      3h        -            │ task        help-requested-by-web-ui
+ session             blocked       3d      3d        -            │ ── trace ───────────────────────────────────────────
+ └ request           canceled      2d      2d        1m           │ seq  change            result                      
+                                                                  │ 0    → queued
+                                                                  │ 1    queued → running
+                                                                  │ 2    running → exited  exitCode=0
+                                                                  │ 3    link
+                                                                  │ 0    → todo
+                                                                  │ 4    exited → blocked  requested=true verdict=clean
 ```
 
-**The line** puts the stuck count first, because it is the number that matters, then each definition's flows by state, open states first and the most numerous first.
+**The line** says how many flows are open of how many there are, then how many `heai-flow stuck --json` calls stuck - nothing moved or touched them for an hour.
 
-**The table** is the stuck report as `heai-flow stuck --json` gives it - flows nothing has moved or touched for an hour, grouped by definition and state - each with how long it has been idle, what it waits on, and where that stands.
-`waits on` names each waited flow by what it is about: its `task` link, else its `lane`, else its first link, else its id.
-`stands` is each waited flow's state, or `missing` when the flow is gone.
-A row is red when a waited flow is missing or has reached a terminal state other than `done`: a guard that wants `done` will never fire, and it is exactly the thing a person needs to notice.
-Below the report, every definition with open flows, with the count in each open state.
+**The table** is every flow of every definition, as a tree: a flow that names a parent sits right under it, indented a level per generation, and the rest keep the order flow lists them in. A flow whose parent is not in the table - filtered out, or not among these flows - stands where flow listed it. Its columns are flow's own record and nothing else - definition, state, how long it has been in that state, how long ago it started, how long it took when it has ended, how many flows it waits on and its parent - so the table says the same thing whatever a project's definitions are about. The columns to the right leave first as the terminal narrows.
+`duration` is start to last move, filled in only once flow calls the flow terminal; a flow that can still move shows `-`.
+`parent` names the parent for the rows whose parent is not above them.
+In the table an id is its last segment alone - `77f0` - because the date, the time and the definition ahead of it are already on the row. Everywhere else - the flow pane, the trace - an id is shown whole.
+The id, the sequence number, the last touch and the links a flow carries are in the flow pane rather than here - a link name is the project's word, not flow's.
+Terminal flows are dimmed; nothing else reads a flow's state, which is any string a project's definitions choose, so states are not coloured.
+`/` filters the table by anything on a row - an id, a definition, a state, a link - so one definition's flows are a filter away.
+
+**The flow pane** on the right is the flow under the cursor: its id, its state with how long ago it started and its sequence number, when it was last touched, how long it took when it has ended, its parent, and - when `heai-flow stuck --json` names it - how long it has been idle and where its waits stand.
+Under `── links` are the links it carries, by name, and one line each the flows it waits on with their state, red when a wait is missing or flow calls it terminal - either way it will never move again, so the waiting flow is stuck for good.
+Under `── trace` is that flow's timeline from `heai-flow trace <id> --json`, a small table, one row a move: its sequence number under `seq`, the state change it made under `change` - `queued → running`, `→ todo` at the start, the event's own name for a line that moved nothing - and under `result` what came of it, the line's note or the data flow recorded, such as `exitCode=0` or `verdict=clean requested=true`; `result` leaves when the pane is too narrow for it. The walk reaches the flows linked to this one, and their lines are dimmed. The rule says which lines are showing and how many are left.
+Moving the cursor asks flow for the new flow's trace, and each flows poll rereads the one showing, so the pane is one process call behind the list at most.
+**`→`** or `l` moves to the pane, and from there opens the trace full width; `⇥` does the same move, `↑` `↓` and `pgup` `pgdn` scroll the trace once it has the keys, and `esc` goes back to the list.
+**`p`** hides the pane and shows it again; hidden, or under 100 columns, the table takes the whole width and gets its right-hand columns back.
 
 **Enter** opens `heai-flow trace <id>` for the flow under the cursor, full width: the cross-flow timeline as flow prints it, task → session → request → task, one line each with its time, move and who made it.
 `↑` `↓` scroll it, `r` asks again, `esc` returns.
 
-**One definition's flows.** `d` puts a chooser on the bar: the stuck report, then every definition the project declares - `heai-flow definitions --json` - or has flows of, by name.
-`←` `→` move along it, a digit picks, `⏎` shows the choice, `esc` keeps what was showing.
-A definition chosen, the table is every flow of it, in the order flow lists them, with its state and how long it has been in it, and then one column per link the flows carry - `task`, `actor`, `repo` and `branch` first when present, the rest by name - each as wide as its widest value, the last taking what is left, and leaving from the right on a narrow terminal.
-Terminal flows are dimmed.
-The open-flows summary stays under the table, so the other definitions are still in view, and `⏎` still opens the trace.
-
-```
- flows ── session · 3 open of 4 ─────────────────────────────────────────────────────────────────── flow 4s ago
- id                            state       age    task                actor          repo  branch
- 20260906-031244-session-9a1c  running     6m     add-place-entity    desktop-owner  app   agent/desktop-owner/add-place-entity
- 20260906-024801-session-77f0  blocked     2h     document-tabs       web-ui         app   agent/web-ui/document-tabs
- ── all open, by definition ─────────────────────────────────────────────────────────────────────────────────────
- landing     proposed   1
- session     blocked    1   running    1
- definition   stuck   landing  [session]                                        ←→ choose · 1-9 pick · ⏎ show · esc back
-```
-
-A definition with no flows yet is one dim line saying so; one whose file does not read is one red line with flow's problem.
-Nothing here knows what a session or a landing is: the definitions are the project's, and the pane lists whichever it is pointed at.
+Nothing here knows what a session or a landing is: the definitions are the project's, and the pane lists whatever flow reports.
 
 ### pod
 
@@ -177,9 +176,9 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 | `1` to `4` | the pane with the table: tasks, flows, pod, reactor |
 | `↑` `↓` `j` `k`, `pgup` `pgdn`, `g` `G` | move, page, first and last |
 | `⏎` | open the row full width: a task, a flow's `heai-flow trace`, a workspace, or an event with its actions; `esc` back |
-| `p` | show or hide the task pane |
-| `⇥` | focus the task pane, to scroll it; `⇥` or `esc` back to the list |
-| `d` | in flows: choose what the table lists, the stuck report or one definition's flows; in the chooser `←` `→` move, digits pick, `⏎` shows, `esc` keeps |
+| `→` `l` | move to the pane beside the list - the task, or the flow with its trace; again from there, it opens full width |
+| `p` | show or hide the detail pane beside the tasks and flows lists |
+| `⇥` | focus the detail pane, to scroll it; `⇥` or `esc` back to the list |
 | `b` | every status ↔ the active ones: `in-progress`, `in-review`, `blocked`, `todo` |
 | `S` | sort tasks: pick-up order, then age, slug, territory |
 | `/` | filter the pane by any of its text as you type; `⏎` keeps it, `esc` clears it |
@@ -189,6 +188,7 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 | `q`, `ctrl-c` | quit |
 
 Colour is the sixteen ANSI colours only, so the screen follows the terminal's theme: moving green, waiting yellow, gone wrong red, over dim, ready to move bold, and red for what is wrong.
+The tracker's statuses and pod's agent states are fixed vocabularies, so they are coloured; a flow's state is whatever its definition names, so it is not - colouring a project's own states is a later question.
 
 ## Where the numbers come from
 
@@ -197,7 +197,7 @@ Everything on the screen is read fresh on its pane's clock; the process keeps on
 - **The tracker** is read from its files every two seconds, under the format contract the tasks tool's README states: one file per task under `items/`, exactly six frontmatter keys, its status and priority vocabularies, and a comma-separated territory list. This is a second reader of that format, written on purpose (root README, principle 1) and pinned by the same fixture the tasks tool's own model test parses, in [`internal/tracker`](internal/tracker). `heai-tasks list --json` does not exist yet; when it does, this reader can go.
 - **Owners and repositories** are asked of `heai-architect territories --json --map <path>` and `heai-architect check --format json --map <path>`, never read from the map itself, so this tool holds no second map reader or glob dialect. architect is asked again only when the map's mtime moves. Without architect on `PATH`, or without a map, the column shows `-` and the pane's title says why. [`internal/owners`](internal/owners) pins both outputs.
 - **The blocker** is the tracker's own convention - the `Blocked by` note - and its state is that slug's status in the same tracker.
-- **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. One definition's table is the `list` answer filtered by definition; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
+- **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. The table is the `list` answer; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. The flow pane's timeline is one more call, `heai-flow trace <id> --json`, made for the flow under the cursor when the cursor moves onto it and again after each flows poll; the recording is [`testdata/flow/trace.json`](testdata/flow/trace.json), and `⏎` asks again without `--json` for the printed form. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
 - **The pod** is `heai-pod status --json` and, when it says the container and Herdr are up, `heai-pod list --json`, both run with `--dir <project>` on the same clock. `status` exits `1` with its JSON when either is down, and that is read as an answer, not a failure. pod is asked only when `pod.yaml` or `pod/` sits in the project, or `HEAI_POD_STATE` is set, because `heai-pod status` creates `pod/` when it is absent. The outputs are recorded under [`testdata/pod/`](testdata/pod) through the tool against its fake runtime and pinned by [`internal/pod`](internal/pod).
 - **The reactor** is `heai-reactor status --json` and `heai-reactor events --since 1h --json`, with `--dir <project>`, on the same clock, and asked only when `reactor.yaml`, `.heai/reactor.yaml` or `reactor/` sits in the project, or `HEAI_REACTOR_STATE` is set, for the same reason. Each event `events --json` prints carries the actions rules took on it, so nothing here reads reactor's files. [`testdata/reactor/`](testdata/reactor) records both from one emit, one dropped fact and two ticks, pinned by [`internal/reactor`](internal/reactor).
 - **The recordings** under `testdata/pod/` and `testdata/reactor/` are made by [`testdata/record.sh`](testdata/record.sh), which runs the two tools from their sources - pod against its fake runtime, reactor against a temporary project - and rewrites only the temporary path to `/repo`. When a tool's output changes, run it, then `go test ./internal/ui -update`, and read the goldens.
@@ -241,7 +241,7 @@ heai-operator --width 100           --once: columns to render (default $COLUMNS,
 | code | meaning |
 | --- | --- |
 | `0` | shown; under `--once` or `--json`, nothing on the screen is red |
-| `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or ended without `done`, or a reactor rule that ran and failed on an event in the last hour |
+| `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or has ended, or a reactor rule that ran and failed on an event in the last hour |
 | `2` | no tracker at the resolved directory, or bad usage |
 
 The interactive screen exits `0` on `q` whatever it shows; the split is for the batch modes, and it is the same `0` yes, `1` no, `2` could not ask as every other tool here.

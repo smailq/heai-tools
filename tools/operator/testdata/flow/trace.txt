@@ -2,5 +2,5 @@
 2026-09-09 11:38:00  20260906-024801-session-77f0  session  queued → running         start.sh
 2026-09-09 11:39:00  20260906-024801-session-77f0  session  running → exited         inbox-fixture exitCode=0
 2026-09-09 11:40:00  20260906-024801-session-77f0  session  link                     finish.sh    waitsOn=20260906-030500-request-9a01
-2026-09-09 11:40:00  20260906-030500-request-9a01  request  → todo                   finish.sh    task=help-requested-by-web-ui parent=20260906-024801-session-77f0
+2026-09-09 11:40:00  20260906-030500-request-9a01  request  → todo                   finish.sh    task=help-requested-by-web-ui
 2026-09-09 11:41:00  20260906-024801-session-77f0  session  exited → blocked         finish.sh    verdict=clean requested=true

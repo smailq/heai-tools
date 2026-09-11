@@ -128,7 +128,7 @@ export function parseDefinition(text: string, where: string): Definition {
     else
       for (const [k, v] of Object.entries(doc['links'])) {
         if (!NAME.test(k)) problems.push(`link name ${JSON.stringify(k)} is not a lowercase word`)
-        if (k === 'parent' || k === 'waits-on') problems.push(`link name ${k} is reserved for flow-to-flow links`)
+        if (k === 'waits-on') problems.push(`link name ${k} is reserved for flow-to-flow links`)
         if (v === null) links[k] = { required: false }
         else if (!isRecord(v) || Object.keys(v).some((x) => x !== 'required') || (v['required'] !== undefined && typeof v['required'] !== 'boolean'))
           problems.push(`link ${k} must be { required: true|false }`)

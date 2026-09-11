@@ -37,7 +37,6 @@ export interface Snapshot {
   /** The seq of the last journal line: the version an advance can compare against. */
   seq: number
   links: Record<string, string>
-  parent: string | null
   waitsOn: string[]
   touchedAt: string | null
   /** When the earliest `after` out of the current state elapses, if any. */
@@ -130,11 +129,9 @@ export function project(id: string, def: Definition, lines: Line[], touchedAt: s
   let state = first.to
   let since = first.at
   const links: Record<string, string> = {}
-  let parent: string | null = null
   const waitsOn: string[] = []
   const merge = (data: Record<string, unknown>) => {
     if (isRecord(data['links'])) for (const [k, v] of Object.entries(data['links'])) if (typeof v === 'string') links[k] = v
-    if (typeof data['parent'] === 'string') parent = data['parent']
     if (Array.isArray(data['waitsOn'])) for (const w of data['waitsOn']) if (typeof w === 'string' && !waitsOn.includes(w)) waitsOn.push(w)
   }
   for (const l of lines) {
@@ -153,7 +150,7 @@ export function project(id: string, def: Definition, lines: Line[], touchedAt: s
       const e = new Date(Date.parse(base) + t.after).toISOString()
       if (!expiresAt || e < expiresAt) expiresAt = e
     }
-  return { id, definition: def.name, state, terminal, since, startedAt: first.at, seq: lines[lines.length - 1]!.seq, links, parent, waitsOn, touchedAt, expiresAt }
+  return { id, definition: def.name, state, terminal, since, startedAt: first.at, seq: lines[lines.length - 1]!.seq, links, waitsOn, touchedAt, expiresAt }
 }
 
 // ── The per-flow lock ─────────────────────────────────────────────────────

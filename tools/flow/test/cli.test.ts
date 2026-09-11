@@ -19,7 +19,7 @@ test('the journal fixture is exactly what a flow writes: the format contract oth
   w.store.advance(id, { event: 'exited', data: { exitCode: 0, requests: 1 }, by: 'session.sh', note: 'filed help-requested-by-beta' })
   assert.equal(readFileSync(join(flowDir(w.root, id), 'journal.jsonl'), 'utf8'), readFileSync(join(FIXTURES, 'journal.jsonl'), 'utf8'))
   const snap = JSON.parse(readFileSync(join(flowDir(w.root, id), 'state.json'), 'utf8'))
-  assert.deepEqual(Object.keys(snap), ['id', 'definition', 'state', 'terminal', 'since', 'startedAt', 'seq', 'links', 'parent', 'waitsOn', 'touchedAt', 'expiresAt'])
+  assert.deepEqual(Object.keys(snap), ['id', 'definition', 'state', 'terminal', 'since', 'startedAt', 'seq', 'links', 'waitsOn', 'touchedAt', 'expiresAt'])
 })
 
 test('exit codes: 0 done, 1 answered no, 2 could not be asked', () => {
@@ -50,7 +50,7 @@ test('exit codes: 0 done, 1 answered no, 2 could not be asked', () => {
   assert.match(cli(w, 'link', id, 'branch=agent/alpha/t1').stdout, /Nothing to link/)
   assert.equal(cli(w, 'link', id, 'lane=core').code, 2)
 
-  const req = cli(w, 'start', 'request', '--link', 'task=t2', '--parent', id, '--by', 'session.sh').stdout.trim()
+  const req = cli(w, 'start', 'request', '--link', 'task=t2', '--link', `filed-by=${id}`, '--by', 'session.sh').stdout.trim()
   cli(w, 'advance', req, 'picked')
   cli(w, 'advance', req, 'finished')
   assert.equal(cli(w, 'advance', req, 'landed').code, 1, 'human may not land')
@@ -149,13 +149,13 @@ test('show --json and list --json carry what a script needs', () => {
   const w = makeWorld()
   const ids = chain(w)
   const shown = JSON.parse(cli(w, 'show', ids.run1, '--json').stdout)
-  for (const k of ['id', 'definition', 'state', 'terminal', 'since', 'links', 'parent', 'waitsOn', 'hooks', 'journal']) assert.ok(k in shown, `show --json has ${k}`)
+  for (const k of ['id', 'definition', 'state', 'terminal', 'since', 'links', 'waitsOn', 'hooks', 'journal']) assert.ok(k in shown, `show --json has ${k}`)
   assert.deepEqual([shown.id, shown.definition, shown.state, shown.terminal, shown.waitsOn, shown.hooks], [ids.run1, 'run', 'resumable', false, [ids.req], {}])
   assert.deepEqual(shown.links, { actor: 'beta', task: 't2' })
   const listed = JSON.parse(cli(w, 'list', 'request', '--json').stdout)
   assert.equal(listed.length, 1)
-  for (const k of ['id', 'definition', 'state', 'terminal', 'since', 'links', 'parent', 'waitsOn']) assert.ok(k in listed[0], `list --json has ${k}`)
-  assert.deepEqual([listed[0].id, listed[0].parent, listed[0].terminal], [ids.req, ids.run1, true])
+  for (const k of ['id', 'definition', 'state', 'terminal', 'since', 'links', 'waitsOn']) assert.ok(k in listed[0], `list --json has ${k}`)
+  assert.deepEqual([listed[0].id, listed[0].links['filed-by'], listed[0].terminal], [ids.req, ids.run1, true])
 })
 
 test('reindex --repin rewrites every open flow from the definition on disk, and refuses to orphan a state', () => {

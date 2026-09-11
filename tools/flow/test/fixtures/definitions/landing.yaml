@@ -5,6 +5,7 @@ terminal: [landed, refused, withdrawn]
 links:
   lane: { required: true }
   branch: { required: false }
+  run: { required: false }           # the run whose work it lands
 transitions:
   - { from: proposed, to: landed,    on: landed }
   - { from: proposed, to: refused,   on: refused }

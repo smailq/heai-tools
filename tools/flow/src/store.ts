@@ -33,7 +33,6 @@ export interface StartOptions {
   definitionPath?: string
   id?: string
   links?: Record<string, string>
-  parent?: string
   waitsOn?: string[]
   by: string
   note?: string
@@ -185,7 +184,7 @@ export function openStore(options: StoreOptions): Store {
       if (filter.state && s.state !== filter.state) continue
       if (filter.link) {
         const { name, value } = filter.link
-        const has = name === 'parent' ? s.parent === value : name === 'waits-on' ? s.waitsOn.includes(value) : s.links[name] === value
+        const has = name === 'waits-on' ? s.waitsOn.includes(value) : s.links[name] === value
         if (!has) continue
       }
       out.push(s)
@@ -204,7 +203,7 @@ export function openStore(options: StoreOptions): Store {
     resolveDefinition,
     start(opts) {
       const definition = resolveDefinition(opts.definition, opts.definitionPath)
-      const r = createFlow(root, { id: opts.id, definition, links: opts.links ?? {}, parent: opts.parent ?? null, waitsOn: opts.waitsOn ?? [], by: opts.by, note: opts.note }, now())
+      const r = createFlow(root, { id: opts.id, definition, links: opts.links ?? {}, waitsOn: opts.waitsOn ?? [], by: opts.by, note: opts.note }, now())
       emit(r.id, r.line)
       act(r.entered)
       return { id: r.id, line: r.line, snapshot: r.snapshot }

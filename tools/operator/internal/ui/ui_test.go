@@ -139,6 +139,20 @@ func press(m Model, keys ...string) Model {
 	return m
 }
 
+// withTrace answers the flow pane's trace request with the recorded timeline.
+func withTrace(t *testing.T, m Model, id string) Model {
+	t.Helper()
+	if id == "" && m.panelTrace != nil {
+		id = m.panelTrace.id
+	}
+	tl, err := flows.ParseTrace(readFixture(t, "flow", "trace.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, _ := m.Update(traceMsg{id: id, lines: tl.Lines, panel: true})
+	return next.(Model)
+}
+
 func pressCmd(m Model, k string) (Model, tea.Cmd) {
 	next, cmd := m.Update(tea.KeyPressMsg{Code: []rune(k)[0], Text: k})
 	return next.(Model), cmd
@@ -364,13 +378,16 @@ func TestPaneKeysSwitchTheTableAndResetTheCursor(t *testing.T) {
 	if m.pane != paneFlows || m.cursor != 0 {
 		t.Errorf("2 selects flows at the top: pane %d cursor %d", m.pane, m.cursor)
 	}
-	if m.split() {
-		t.Error("only the tasks pane splits")
+	if !m.split() {
+		t.Error("the flows pane splits too")
 	}
-	if n := m.rowCount(); n != 4 {
-		t.Errorf("the flows table has the stuck report's rows: %d", n)
+	if n := m.rowCount(); n != len(m.flows.Flows) {
+		t.Errorf("the flows table has every flow: %d", n)
 	}
 	m = press(m, "3")
+	if m.split() {
+		t.Error("only the tasks and flows panes split")
+	}
 	if m.pane != panePod || m.rowCount() != 4 {
 		t.Errorf("3 selects pod: pane %d rows %d", m.pane, m.rowCount())
 	}
@@ -380,7 +397,7 @@ func TestPaneKeysSwitchTheTableAndResetTheCursor(t *testing.T) {
 }
 
 func TestGoldenFlows120(t *testing.T) {
-	m := press(fixture(t).WithSize(120, 20), "2", "down", "down")
+	m := withTrace(t, press(fixture(t).WithSize(120, 20), "2", "down", "down"), "")
 	golden(t, "flows-120x20", m.Render())
 }
 
@@ -389,12 +406,11 @@ func TestGoldenFlows80(t *testing.T) {
 	golden(t, "flows-80x18", m.Render())
 }
 
-func TestAStuckFlowWhoseWaitIsDeadIsRed(t *testing.T) {
+func TestADeadWaitIsStillRedOnTheLine(t *testing.T) {
 	m := press(fixture(t).WithSize(120, 20), "2")
 	m.opts.Plain = false
-	out := m.Render()
-	if !strings.Contains(out, "canceled") {
-		t.Fatal("the canceled request should show under stands")
+	if !strings.Contains(m.Render(), "stuck older than 1h") {
+		t.Error("the line should carry the stuck count")
 	}
 	// Plain rendering carries no colour; the model says which rows are red.
 	if !m.flows.Red() || !m.Red() {
@@ -402,11 +418,11 @@ func TestAStuckFlowWhoseWaitIsDeadIsRed(t *testing.T) {
 	}
 }
 
-func TestEnterOnAStuckFlowOpensItsTrace(t *testing.T) {
+func TestEnterOnAFlowOpensItsTrace(t *testing.T) {
 	m := press(fixture(t).WithSize(100, 18), "2", "down", "down")
 	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	m = next.(Model)
-	if cmd == nil || m.trace == nil || !m.trace.loading || m.trace.id != "20260903-101010-session-1f2e" {
+	if cmd == nil || m.trace == nil || !m.trace.loading || m.trace.id != m.flowRows()[2].ID {
 		t.Fatalf("enter should ask for the trace: %+v", m.trace)
 	}
 	text := strings.TrimRight(string(readFixture(t, "flow", "trace.txt")), "\n")
@@ -446,65 +462,148 @@ func TestAFailedPollKeepsTheLastAnswerAndSaysSo(t *testing.T) {
 	}
 }
 
-// ---- the flows pane under a definition --------------------------------------
+// ---- every definition in one table ------------------------------------------
 
-func TestDOpensTheDefinitionChooserAndEnterShowsThatDefinition(t *testing.T) {
+func TestTheFlowsTableListsEveryDefinition(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "2", "p", "down") // p hides the flow pane, so the table has the width
+
+	if m.rowCount() != len(m.flows.Flows) {
+		t.Fatalf("every flow, all definitions: %d of %d", m.rowCount(), len(m.flows.Flows))
+	}
+	out := m.Render()
+	// The columns are flow's own record; a link name is the project's word, and stays in the pane.
+	for _, want := range []string{"definition", "state", "age", "started", "duration", "waits", "landing", "request", "session"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the table should carry %q:\n%s", want, out)
+		}
+	}
+	head := strings.Split(out, "\n")[3] // the column header
+	for _, gone := range []string{"actor", "branch", "repo", "task", "id", "seq", "touched"} {
+		if strings.Contains(head, gone) {
+			t.Errorf("a link name should not be a column: %q in %q", gone, head)
+		}
+	}
+}
+
+func TestDNoLongerChoosesADefinition(t *testing.T) {
 	m := press(fixture(t).WithSize(120, 20), "2", "d")
-	if !m.choosing || m.choice != 0 {
-		t.Fatalf("d should open the chooser on the stuck report: %+v", m.choosing)
+	if m.rowCount() != len(m.flows.Flows) {
+		t.Errorf("d does nothing: %d rows", m.rowCount())
 	}
-	if got := strings.Join(m.flowChoices(), ","); got != ",landing,request,session" {
-		t.Errorf("choices are the stuck report then every definition by name: %q", got)
-	}
-	golden(t, "flows-choose-120x20", m.Render())
-	m = press(m, "right", "right", "right", "enter")
-	if m.choosing || m.flowDef != "session" || m.pane != paneFlows {
-		t.Fatalf("enter shows the chosen definition: choosing %v def %q", m.choosing, m.flowDef)
-	}
-	if m.rowCount() != 4 {
-		t.Errorf("the session flows: %d rows", m.rowCount())
-	}
-	m = press(m, "down")
-	golden(t, "flows-session-120x20", m.Render())
-	golden(t, "flows-session-80x18", m.WithSize(80, 18).Render())
-	if !strings.Contains(m.Render(), "actor") || !strings.Contains(m.Render(), "branch") {
-		t.Error("the columns are the definition's links")
+	if strings.Contains(m.Render(), "definition  stuck") {
+		t.Error("no chooser on the bar")
 	}
 }
 
-func TestChooserDigitsPickAndEscKeepsWhatWasShown(t *testing.T) {
-	m := press(fixture(t).WithSize(120, 20), "2", "d", "2")
-	if m.choosing || m.flowDef != "landing" || m.rowCount() != 1 {
-		t.Errorf("2 picks the first definition: %q %d", m.flowDef, m.rowCount())
+func TestTheFlowPaneShowsTheFlowUnderTheCursor(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "2", "down") // the request a session waits on
+	if !m.split() {
+		t.Fatal("the flows pane splits at 120 columns")
 	}
-	m = press(m, "d", "left", "esc")
-	if m.choosing || m.flowDef != "landing" {
-		t.Error("esc keeps the definition that was showing")
+	if m.panelTrace == nil || m.panelTrace.id != m.flowRows()[1].ID || !m.panelTrace.loading {
+		t.Fatalf("the pane asks for the selected flow's trace: %+v", m.panelTrace)
 	}
-	m = press(m, "d", "1")
-	if m.flowDef != "" || m.rowCount() != 4 {
-		t.Errorf("1 is the stuck report again: %q %d", m.flowDef, m.rowCount())
+	out := m.Render()
+	for _, want := range []string{"flow ── request · todo", "help-requested-by-web-ui", "stuck", "── links", "── trace", "asking flow…"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the panel should carry %q:\n%s", want, out)
+		}
 	}
-	if m = press(m, "1", "d"); m.choosing {
-		t.Error("d does nothing outside the flows pane")
+	m = withTrace(t, m, m.panelTrace.id)
+	out = m.Render()
+	if m.panelTrace.loading || !strings.Contains(out, "→ queued") || !strings.Contains(out, "exitCode=0") {
+		t.Errorf("the pane shows each move by its seq, state change and result:\n%s", out)
+	}
+	if !strings.Contains(out, "verdict=clean") || strings.Contains(out, "2026-09-09 11:37:00") {
+		t.Errorf("the pane shows the result, not flow's printed line:\n%s", out)
+	}
+	golden(t, "flows-split-120x20", m.Render())
+	m = press(m, "down") // the blocked session below it, which waits on it
+	out = m.Render()
+	if !strings.Contains(out, "waits on") || !strings.Contains(out, "(todo)") {
+		t.Errorf("a waiting flow says what it waits on and where that stands:\n%s", out)
+	}
+	if m.panelTrace.id != m.flowRows()[2].ID || !m.panelTrace.loading {
+		t.Error("moving the cursor asks for that flow's trace")
+	}
+	m = press(m, "end") // the session still waiting on the request that was canceled
+	if !strings.Contains(m.Render(), "(canceled)") {
+		t.Errorf("a dead wait says so:\n%s", m.Render())
 	}
 }
 
-func TestEnterUnderADefinitionOpensThatFlowsTrace(t *testing.T) {
-	m := press(fixture(t).WithSize(100, 18), "2", "d", "4", "down")
-	next, cmd := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+func TestRightFocusesTheTaskPaneThenOpensTheTask(t *testing.T) {
+	m := press(fixture(t).WithSize(140, 20), "down", "down")
+	if !m.split() || m.focus != focusLeft {
+		t.Fatal("the list has the keys to start with")
+	}
+	m = press(m, "l")
+	if m.focus != focusRight || m.detail != nil {
+		t.Fatalf("l moves to the task pane rather than opening it: focus %d detail %+v", m.focus, m.detail)
+	}
+	m = press(m, "l")
+	if m.detail == nil || m.detail.Slug != m.rows()[2].Slug {
+		t.Fatalf("l from the pane opens the task full width: %+v", m.detail)
+	}
+	m = press(m, "esc", "p", "l")
+	if m.detail == nil {
+		t.Error("with the pane hidden l opens the task at once")
+	}
+}
+
+func TestRightFocusesTheFlowPaneThenOpensTheTrace(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "2", "down")
+	if m.focus != focusLeft {
+		t.Fatal("the list has the keys to start with")
+	}
+	m = press(m, "l")
+	if m.focus != focusRight || m.trace != nil {
+		t.Fatalf("l focuses the flow pane rather than opening the trace: focus %d trace %+v", m.focus, m.trace)
+	}
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'l', Text: "l"})
 	m = next.(Model)
-	if cmd == nil || m.trace == nil || m.trace.id != m.flows.OfDefinition("session")[1].ID {
-		t.Fatalf("enter should ask for the second session's trace: %+v", m.trace)
+	if cmd == nil || m.trace == nil || m.trace.id != m.flowRows()[1].ID {
+		t.Fatalf("l from the pane opens the trace full width: %+v", m.trace)
+	}
+	if m = press(m, "esc"); m.trace != nil {
+		t.Error("esc closes the trace")
+	}
+	// With the pane hidden there is nothing to focus, so l opens the trace at once.
+	m = press(m, "esc", "p", "l")
+	if m.trace == nil {
+		t.Error("l opens the trace when the list has the screen")
 	}
 }
 
-func TestADefinitionWithNoFlowsSaysSo(t *testing.T) {
-	m := fixture(t).WithSize(120, 20)
-	m.flows.Definitions = append(m.flows.Definitions, flows.Definition{Name: "release"})
-	m = press(m, "2", "d", "3") // the stuck report, landing, then release by name
-	if m.flowDef != "release" || m.rowCount() != 0 || !strings.Contains(m.Render(), "no flows of definition release") {
-		t.Errorf("%q\n%s", m.flowDef, m.Render())
+func TestTheFlowPanesTraceScrollsAndIsReread(t *testing.T) {
+	m := withTrace(t, press(fixture(t).WithSize(120, 20), "2"), "")
+	first := m.Render()
+	m = press(m, "tab", "down", "down")
+	if m.focus != focusRight || m.detailOff != 2 {
+		t.Fatalf("tab focuses the pane and the movement keys scroll the trace: %d %d", m.focus, m.detailOff)
+	}
+	if m.Render() == first {
+		t.Error("the trace should have scrolled")
+	}
+	// A later flow poll marks the trace for a reread, and the next message asks for it.
+	next, _ := m.Update(flowsMsg(m.flows))
+	m = next.(Model)
+	if !m.panelTrace.loading {
+		t.Error("a poll rereads the trace beside the list")
+	}
+}
+
+func TestPHidesTheFlowPaneAndTabFocusesIt(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "2", "p")
+	if m.split() || !strings.Contains(m.Render(), "p flow pane") {
+		t.Error("p hides the flow pane and the bar offers it back")
+	}
+	m = press(m, "p", "tab")
+	if !m.split() || m.focus != focusRight {
+		t.Error("p shows it again and tab focuses it")
+	}
+	if m = press(m, "esc"); m.focus != focusLeft {
+		t.Error("esc goes back to the list")
 	}
 }
 

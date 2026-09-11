@@ -1,6 +1,7 @@
-// The graph: parent, waits-on and the shared things flows are about. `trace`
-// walks it from one flow or one link value and prints one timeline; `stuck`
-// lists what nothing has touched in a while and what each waits on.
+// The graph: waits-on, the link values that name another flow, and the shared
+// things flows are about. `trace` walks it from one flow or one link value and
+// prints one timeline; `stuck` lists what nothing has touched in a while and
+// what each waits on.
 
 import type { Line, Snapshot } from './journal.ts'
 
@@ -14,7 +15,17 @@ export interface TraceLine extends Line {
   definition: string
 }
 
-/** Every flow reachable from the start set over parent, child and waits-on links, in both directions. */
+/** The ids a flow names: what it waits on, and every link value that could be one. */
+const edges = (s: Snapshot): string[] => [...s.waitsOn, ...Object.values(s.links)]
+
+/**
+ * Every flow reachable from the start set, in both directions, over the links
+ * that name another flow: what a flow waits on, and any declared link whose
+ * value is a flow id, `session=20260904-165952-run-132f` and the like. A link
+ * to a thing rather than a flow, `task=add-place-entity`, names no flow and so
+ * leads nowhere, which is what keeps one actor's every session from fusing into
+ * one story.
+ */
 export function collect(flows: Flows, start: Snapshot[]): Snapshot[] {
   const all = flows.all()
   const byId = new Map(all.map((s) => [s.id, s]))
@@ -22,8 +33,8 @@ export function collect(flows: Flows, start: Snapshot[]): Snapshot[] {
   for (let grew = true; grew; ) {
     grew = false
     for (const s of [...set.values()]) {
-      for (const other of [s.parent, ...s.waitsOn]) {
-        const o = other ? byId.get(other) : undefined
+      for (const other of edges(s)) {
+        const o = byId.get(other)
         if (o && !set.has(o.id)) {
           set.set(o.id, o)
           grew = true
@@ -32,7 +43,7 @@ export function collect(flows: Flows, start: Snapshot[]): Snapshot[] {
     }
     for (const o of all) {
       if (set.has(o.id)) continue
-      if ((o.parent && set.has(o.parent)) || o.waitsOn.some((w) => set.has(w))) {
+      if (edges(o).some((e) => set.has(e))) {
         set.set(o.id, o)
         grew = true
       }
@@ -47,7 +58,7 @@ export function startSet(flows: Flows, target: string): Snapshot[] {
   if (eq > 0) {
     const name = target.slice(0, eq)
     const value = target.slice(eq + 1)
-    return flows.all().filter((s) => (name === 'parent' ? s.parent === value : name === 'waits-on' ? s.waitsOn.includes(value) : s.links[name] === value))
+    return flows.all().filter((s) => (name === 'waits-on' ? s.waitsOn.includes(value) : s.links[name] === value))
   }
   return flows.all().filter((s) => s.id === target)
 }

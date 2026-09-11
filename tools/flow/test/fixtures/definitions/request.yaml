@@ -6,6 +6,7 @@ initial: todo
 terminal: [done, canceled]
 links:
   task: { required: true }
+  filed-by: { required: false }      # the run that filed it
 transitions:
   - { from: todo,        to: in-progress, on: picked }
   - { from: todo,        to: canceled,    on: canceled }

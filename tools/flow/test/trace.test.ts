@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { chain, makeWorld } from './helpers.ts'
 
-test('trace walks parent, child and waits-on links into one timeline, from an id or a link value', () => {
+test('trace walks waits-on and the links that name a flow into one timeline, from an id or a link value', () => {
   const w = makeWorld()
   const ids = chain(w)
   w.clock.tick(1000)
@@ -26,7 +26,7 @@ test('trace walks parent, child and waits-on links into one timeline, from an id
     'run blocked→resumable flow'
   ])
   assert.deepEqual(w.store.trace(ids.landing).flows.map((f) => f.id).sort(), Object.values(ids).sort())
-  assert.equal(w.store.trace(`parent=${ids.req}`).flows.length, 4)
+  assert.equal(w.store.trace(`request=${ids.req}`).flows.length, 4)
   assert.throws(() => w.store.trace('task=nothing'), /no flow is about task=nothing/)
   assert.throws(() => w.store.trace('nothing'), /no flow nothing/)
 })
@@ -36,7 +36,7 @@ test('stuck lists non-terminal flows idle for that long, with what each waits on
   const run = w.store.start({ definition: 'run', links: { actor: 'a' }, by: 'x' }).id
   w.store.advance(run, { event: 'started', data: {}, by: 'x' })
   w.store.advance(run, { event: 'exited', data: { exitCode: 0, requests: 1 }, by: 'x' })
-  const req = w.store.start({ definition: 'request', links: { task: 'one' }, parent: run, by: 'x' }).id
+  const req = w.store.start({ definition: 'request', links: { task: 'one', 'filed-by': run }, by: 'x' }).id
   w.store.link(run, { waitsOn: [req] }, 'x')
   const done = w.store.start({ definition: 'request', links: { task: 'two' }, by: 'x' }).id
   w.store.advance(done, { event: 'canceled', data: {}, by: 'x' })

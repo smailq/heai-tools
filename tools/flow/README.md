@@ -38,7 +38,7 @@ flows/<name>.yaml ──► heai-flow start ──► flow/flows/<id>/journal.js
 - **The journal is the truth.** The snapshot and the two indexes are regenerated views. A flow's current state is the `to` of its last journal line.
 - **Moves come from three places:** `heai-flow advance`, the clock expiring a state, and a linked flow reaching a state a guard waits for. The first is immediate; the other two happen at settle.
 - **Every state entered starts one script**, detached, and `flow` forgets it. No ordering, no retry, no timeout, no waiting.
-- **The graph is links.** There is no definition of a whole process. `heai-flow trace` reconstructs the chain by walking `parent`, child and `waits-on` links.
+- **The graph is links.** There is no definition of a whole process. `heai-flow trace` reconstructs the chain by walking `waits-on` and the links whose value names another flow.
 
 ## Definitions
 
@@ -100,7 +100,7 @@ A transition's keys:
 
 `when` does not combine with `after` or `requires`, and `after` does not combine with `requires`.
 A definition is validated whenever it is read, every problem at once: every transition names known states, the initial state is not terminal, every non-terminal state has a way out, no terminal state has one, every hook names a state and one command.
-`parent` and `waits-on` are flow-to-flow links every definition has and none may declare.
+`waits-on` is the one link every definition has and none may declare.
 Definitions live one per file under `flows/` in the project directory, and are found by the `name` each declares, not by file name; a file that does not validate, or declares a name another file already took, is listed by `heai-flow definitions` with its problem and refused by name.
 
 ## Actions
@@ -129,7 +129,7 @@ flow/
   flows/<id>/
     definition.yaml              pinned copy of what this flow started under; rewritten only by reindex --repin
     journal.jsonl                one transition per line, append-only
-    state.json                   { id, definition, state, terminal, since, startedAt, seq, links, parent, waitsOn, touchedAt, expiresAt }
+    state.json                   { id, definition, state, terminal, since, startedAt, seq, links, waitsOn, touchedAt, expiresAt }
     touch                        the last heartbeat, an ISO timestamp
     actions/<seq>-<state>.json   { seq, state, run, startedAt, pid }
     actions/<seq>-<state>.log    the script's output
@@ -147,7 +147,7 @@ A journal line:
 {"seq":3,"at":"2026-09-04T16:59:58.000Z","event":"gated","from":"exited","to":"blocked","by":"finish.sh","data":{"verdict":"clean","requested":true},"note":"filed help-requested-by-beta"}
 ```
 
-The first line is `seq: 0`, `event: start`, `from: null`, `to: <initial>`, with `links`, `parent` and `waitsOn` in `data`.
+The first line is `seq: 0`, `event: start`, `from: null`, `to: <initial>`, with `links` and `waitsOn` in `data`.
 A `link` line adds links later, `from` and `to` the same state, `data` carrying only what was new.
 `seq` is the version: `advance --seq 3` is refused, exit `1`, if the journal has moved.
 [`test/fixtures/journal.jsonl`](test/fixtures/journal.jsonl) is one such journal, byte for byte.
@@ -188,13 +188,15 @@ Two settlers at once are serialized by the lock; the one that finds it held does
 
 ## The graph
 
-Three link kinds, all recorded on the child:
+Two link kinds, both recorded on the flow that carries them:
 
-- **`parent`**: the flow this one was started because of.
-- **`waits-on`**: flows whose state a `requires` guard reads.
-- **Declared links**: not a flow but a thing, `task=<slug>`, `actor=<name>`, `branch=<ref>`, whatever the definition's `links` names.
+- **`waits-on`**: flows whose state a `requires` guard reads. The only link the settler looks at, and the only one no definition may declare.
+- **Declared links**: whatever the definition's `links` names. Usually a thing, `task=<slug>`, `actor=<name>`, `branch=<ref>`; sometimes another flow, `filed-by=<run>`, `run=<run>`.
 
-`heai-flow trace <id>` walks `parent` upward, children downward and `waits-on` both ways, and prints one timeline across every flow it found, in time order.
+There is no separate parent link. A flow that exists because of another says so with a declared link holding that flow's id, and the definition names it in the terms of its own story: a request is `filed-by` a run, a landing lands a `run`.
+
+`heai-flow trace <id>` walks both kinds in both directions and prints one timeline across every flow it found, in time order.
+A link value that names no flow, `task=inline-images-from-eml`, leads nowhere, which is what keeps every session one actor ever ran from fusing into one story.
 `heai-flow trace name=value` starts from everything linked to that value.
 
 ```
@@ -207,10 +209,10 @@ Three link kinds, all recorded on the child:
 ## The CLI
 
 ```
-heai-flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."] [--definition <path>]
+heai-flow start <definition> [--id <id>] [--link name=value ...] [--waits-on <flow> ...] [--by <who>] [--note "..."] [--definition <path>]
 heai-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
 heai-flow touch <id>
-heai-flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...]
+heai-flow link <id> [name=value ...] [--waits-on <flow> ...]
 heai-flow show <id> [--json]                    state, links, hooks, the journal, and the actions
 heai-flow list [<definition>] [--in <state>] [--link name=value] [--json]
 heai-flow trace <id | name=value> [--json]

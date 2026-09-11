@@ -1,18 +1,18 @@
  operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2    2s  13:41:00
  tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
- flows ── 4 stuck older than 1h · 5 open ─────────────────────────── flow 4s ago
- definition  state       id                              idle   stands          
- landing     proposed    20260906-000200-landing-04e8    3h     -               
- request     todo        20260906-030500-request-9a01    2h     -               
- session     blocked     20260903-101010-session-1f2e    3d     canceled        
- session     blocked     20260906-024801-session-77f0    2h     todo            
- ── all open, by definition ────────────────────────────────────────────────────
- landing     proposed   1
- request     todo       1
- session     blocked    2   running    1
+ flows ── 5 open of 7 · 4 stuck older than 1h ────────────────────── flow 4s ago
+ definition          state         age     started   duration 
+ session             running       6m      7m        -                          
+ request             todo          2h      2h        -        
+ session             blocked       2h      2h        -        
+ landing             proposed      3h      3h        -        
+ session             clean         4h      4h        3m       
+ request             canceled      2d      2d        1m       
+ session             blocked       3d      3d        -        
+
 
 
 
  pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (bloc pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
- ↑↓ move  ⏎ trace  d definition  1-4 pane  / filter  ? help  q quit
+ ↑↓ move  ⏎ trace  p flow pane  1-4 pane  / filter  +/- interval  ? help  q quit

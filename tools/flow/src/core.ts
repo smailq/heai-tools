@@ -113,7 +113,6 @@ export interface StartSpec {
   id?: string
   definition: Definition
   links: Record<string, string>
-  parent: string | null
   waitsOn: string[]
   by: string
   note?: string
@@ -126,7 +125,7 @@ export function createFlow(root: string, spec: StartSpec, now: Date): { id: stri
   if (spec.id !== undefined && !ID.test(spec.id)) throw new UsageError(`id ${JSON.stringify(spec.id)} must be letters, digits, dots, dashes and underscores`)
   checkLinks(def, spec.links)
   for (const [name, l] of Object.entries(def.links)) if (l.required && !(name in spec.links)) throw new UsageError(`definition ${def.name} requires link ${name}`)
-  checkTargets(root, [...(spec.parent ? [spec.parent] : []), ...spec.waitsOn])
+  checkTargets(root, spec.waitsOn)
   const id = spec.id ?? newId(def.name, now)
   const dir = flowDir(root, id)
   try {
@@ -137,7 +136,6 @@ export function createFlow(root: string, spec: StartSpec, now: Date): { id: stri
   }
   writeFileSync(join(dir, DEFINITION), def.text)
   const data: Record<string, unknown> = { links: spec.links }
-  if (spec.parent) data['parent'] = spec.parent
   if (spec.waitsOn.length) data['waitsOn'] = [...new Set(spec.waitsOn)]
   const line: Line = { seq: 0, at: now.toISOString(), event: 'start', from: null, to: def.initial, by: spec.by, data }
   if (spec.note) line.note = spec.note
@@ -196,7 +194,6 @@ export function applyEvent(root: string, id: string, spec: ApplySpec, now: Date,
 
 export interface LinkSpec {
   links?: Record<string, string>
-  parent?: string
   waitsOn?: string[]
 }
 
@@ -212,11 +209,6 @@ export function applyLink(root: string, id: string, spec: LinkSpec, by: string, 
       checkLinks(flow.definition, spec.links)
       const fresh = Object.fromEntries(Object.entries(spec.links).filter(([k, v]) => s.links[k] !== v))
       if (Object.keys(fresh).length) data['links'] = fresh
-    }
-    if (spec.parent !== undefined) {
-      checkTargets(root, [spec.parent])
-      if (spec.parent === id) throw new UsageError(`${id} cannot be its own parent`)
-      if (s.parent !== spec.parent) data['parent'] = spec.parent
     }
     if (spec.waitsOn?.length) {
       checkTargets(root, spec.waitsOn)

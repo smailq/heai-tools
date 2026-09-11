@@ -38,11 +38,11 @@ func TestParseRecordedList(t *testing.T) {
 		t.Errorf("since: %s", got)
 	}
 	d := byID["20260905-235010-session-e4a2"]
-	if !d.Terminal || d.State != "clean" || d.Parent != nil {
+	if !d.Terminal || d.State != "clean" {
 		t.Errorf("clean session: %+v", d)
 	}
 	l := byID["20260906-000200-landing-04e8"]
-	if l.Parent == nil || *l.Parent != d.ID || l.About() != "lane core" {
+	if l.Link("session") != d.ID || l.About() != "lane core" {
 		t.Errorf("landing: %+v", l)
 	}
 	r := byID["20260906-030500-request-9a01"]
@@ -126,20 +126,21 @@ func TestParseRecordedStuckAndWhereEachStands(t *testing.T) {
 		t.Errorf("todo is not red: %q %v", s, red)
 	}
 	if s, red := blockedOnCanceled.Stands(byID); s != "canceled" || !red {
-		t.Errorf("canceled is terminal and not done, so red: %q %v", s, red)
+		t.Errorf("a wait flow calls terminal is red, whatever the state is named: %q %v", s, red)
 	}
 	missing := Stuck{Waits: []Wait{{ID: "gone"}}}
 	if s, red := missing.Stands(byID); s != "missing" || !red {
 		t.Errorf("a missing flow is red: %q %v", s, red)
 	}
-	done := "done"
-	fine := Stuck{Waits: []Wait{{ID: "x", State: &done}}}
-	if _, red := fine.Stands(map[string]Flow{"x": {ID: "x", State: "done", Terminal: true}}); red {
-		t.Error("done is the terminal state a guard wants")
+	// No state name is special: a wait still running is not red, whatever it is called.
+	moving := "whatever-this-project-calls-it"
+	fine := Stuck{Waits: []Wait{{ID: "x", State: &moving}}}
+	if _, red := fine.Stands(map[string]Flow{"x": {ID: "x", State: moving}}); red {
+		t.Error("a wait that can still move is not red")
 	}
 	r := Result{Flows: list, Stuck: stuck}
 	if !r.Red() {
-		t.Error("the result is red while one wait stands at canceled")
+		t.Error("the result is red while one wait stands at a terminal flow")
 	}
 }
 

@@ -140,14 +140,8 @@ type Model struct {
 
 	// focus says which pane the movement keys drive when the screen is split.
 	focus int
-	// panelOff hides the task pane; p toggles it, and the list takes the whole width.
+	// panelOff hides the detail pane beside the tasks and flows lists; p toggles it, and the list takes the whole width.
 	panelOff bool
-
-	// flowDef is the definition whose flows the flows pane lists; "" is the stuck report.
-	flowDef string
-	// choosing is the definition chooser open on the bar, with choice its cursor over flowChoices.
-	choosing bool
-	choice   int
 
 	// detail is a task opened full width; detailOff scrolls its body, the split pane's, and a trace.
 	detail    *tracker.Task
@@ -157,12 +151,18 @@ type Model struct {
 	evDetail *reactor.Event
 	// trace is a flow's timeline opened full width, from `flow trace <id>`.
 	trace *traceView
+	// panelTrace is the same timeline for the flow under the cursor, shown in the flow
+	// pane beside the list; traceStale marks it for a reread on the next poll.
+	panelTrace *traceView
+	traceStale bool
 }
 
-// traceView is `flow trace <id>` as flow printed it, or why it could not.
+// traceView is one flow's timeline: `flow trace <id>` as flow printed it for the whole
+// screen, or the lines `--json` gives for the flow pane, or why neither could be read.
 type traceView struct {
 	id      string
 	text    string
+	lines   []flows.TraceLine
 	err     string
 	loading bool
 }
@@ -228,9 +228,12 @@ type flowsMsg flows.Result
 type podMsg pod.Result
 type reactorMsg reactor.Result
 type traceMsg struct {
-	id   string
-	text string
-	err  string
+	id    string
+	text  string
+	lines []flows.TraceLine
+	// panel says the answer is the flow pane's, read as JSON, not the whole screen's text.
+	panel bool
+	err   string
 }
 
 func (m Model) tick() tea.Cmd {
@@ -270,6 +273,20 @@ func (m Model) loadTrace(id string) tea.Cmd {
 	}
 }
 
+// loadPanelLines reads the same timeline as JSON, for the pane beside the list, which
+// shows the moves themselves rather than flow's printed line.
+func (m Model) loadPanelLines(id string) tea.Cmd {
+	mapPath := m.snap.MapPath
+	return func() tea.Msg {
+		t, err := flows.TraceJSON(mapPath, id)
+		msg := traceMsg{id: id, lines: t.Lines, panel: true}
+		if err != nil {
+			msg.err = err.Error()
+		}
+		return msg
+	}
+}
+
 // project is the project directory pod and reactor are asked about.
 func (m Model) project() string {
 	if m.opts.Project != "" {
@@ -284,8 +301,41 @@ func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.load(), m.tick(), m.slowTick())
 }
 
-// Update is the event loop.
+// Update is the event loop; the flow pane's trace is kept in step after every message.
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	next, cmd := m.update(msg)
+	mm := next.(Model)
+	if c := mm.syncPanelTrace(); c != nil {
+		return mm, tea.Batch(cmd, c)
+	}
+	return mm, cmd
+}
+
+// syncPanelTrace asks flow for the trace of the flow under the cursor when the flow
+// pane shows another one, or when a poll has since moved the flows on.
+func (m *Model) syncPanelTrace() tea.Cmd {
+	if m.pane != paneFlows || !m.split() || m.trace != nil {
+		return nil
+	}
+	rows := m.flowRows()
+	if len(rows) == 0 || m.cursor >= len(rows) {
+		m.panelTrace, m.traceStale = nil, false
+		return nil
+	}
+	id := rows[m.cursor].ID
+	switch {
+	case m.panelTrace == nil || m.panelTrace.id != id:
+		m.panelTrace = &traceView{id: id, loading: true}
+	case m.traceStale && !m.panelTrace.loading:
+		m.panelTrace.loading = true
+	default:
+		return nil
+	}
+	m.traceStale = false
+	return m.loadPanelLines(id)
+}
+
+func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
@@ -326,6 +376,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.flows = r
 		}
+		m.traceStale = true
 		m.clamp()
 		return m, nil
 	case podMsg:
@@ -360,8 +411,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.clamp()
 		return m, nil
 	case traceMsg:
-		if m.trace != nil && m.trace.id == msg.id {
+		if !msg.panel && m.trace != nil && m.trace.id == msg.id {
 			m.trace.text, m.trace.err, m.trace.loading = msg.text, msg.err, false
+		}
+		if msg.panel && m.panelTrace != nil && m.panelTrace.id == msg.id {
+			m.panelTrace.lines, m.panelTrace.err, m.panelTrace.loading = msg.lines, msg.err, false
 		}
 		return m, nil
 	case tea.KeyPressMsg:
@@ -384,6 +438,7 @@ func (m *Model) reload() tea.Cmd {
 		m.trace.loading = true
 		cmds = append(cmds, m.loadTrace(m.trace.id))
 	}
+	m.traceStale = true
 	return tea.Batch(cmds...)
 }
 
@@ -391,9 +446,6 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	k := msg.String()
 	if k == "ctrl+c" {
 		return m, tea.Quit
-	}
-	if m.choosing {
-		return m.chooseKey(k)
 	}
 	if m.typing {
 		switch k {
@@ -466,13 +518,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.help = true
 	case "1", "2", "3", "4":
 		m.switchPane(pane(k[0] - '1'))
-	case "d":
-		if m.pane == paneFlows {
-			m.choosing = true
-			m.choice = max(0, indexOf(m.flowChoices(), m.flowDef))
-		}
 	case "p":
-		if m.pane == paneTasks {
+		if m.pane == paneTasks || m.pane == paneFlows {
 			m.panelOff = !m.panelOff
 			if !m.split() {
 				m.focus = focusLeft
@@ -507,7 +554,15 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case "end", "G":
 		m.cursor = m.rowCount() - 1
 		m.detailOff = 0
-	case "enter", "right", "l":
+	case "right", "l":
+		// The pane beside the list comes first - it holds the task, or the flow with
+		// its trace - and only from there does the whole screen open.
+		if m.split() && m.focus == focusLeft {
+			m.focus = focusRight
+			return m, nil
+		}
+		return m.open()
+	case "enter":
 		return m.open()
 	case "b":
 		if m.pane == paneTasks {
@@ -561,55 +616,8 @@ func (m *Model) switchPane(p pane) {
 	}
 	m.pane = p
 	m.cursor, m.offset, m.detailOff = 0, 0, 0
-	m.filter, m.typing, m.choosing = "", false, false
+	m.filter, m.typing = "", false
 	m.focus = focusLeft
-}
-
-// flowChoices is what d offers: the stuck report, then every definition the project declares or has flows of.
-func (m Model) flowChoices() []string {
-	return append([]string{""}, m.flows.DefinitionNames()...)
-}
-
-// chooseKey drives the definition chooser: ← → move, a digit picks, ⏎ selects, esc keeps what was shown.
-func (m Model) chooseKey(k string) (tea.Model, tea.Cmd) {
-	choices := m.flowChoices()
-	switch k {
-	case "q":
-		return m, tea.Quit
-	case "esc", "d":
-		m.choosing = false
-	case "left", "h", "up", "k":
-		m.choice = (m.choice + len(choices) - 1) % len(choices)
-	case "right", "l", "down", "j", "tab":
-		m.choice = (m.choice + 1) % len(choices)
-	case "home", "g":
-		m.choice = 0
-	case "end", "G":
-		m.choice = len(choices) - 1
-	case "enter":
-		m.selectDefinition(choices[m.choice])
-	default:
-		if len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(choices) {
-			m.selectDefinition(choices[k[0]-'1'])
-		}
-	}
-	return m, nil
-}
-
-// selectDefinition switches the flows table to one definition's flows, or back to the stuck report for "".
-func (m *Model) selectDefinition(name string) {
-	m.flowDef, m.choosing = name, false
-	m.cursor, m.offset, m.detailOff = 0, 0, 0
-	m.clamp()
-}
-
-func indexOf(list []string, v string) int {
-	for i, x := range list {
-		if x == v {
-			return i
-		}
-	}
-	return -1
 }
 
 // open is Enter: a task full width, a flow's trace, a workspace, or an event with its actions.
@@ -631,12 +639,8 @@ func (m Model) open() (tea.Model, tea.Cmd) {
 			m.evDetail, m.detailOff = &e, 0
 		}
 	case paneFlows:
-		if m.flowDef != "" {
-			if rows := m.defRows(); len(rows) > 0 {
-				return m.openTrace(rows[m.cursor].ID)
-			}
-		} else if rows := m.stuckRows(); len(rows) > 0 {
-			return m.openTrace(rows[m.cursor].Flow.ID)
+		if rows := m.flowRows(); len(rows) > 0 {
+			return m.openTrace(rows[m.cursor].ID)
 		}
 	}
 	return m, nil
@@ -681,42 +685,19 @@ func (m Model) rows() []tracker.Task {
 	return out
 }
 
-// stuckRows is what the flows table shows: the stuck report, filtered.
-func (m Model) stuckRows() []flows.Stuck {
-	needle := strings.ToLower(m.filter)
-	if needle == "" {
-		return m.flows.Stuck
-	}
-	var out []flows.Stuck
-	for _, s := range m.flows.Stuck {
-		hay := strings.ToLower(flowText(s.Flow) + " " + m.stuckWaits(s))
-		if strings.Contains(hay, needle) {
-			out = append(out, s)
+// flowRows is what the flows table shows: every flow as flow lists them, filtered.
+func (m Model) flowRows() []flows.Flow {
+	list := m.flows.Flows
+	if needle := strings.ToLower(m.filter); needle != "" {
+		var keep []flows.Flow
+		for _, f := range list {
+			if strings.Contains(strings.ToLower(flowText(f)), needle) {
+				keep = append(keep, f)
+			}
 		}
+		list = keep
 	}
-	return out
-}
-
-func (m Model) stuckWaits(s flows.Stuck) string {
-	byID := flows.Index(m.flows.Flows)
-	stands, _ := s.Stands(byID)
-	return s.WaitsOn(byID) + " " + stands
-}
-
-// defRows is what the flows table shows under a chosen definition: its flows as flow lists them, filtered.
-func (m Model) defRows() []flows.Flow {
-	all := m.flows.OfDefinition(m.flowDef)
-	needle := strings.ToLower(m.filter)
-	if needle == "" {
-		return all
-	}
-	var out []flows.Flow
-	for _, f := range all {
-		if strings.Contains(strings.ToLower(flowText(f)), needle) {
-			out = append(out, f)
-		}
-	}
-	return out
+	return list
 }
 
 // podRows is what the pod table shows: the workspaces as pod lists them, filtered.
@@ -784,10 +765,7 @@ func flowText(f flows.Flow) string {
 func (m Model) rowCount() int {
 	switch m.pane {
 	case paneFlows:
-		if m.flowDef != "" {
-			return len(m.defRows())
-		}
-		return len(m.stuckRows())
+		return len(m.flowRows())
 	case panePod:
 		return len(m.podRows())
 	case paneReactor:
@@ -832,31 +810,18 @@ func (m Model) regionHeight() int {
 
 // bodyHeight is how many table rows fit in the current pane: its region less
 // the title, the column header, the filter line, and what sits around the rows -
-// the open-flows summary under them, or the reactor's sources and rules above.
+// the reactor's sources and rules above.
 func (m Model) bodyHeight() int {
 	h := m.regionHeight() - 2
 	if m.typing || m.filter != "" {
 		h--
 	}
 	switch m.pane {
-	case paneFlows:
-		h -= m.summaryHeight()
 	case paneReactor:
 		// The sources' header and rows, the rules' caption, header and rows, and the events' caption.
 		h -= m.sourcesHeight() + m.rulesHeight() + 1
 	}
 	return h
-}
-
-// summaryHeight is the rule and one line per definition with open flows, or one line saying none.
-func (m Model) summaryHeight() int {
-	n := 0
-	for _, d := range flows.Count(m.flows.Flows) {
-		if d.Open > 0 {
-			n++
-		}
-	}
-	return 1 + max(1, n)
 }
 
 // sourcesHeight is the column header and the sources shown.
@@ -883,4 +848,14 @@ func (m Model) reactorBlocks() (sources, rules int) {
 	rules = min(max(1, len(st.Rules)), max(1, room/2))
 	sources = min(max(1, len(st.Sources)), max(1, room-rules))
 	return sources, rules
+}
+
+// stuckOf is flow's stuck entry for an id, or nil when flow does not call it stuck.
+func (m Model) stuckOf(id string) *flows.Stuck {
+	for i := range m.flows.Stuck {
+		if m.flows.Stuck[i].Flow.ID == id {
+			return &m.flows.Stuck[i]
+		}
+	}
+	return nil
 }

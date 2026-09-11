@@ -17,4 +17,4 @@
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2 · running 1 · clean  flow 4s ago
  pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (blocked 1 · idle 1 · working 1)                                  pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed                               reactor 5s ago
- ↑↓ move  ⇥ task  ⏎ expand  p hide  b active  S sort  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ ↑↓ move  → task  ⏎ expand  p hide  b active  S sort  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

@@ -54,7 +54,7 @@ test('links are declared by the definition; required ones are needed at start; t
   const { store } = makeWorld()
   assert.throws(() => store.start({ definition: 'run', links: {}, by: 'x' }), /requires link actor/)
   assert.throws(() => store.start({ definition: 'run', links: { actor: 'a', lane: 'core' }, by: 'x' }), /declares no link lane; it declares task, actor, branch/)
-  assert.throws(() => store.start({ definition: 'run', links: { actor: 'a' }, parent: 'ghost', by: 'x' }), (e: FlowError) => e.code === 'not-found')
+  assert.throws(() => store.start({ definition: 'run', links: { actor: 'a' }, waitsOn: ['ghost'], by: 'x' }), (e: FlowError) => e.code === 'not-found')
   const { id } = store.start({ definition: 'run', links: { actor: 'a' }, by: 'x' })
   assert.throws(() => store.link(id, { waitsOn: [id] }, 'x'), /cannot wait on itself/)
   assert.throws(() => store.start({ definition: 'run', id, links: { actor: 'a' }, by: 'x' }), (e: FlowError) => e.code === 'conflict')

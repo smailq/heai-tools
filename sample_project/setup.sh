@@ -41,7 +41,7 @@ d=$(heai-flow start session --link actor=mail-owner --link task=inline-images-fr
 heai-flow advance "$d" started --by start.sh >/dev/null
 heai-flow advance "$d" exited --data '{"exitCode":0}' --by inbox.sh >/dev/null
 heai-flow advance "$d" gated --data '{"verdict":"clean"}' --by finish.sh >/dev/null
-heai-flow start landing --link branch=agent/mail-owner/inline-images-from-eml --link actor=mail-owner --link territory=mail --link session="$d" --link task=inline-images-from-eml --parent "$d" --by finish.sh >/dev/null
+heai-flow start landing --link branch=agent/mail-owner/inline-images-from-eml --link actor=mail-owner --link territory=mail --link session="$d" --link task=inline-images-from-eml --by finish.sh >/dev/null
 
 # Backdate B and C so `heai-flow stuck` has something to report: the journal is
 # the truth, so its times move and `reindex` regenerates the rest. This is the

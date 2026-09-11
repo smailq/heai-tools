@@ -32,10 +32,9 @@ export function decodeValue(s: string): string {
   ).toString('utf8')
 }
 
-/** Every (name, value) pair a flow is indexed under: its `about` links, its parent, and what it waits on. */
+/** Every (name, value) pair a flow is indexed under: its `about` links and what it waits on. */
 export function linkEntries(s: Snapshot): [name: string, value: string][] {
   const out: [string, string][] = Object.entries(s.links)
-  if (s.parent) out.push(['parent', s.parent])
   for (const w of s.waitsOn) out.push(['waits-on', w])
   return out
 }

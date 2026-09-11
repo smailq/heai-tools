@@ -3,6 +3,7 @@ package ui
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sort"
@@ -67,11 +68,7 @@ func (m Model) Render() string {
 	if len(lines) > body {
 		lines = lines[:body]
 	}
-	if m.choosing {
-		lines = append(lines, m.chooserLine(st))
-	} else {
-		lines = append(lines, m.keyBar(st))
-	}
+	lines = append(lines, m.keyBar(st))
 	for i, l := range lines {
 		lines[i] = fit(l, m.width)
 	}
@@ -92,7 +89,11 @@ func (m Model) region(st styles, p pane) []string {
 			lines = m.tableLines(st, m.width)
 		}
 	case paneFlows:
-		lines = m.flowsTable(st)
+		if m.split() {
+			lines = m.splitLines(st)
+		} else {
+			lines = m.flowsTable(st, m.width)
+		}
 	case panePod:
 		lines = m.podTable(st)
 	case paneReactor:
@@ -278,7 +279,7 @@ func (m Model) podSummary(st styles) string {
 	if n := linkedCount(p.Workspaces); n > 0 {
 		var states []string
 		for _, c := range pod.CountByStatus(p.Workspaces) {
-			states = append(states, st.flowState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
+			states = append(states, st.agentState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
 		}
 		parts = append(parts, fmt.Sprintf("workspaces %d (%s)", n, strings.Join(states, " · ")))
 	} else {
@@ -347,12 +348,16 @@ func linkedCount(list []pod.Workspace) int {
 
 // ---- split ------------------------------------------------------------------
 
-// splitAt is the width from which the task under the cursor is shown beside the list.
+// splitAt is the width from which the row under the cursor is shown beside the list.
 const splitAt = 100
 
-// split reports whether the list and the task share the screen.
+// split reports whether the list and the row under the cursor share the screen;
+// the tasks and flows panes do, the others do not.
 func (m Model) split() bool {
-	return m.pane == paneTasks && !m.opts.NoSplit && !m.panelOff && m.width >= splitAt
+	if m.pane != paneTasks && m.pane != paneFlows {
+		return false
+	}
+	return !m.opts.NoSplit && !m.panelOff && m.width >= splitAt
 }
 
 // leftWidth is the list's share when split: a little over half, never starving the task of 40 columns.
@@ -360,16 +365,25 @@ func (m Model) leftWidth() int {
 	return min(max(60, m.width*55/100), m.width-41)
 }
 
-// splitLines lays the list and the task side by side, a faint bar between them.
+// splitLines lays the list and the row under the cursor side by side, a faint bar between them.
 func (m Model) splitLines(st styles) []string {
 	left := m.leftWidth()
 	right := m.width - left - 1
-	l := m.tableLines(st, left)
-	var r []string
-	if rows := m.rows(); len(rows) > 0 && m.cursor < len(rows) {
-		r = m.detailLines(st, &rows[m.cursor], right, m.detailOff, m.regionHeight())
+	var l, r []string
+	if m.pane == paneFlows {
+		l = m.flowsTable(st, left)
+		if rows := m.flowRows(); len(rows) > 0 && m.cursor < len(rows) {
+			r = m.flowDetailLines(st, &rows[m.cursor], right, m.detailOff, m.regionHeight())
+		} else {
+			r = []string{paneTitle(st, "flow", "", "", right), st.faint.Render(" (no flow selected)")}
+		}
 	} else {
-		r = []string{paneTitle(st, "task", "", "", right), st.faint.Render(" (no task selected)")}
+		l = m.tableLines(st, left)
+		if rows := m.rows(); len(rows) > 0 && m.cursor < len(rows) {
+			r = m.detailLines(st, &rows[m.cursor], right, m.detailOff, m.regionHeight())
+		} else {
+			r = []string{paneTitle(st, "task", "", "", right), st.faint.Render(" (no task selected)")}
+		}
 	}
 	n := max(len(l), len(r), m.regionHeight())
 	out := make([]string, 0, n)
@@ -567,22 +581,9 @@ func (m Model) finishRow(st styles, line string, selected bool, width int) strin
 
 // ---- flows ------------------------------------------------------------------
 
-func (m Model) flowColumns(width int) []column {
-	cols := []column{
-		{"definition", 10, 0},
-		{"state", 10, 0},
-		{"id", 0, 0}, // flexible
-		{"idle", 5, 70},
-		{"waits on", 28, 90},
-	}
-	// The id takes what is left up to its full length; what remains is "stands".
-	return layout(cols, width, -1, 16, 30, 10, 8, "stands")
-}
-
-// flowsTable is the stuck report as flow prints it, then every open flow by definition.
-func (m Model) flowsTable(st styles) []string {
-	width := m.width
-	if len(m.flows.Flows) == 0 && len(m.flows.Stuck) == 0 {
+// flowsTable is every flow flow lists, all definitions together.
+func (m Model) flowsTable(st styles, width int) []string {
+	if len(m.flows.Flows) == 0 {
 		msg := m.flows.Note
 		if msg == "" {
 			msg = "asking flow…"
@@ -592,101 +593,34 @@ func (m Model) flowsTable(st styles) []string {
 		}
 		return []string{paneTitle(st, "flows", "", m.flowsAge(st), width), " " + st.faint.Render(msg)}
 	}
-	var lines []string
-	if m.flowDef != "" {
-		lines = m.definitionLines(st, width)
-	} else {
-		lines = m.stuckLines(st, width)
-	}
-	lines = append(lines, m.filterLine()...)
-	lines = append(lines, paneRule(st, " ── all open, by definition ", "", width))
-	n := 0
-	for _, d := range flows.Count(m.flows.Flows) {
-		if d.Open == 0 {
-			continue
-		}
-		n++
-		var states []string
-		for _, s := range d.States {
-			if !s.Terminal {
-				states = append(states, st.flowState(s.State).Render(fmt.Sprintf("%-10s %d", s.State, s.Count)))
-			}
-		}
-		lines = append(lines, " "+pad(d.Definition, 12)+strings.Join(states, "   "))
-	}
-	if n == 0 {
-		lines = append(lines, st.faint.Render(" (none open)"))
-	}
-	return lines
-}
-
-// stuckLines is the default flows table: the stuck report as flow prints it.
-func (m Model) stuckLines(st styles, width int) []string {
-	rows := m.stuckRows()
-	open := 0
-	for _, d := range flows.Count(m.flows.Flows) {
-		open += d.Open
-	}
-	left := fmt.Sprintf("%d stuck older than 1h · %d open", len(m.flows.Stuck), open)
-	if m.filter != "" {
-		left = fmt.Sprintf("%d of %d stuck · filter %q · %d open", len(rows), len(m.flows.Stuck), m.filter, open)
-	}
-	cols := m.flowColumns(width)
-	lines := []string{paneTitle(st, "flows", left, m.flowsAge(st), width), columnHeader(st, cols)}
-	byID := flows.Index(m.flows.Flows)
-	h := m.bodyHeight()
-	end := min(len(rows), m.offset+h)
-	for i := m.offset; i < end; i++ {
-		lines = append(lines, m.stuckRow(st, cols, rows[i], byID, i == m.cursor, width))
-	}
-	if len(rows) == 0 {
-		lines = append(lines, st.faint.Render(" nothing stuck for 1h or longer"))
-	}
-	return lines
-}
-
-// definitionLines is the flows table under a chosen definition: every flow of it, with a column per link it carries.
-func (m Model) definitionLines(st styles, width int) []string {
-	rows := m.defRows()
-	all := m.flows.OfDefinition(m.flowDef)
+	rows := m.flowRows()
+	all := m.flows.Flows
 	open := 0
 	for _, f := range all {
 		if !f.Terminal {
 			open++
 		}
 	}
-	left := fmt.Sprintf("%s · %d open of %d", m.flowDef, open, len(all))
+	left := fmt.Sprintf("%d open of %d · %d stuck older than 1h", open, len(all), len(m.flows.Stuck))
 	if m.filter != "" {
-		left = fmt.Sprintf("%s · %d of %d · filter %q", m.flowDef, len(rows), len(all), m.filter)
+		left = fmt.Sprintf("%d of %d · filter %q · %d open", len(rows), len(all), m.filter, open)
 	}
 	lines := []string{paneTitle(st, "flows", left, m.flowsAge(st), width)}
-	if len(all) == 0 {
-		msg := "no flows of definition " + m.flowDef
-		for _, d := range m.flows.Definitions {
-			if d.Name == m.flowDef && d.Problem != nil {
-				msg = "definition " + m.flowDef + " does not read: " + *d.Problem
-				return append(lines, " "+st.red.Render(msg))
-			}
-		}
-		return append(lines, " "+st.faint.Render(msg))
-	}
-	cols := m.definitionColumns(width, all)
+	cols := m.flowColumns(width)
 	lines = append(lines, columnHeader(st, cols))
 	h := m.bodyHeight()
 	end := min(len(rows), m.offset+h)
 	for i := m.offset; i < end; i++ {
-		lines = append(lines, m.definitionRow(st, cols, rows[i], i == m.cursor, width))
+		lines = append(lines, m.flowRow(st, cols, rows[i], i == m.cursor, width))
 	}
 	if len(rows) == 0 {
 		lines = append(lines, st.faint.Render(" (nothing to show)"))
 	}
-	return lines
+	return append(lines, m.filterLine()...)
 }
 
-// linkOrder puts the links every process names first; the rest follow by name.
-var linkOrder = []string{"task", "actor", "repo", "branch"}
-
-// linkNames is every link name the flows carry, in linkOrder then alphabetical.
+// linkNames is every link name the flows carry, by name. The names are the
+// project's, not flow's, so nothing here puts one before another.
 func linkNames(list []flows.Flow) []string {
 	seen := map[string]bool{}
 	for _, f := range list {
@@ -694,119 +628,225 @@ func linkNames(list []flows.Flow) []string {
 			seen[n] = true
 		}
 	}
-	var out []string
-	for _, n := range linkOrder {
-		if seen[n] {
-			out = append(out, n)
-			delete(seen, n)
-		}
-	}
-	rest := make([]string, 0, len(seen))
+	out := make([]string, 0, len(seen))
 	for n := range seen {
-		rest = append(rest, n)
+		out = append(out, n)
 	}
-	sort.Strings(rest)
-	return append(out, rest...)
+	sort.Strings(out)
+	return out
 }
 
-// definitionColumns is id, state and age, then one column per link, each as wide as its
-// widest value up to 30, the last taking what is left; link columns leave from the right
-// when the terminal is too narrow for them.
-func (m Model) definitionColumns(width int, list []flows.Flow) []column {
-	cols := []column{{"id", 28, 0}, {"state", 10, 0}, {"age", 5, 0}}
-	used := 1
-	for _, c := range cols {
-		used += c.width + 2
+// flowColumns is flow's own record and nothing else: what `heai-flow list --json`
+// gives every flow, whatever a project's definitions are about. The id, the sequence
+// number and the last touch are in the flow pane rather than here, and so are the
+// links a flow carries, which are the project's vocabulary. duration is filled in
+// once a flow has ended. The columns to the right leave first as the terminal narrows.
+func (m Model) flowColumns(width int) []column {
+	cols := []column{
+		{"definition", 18, 0},
+		{"state", 12, 0},
+		{"age", 6, 0},
+		{"started", 8, 0},
+		{"duration", 9, 0},
+		{"waits", 6, 100},
 	}
-	names := linkNames(list)
-	for i, n := range names {
-		need := len([]rune(n))
-		for _, f := range list {
-			need = max(need, lipgloss.Width(f.Links[n]))
-		}
-		need = min(need, 30)
-		left := width - used
-		if left < 8 {
-			break
-		}
-		if i == len(names)-1 || need > left {
-			need = left
-		}
-		cols = append(cols, column{n, need, 0})
-		used += need + 2
-	}
-	return cols
+	return layout(cols, width, -2, 0, 0, 0, math.MaxInt, "")
 }
 
-func (m Model) definitionRow(st styles, cols []column, f flows.Flow, selected bool, width int) string {
+func (m Model) flowRow(st styles, cols []column, f flows.Flow, selected bool, width int) string {
 	var cells []string
 	for _, c := range cols {
 		var v string
 		switch c.name {
-		case "id":
-			v = f.ID
+		case "definition":
+			v = f.Definition
 		case "state":
 			v = f.State
 		case "age":
 			v = short(m.opts.Now().Sub(f.SinceTime()))
-		default:
-			v = orDash(f.Links[c.name])
+		case "started":
+			v = orDash(m.sinceAge(f.StartedAt))
+		case "duration":
+			v = orDash(flowDuration(f))
+		case "waits":
+			v = "-"
+			if n := len(f.WaitsOn); n > 0 {
+				v = fmt.Sprint(n)
+			}
 		}
 		cell := pad(v, c.width)
-		if !selected {
-			switch {
-			case f.Terminal:
-				cell = st.faint.Render(cell)
-			case c.name == "state":
-				cell = st.flowState(f.State).Render(cell)
-			}
+		if !selected && f.Terminal {
+			cell = st.faint.Render(cell)
 		}
 		cells = append(cells, cell)
 	}
 	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
 }
 
-// chooserLine is what d puts in place of the key bar: the stuck report and every definition, the cursor's choice reversed.
-func (m Model) chooserLine(st styles) string {
-	var pills []string
-	for i, c := range m.flowChoices() {
-		label := c
-		if c == "" {
-			label = "stuck"
-		}
-		switch {
-		case i == m.choice:
-			label = st.key.Render(" " + label + " ")
-		case c == m.flowDef:
-			label = st.title.Render("[" + label + "]")
-		default:
-			label = " " + label + " "
-		}
-		pills = append(pills, label)
+// flowDuration is how long a flow that has ended took, start to its last move; "" while it
+// can still move. Terminal is flow's own answer, so no state name is read here.
+func flowDuration(f flows.Flow) string {
+	if !f.Terminal {
+		return ""
 	}
-	return spread(" "+st.title.Render("definition")+"  "+strings.Join(pills, " "), "←→ choose · 1-9 pick · ⏎ show · esc back", m.width)
+	start, err := time.Parse(time.RFC3339Nano, f.StartedAt)
+	if err != nil {
+		return ""
+	}
+	end := f.SinceTime()
+	if end.IsZero() || end.Before(start) {
+		return ""
+	}
+	return short(end.Sub(start))
 }
 
-func (m Model) stuckRow(st styles, cols []column, s flows.Stuck, byID map[string]flows.Flow, selected bool, width int) string {
-	stands, red := s.Stands(byID)
-	values := map[string]string{
-		"definition": s.Flow.Definition, "state": s.Flow.State, "id": s.Flow.ID,
-		"idle": short(s.Idle()), "waits on": orDash(s.WaitsOn(byID)), "stands": orDash(stands),
+// shortID is the last segment of a flow id, for the table alone: the date, the time
+// and the definition ahead of it are already on the row, so only the tail tells one
+// flow from another there. Everywhere else an id is shown whole.
+func shortID(id string) string {
+	if i := strings.LastIndex(id, "-"); i >= 0 && i < len(id)-1 {
+		return id[i+1:]
 	}
-	var cells []string
-	for _, c := range cols {
-		cell := pad(values[c.name], c.width)
-		if !selected {
-			switch {
-			case red:
-				cell = st.red.Render(cell)
-			case c.name == "state":
-				cell = st.flowState(s.Flow.State).Render(cell)
-			}
+	return id
+}
+
+// sinceAge is how long ago a flow timestamp was, "" when it does not read.
+func (m Model) sinceAge(ts string) string {
+	t, err := time.Parse(time.RFC3339Nano, ts)
+	if err != nil {
+		return ""
+	}
+	return short(m.opts.Now().Sub(t))
+}
+
+// flowDetailLines is the flow under the cursor beside the table: what it is, where
+// it stands, the links it carries and what it waits on, then its trace as flow prints it.
+func (m Model) flowDetailLines(st styles, f *flows.Flow, width, off, avail int) []string {
+	state := f.State
+	if f.Terminal {
+		state = st.faint.Render(f.State)
+	}
+	age := short(m.opts.Now().Sub(f.SinceTime()))
+	lines := []string{paneTitle(st, "flow", f.Definition+" · "+f.State, "in state "+age, width)}
+	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
+	started := orDash(f.StartedAt)
+	if a := m.sinceAge(f.StartedAt); a != "" {
+		started = a + " ago"
+	}
+	lines = append(lines, kv("id", truncate(f.ID, width-14)))
+	lines = append(lines, kv("state", state+"  "+st.faint.Render("started "+started+" · seq "+fmt.Sprint(f.Seq))))
+	if f.TouchedAt != nil {
+		lines = append(lines, kv("touched", orDash(m.sinceAge(*f.TouchedAt))+" ago"))
+	}
+	if d := flowDuration(*f); d != "" {
+		lines = append(lines, kv("duration", d+st.faint.Render("  start to last move")))
+	}
+	if f.ExpiresAt != nil {
+		lines = append(lines, kv("expires", *f.ExpiresAt))
+	}
+	if s := m.stuckOf(f.ID); s != nil {
+		stands, red := s.Stands(flows.Index(m.flows.Flows))
+		note := "idle " + short(s.Idle())
+		if stands != "" {
+			note += " · waits stand at " + stands
 		}
-		cells = append(cells, cell)
+		if red {
+			note = st.red.Render(note)
+		}
+		lines = append(lines, kv("stuck", note))
 	}
-	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
+	lines = append(lines, m.flowBody(st, f, width)...)
+	return append(lines, m.panelTraceLines(st, f, width, off, avail-len(lines))...)
+}
+
+// flowBody is the links the flow carries, then every flow it waits on with where that stands.
+func (m Model) flowBody(st styles, f *flows.Flow, width int) []string {
+	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
+	body := []string{paneRule(st, " ── links ", "", width)}
+	for _, n := range linkNames([]flows.Flow{*f}) {
+		body = append(body, kv(n, truncate(f.Links[n], width-14)))
+	}
+	if len(f.Links) == 0 {
+		body = append(body, " "+st.faint.Render("(no links)"))
+	}
+	byID := flows.Index(m.flows.Flows)
+	for _, id := range f.WaitsOn {
+		w, ok := byID[id]
+		if !ok {
+			body = append(body, kv("waits on", st.red.Render(truncate(id, width-14)+"  (missing)")))
+			continue
+		}
+		what := w.About()
+		if what == "" {
+			what = w.ID
+		}
+		line := truncate(what, width-30) + "  (" + w.State + ")"
+		if w.Terminal {
+			line = st.red.Render(line)
+		}
+		body = append(body, kv("waits on", line))
+	}
+	return body
+}
+
+// panelTraceLines is the flow's timeline in the pane beside the list: one line a move,
+// with its sequence number, the state change it made and what came of it. Lines of the
+// other flows the walk reached are dimmed. The movement keys scroll it once the pane is focused.
+func (m Model) panelTraceLines(st styles, f *flows.Flow, width, off, room int) []string {
+	tv := m.panelTrace
+	rule := func(right string) string { return paneRule(st, " ── trace ", right, width) }
+	switch {
+	case tv == nil || tv.id != f.ID:
+		return []string{rule(""), " " + st.faint.Render("asking flow…")}
+	case tv.err != "":
+		return []string{rule(""), " " + st.red.Render(truncate(tv.err, width-2))}
+	case len(tv.lines) == 0:
+		if tv.loading {
+			return []string{rule(""), " " + st.faint.Render("asking flow…")}
+		}
+		return []string{rule(""), " " + st.faint.Render("(nothing to trace)")}
+	}
+	moveW, resultW := 6, 6
+	for _, l := range tv.lines {
+		moveW = max(moveW, lipgloss.Width(l.Move()))
+		resultW = max(resultW, lipgloss.Width(l.Result()))
+	}
+	cols := []column{{"seq", 3, 0}, {"change", min(moveW, max(10, width/2)), 0}}
+	if left := width - 1 - 5 - cols[1].width - 2; left >= 6 {
+		cols = append(cols, column{"result", min(resultW, left), 0})
+	}
+	body := make([]string, 0, len(tv.lines))
+	for _, l := range tv.lines {
+		cells := []string{pad(fmt.Sprint(l.Seq), 3)}
+		for _, c := range cols[1:] {
+			v := l.Move()
+			if c.name == "result" {
+				v = l.Result()
+			}
+			cells = append(cells, pad(truncate(v, c.width), c.width))
+		}
+		line := strings.TrimRight(" "+strings.Join(cells, "  "), " ")
+		if l.ID != f.ID {
+			line = st.faint.Render(line)
+		}
+		body = append(body, line)
+	}
+	off = min(off, max(0, len(body)-1))
+	shown := body[off:]
+	room -= 2 // the rule and the column header
+	more := ""
+	if room > 0 && len(shown) > room {
+		more = fmt.Sprintf(" · %d more", len(shown)-room)
+		shown = shown[:room]
+	}
+	position := ""
+	if off > 0 || more != "" {
+		position = fmt.Sprintf("moves %d-%d of %d", off+1, off+len(shown), len(body))
+	}
+	if tv.loading {
+		position = "· " + position
+	}
+	return append([]string{rule(position + more), columnHeader(st, cols)}, shown...)
 }
 
 // ---- pod --------------------------------------------------------------------
@@ -845,7 +885,7 @@ func (m Model) podTable(st styles) []string {
 	left := p.Status.Summary() + fmt.Sprintf(" · %d workspaces", linkedCount(p.Workspaces))
 	var states []string
 	for _, c := range p.Status.AgentCounts() {
-		states = append(states, st.flowState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
+		states = append(states, st.agentState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
 	}
 	if len(states) > 0 {
 		left += " · agents " + strings.Join(states, " · ")
@@ -883,7 +923,7 @@ func (m Model) podRow(st styles, cols []column, w pod.Workspace, selected bool, 
 			case !w.Linked:
 				cell = st.faint.Render(cell)
 			case c.name == "state":
-				cell = st.flowState(w.Status).Render(cell)
+				cell = st.agentState(w.Status).Render(cell)
 			}
 		}
 		cells = append(cells, cell)
@@ -901,7 +941,7 @@ func (m Model) workspaceLines(st styles, w *pod.Workspace) []string {
 	}
 	lines := []string{paneTitle(st, "workspace", title, right, width)}
 	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
-	lines = append(lines, kv("status", st.flowState(w.Status).Render(orDash(w.Status))))
+	lines = append(lines, kv("status", st.agentState(w.Status).Render(orDash(w.Status))))
 	lines = append(lines, kv("actor", orDash(w.Actor)), kv("repo", orDash(w.Repo)), kv("branch", orDash(w.Branch)))
 	lines = append(lines, kv("path", truncate(orDash(w.Path), width-14)))
 	if len(w.Tokens) > 0 {
@@ -921,12 +961,12 @@ func (m Model) workspaceLines(st styles, w *pod.Workspace) []string {
 		lines = append(lines, " "+st.faint.Render("(none started)"))
 	}
 	for _, a := range w.Agents {
-		lines = append(lines, " "+pad(orDash(a.Kind), 10)+pad(orDash(a.Name), 16)+pad(a.Pane, 8)+st.flowState(a.State).Render(a.State))
+		lines = append(lines, " "+pad(orDash(a.Kind), 10)+pad(orDash(a.Name), 16)+pad(a.Pane, 8)+st.agentState(a.State).Render(a.State))
 	}
 	lines = append(lines, paneRule(st, fmt.Sprintf(" ── panes %d ", len(w.Panes)), "", width))
 	for _, p := range w.Panes {
 		agent := orDash(p.Agent)
-		lines = append(lines, " "+pad(p.ID, 8)+pad(agent, 10)+pad(st.flowState(p.State).Render(p.State), 10)+st.faint.Render(truncate(p.Cwd, width-30)))
+		lines = append(lines, " "+pad(p.ID, 8)+pad(agent, 10)+pad(st.agentState(p.State).Render(p.State), 10)+st.faint.Render(truncate(p.Cwd, width-30)))
 	}
 	return m.scrolled(lines, 1, m.detailOff, m.fullHeight())
 }
@@ -1307,8 +1347,9 @@ func (m Model) helpLines(st styles) []string {
 		{"1 2 3 4", "the pane with the table: tasks, flows, pod, reactor"},
 		{"↑ ↓  j k", "move"}, {"pgup pgdn  g G", "page, first, last"},
 		{"enter", "open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)"},
-		{"p", "show or hide the task pane"}, {"tab", "focus the task pane, to scroll it"},
-		{"d", "in flows: choose what the table lists - the stuck report, or one definition's flows"},
+		{"→  l", "move to the pane beside the list; again from there, it opens full width"},
+		{"p", "show or hide the detail pane beside the tasks and flows lists"},
+		{"tab", "focus the detail pane, to scroll it"},
 		{"esc", "back, or clear the filter"}, {"b", "every status ↔ the active ones (in-progress, in-review, blocked, todo)"},
 		{"S", "sort tasks: pick-up, age, slug, territory"}, {"/", "filter the pane as you type"},
 		{"+ -", "the tracker's refresh interval"}, {"r", "reload now"}, {"?", "this help"}, {"q", "quit"},
@@ -1365,12 +1406,14 @@ func (m Model) keyBar(st styles) string {
 		keys = [][2]string{{"↑↓", "scroll"}, {"esc", "back"}, {"q", "quit"}}
 	case m.pane == panePod, m.pane == paneReactor:
 		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}}, common...)
+	case m.pane == paneFlows && m.split():
+		keys = append([][2]string{{"↑↓", "move"}, {"→", "flow"}, {"⏎", "trace"}, {"p", "hide"}}, common...)
 	case m.pane == paneFlows:
-		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "trace"}, {"d", "definition"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "trace"}, {"p", "flow pane"}}, common...)
 	case m.split() && m.focus == focusRight:
 		keys = [][2]string{{"↑↓", "scroll"}, {"⇥", "list"}, {"⏎", "expand"}, {"p", "hide"}, {"esc", "list"}, {"?", "help"}, {"q", "quit"}}
 	case m.split():
-		keys = append([][2]string{{"↑↓", "move"}, {"⇥", "task"}, {"⏎", "expand"}, {"p", "hide"}, {"b", scope}, {"S", "sort"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"→", "task"}, {"⏎", "expand"}, {"p", "hide"}, {"b", scope}, {"S", "sort"}}, common...)
 	case m.width >= splitAt && !m.opts.NoSplit:
 		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}, {"p", "task pane"}, {"b", scope}, {"S", "sort"}}, common...)
 	default:
@@ -1384,7 +1427,7 @@ func (m Model) keyBar(st styles) string {
 		return " " + strings.Join(parts, "  ")
 	}
 	// On a narrow terminal the least-used keys leave the bar first; help and quit stay.
-	for _, drop := range []string{"r", "+/-", "1-4", "S", "b", "/", "p", "⇥", "d", "⏎"} {
+	for _, drop := range []string{"r", "+/-", "1-4", "S", "b", "/", "p", "⇥", "⏎"} {
 		if lipgloss.Width(render(keys)) <= m.width {
 			break
 		}
@@ -1443,9 +1486,11 @@ func (s styles) status(status string) lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
-// flowState colours a flow's state, or an agent's, by what it means: moving
-// green, waiting yellow, gone wrong red, over dim, ready to move bold.
-func (s styles) flowState(state string) lipgloss.Style {
+// agentState colours a pod agent's or workspace's state by what it means: moving
+// green, waiting yellow, gone wrong red, over dim, ready to move bold. These are
+// pod's and reactor's own vocabularies; a flow's state is any string a project
+// chooses, so flows are not coloured by it.
+func (s styles) agentState(state string) lipgloss.Style {
 	if s.plain {
 		return lipgloss.NewStyle()
 	}

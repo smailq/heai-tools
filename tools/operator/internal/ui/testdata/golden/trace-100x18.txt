@@ -1,5 +1,5 @@
  operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3    2s  13:41:00
- trace ── 20260903-101010-session-1f2e ───────────────────── flow trace 20260903-101010-session-1f2e
+ trace ── 20260906-024801-session-77f0 ───────────────────── flow trace 20260906-024801-session-77f0
  2026-09-09 11:37:00  20260906-024801-session-77f0  session  → queued                 pick.sh      …
  2026-09-09 11:38:00  20260906-024801-session-77f0  session  queued → running         start.sh
  2026-09-09 11:39:00  20260906-024801-session-77f0  session  running → exited         inbox-fixture…

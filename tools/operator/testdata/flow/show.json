@@ -12,7 +12,6 @@
     "repo": "app",
     "branch": "agent/web-ui/document-tabs"
   },
-  "parent": null,
   "waitsOn": [
     "20260906-030500-request-9a01"
   ],

@@ -13,7 +13,6 @@
       "repo": "app",
       "branch": "agent/desktop-owner/add-place-entity"
     },
-    "parent": null,
     "waitsOn": [],
     "touchedAt": "2026-09-09T13:37:00.000Z",
     "expiresAt": "2026-09-09T13:47:00.000Z"
@@ -32,7 +31,6 @@
       "repo": "app",
       "branch": "agent/web-ui/document-tabs"
     },
-    "parent": null,
     "waitsOn": [
       "20260906-030500-request-9a01"
     ],
@@ -52,7 +50,6 @@
       "task": "category-buttons",
       "repo": "app"
     },
-    "parent": null,
     "waitsOn": [],
     "touchedAt": null,
     "expiresAt": null
@@ -71,7 +68,6 @@
       "repo": "app",
       "branch": "agent/core-reviewer/merge-two-entities"
     },
-    "parent": null,
     "waitsOn": [
       "20260903-104400-request-c3d4"
     ],

@@ -27,7 +27,6 @@ type Flow struct {
 	StartedAt  string            `json:"startedAt"`
 	Seq        int               `json:"seq"`
 	Links      map[string]string `json:"links"`
-	Parent     *string           `json:"parent"`
 	WaitsOn    []string          `json:"waitsOn"`
 	TouchedAt  *string           `json:"touchedAt"`
 	ExpiresAt  *string           `json:"expiresAt"`
@@ -81,8 +80,9 @@ type Stuck struct {
 func (s Stuck) Idle() time.Duration { return time.Duration(s.IdleMs) * time.Millisecond }
 
 // Stands says where the flow's waits stand - each waited flow's state, joined -
-// and whether that is red: a waited flow that is missing, or that reached a
-// terminal state other than done, will never satisfy the guard on its own.
+// and whether that is red: a waited flow that is missing, or that flow calls
+// terminal, will never move again, so a flow still waiting on it is stuck for
+// good. No state name is read here: terminal is flow's own answer.
 func (s Stuck) Stands(byID map[string]Flow) (string, bool) {
 	if len(s.Waits) == 0 {
 		return "", false
@@ -96,7 +96,7 @@ func (s Stuck) Stands(byID map[string]Flow) (string, bool) {
 			red = true
 		default:
 			parts = append(parts, *w.State)
-			if f, ok := byID[w.ID]; ok && f.Terminal && f.State != "done" {
+			if f, ok := byID[w.ID]; ok && f.Terminal {
 				red = true
 			}
 		}
@@ -339,6 +339,80 @@ func StuckList(mapPath string) ([]Stuck, error) {
 		return nil, err
 	}
 	return ParseStuck(out)
+}
+
+// TraceLine is one journal line of a timeline as `flow trace <id> --json` prints it:
+// which flow moved, the move itself, who made it and what came out of it.
+type TraceLine struct {
+	ID         string         `json:"id"`
+	Definition string         `json:"definition"`
+	Seq        int            `json:"seq"`
+	At         string         `json:"at"`
+	Event      string         `json:"event"`
+	From       *string        `json:"from"`
+	To         string         `json:"to"`
+	By         string         `json:"by"`
+	Data       map[string]any `json:"data"`
+	Note       string         `json:"note"`
+}
+
+// Move is the state change the line made: "→ queued" at the start, "from → to" for a
+// transition, and the event's own name for a line that moved nothing.
+func (l TraceLine) Move() string {
+	switch {
+	case l.From == nil:
+		return "→ " + l.To
+	case *l.From != l.To:
+		return *l.From + " → " + l.To
+	}
+	return l.Event
+}
+
+// Result is what came of the line: its note, else its data as flow recorded it, by name.
+// The keys that only restate a link are left out; they are the flow pane's own lines.
+func (l TraceLine) Result() string {
+	if l.Note != "" {
+		return l.Note
+	}
+	names := make([]string, 0, len(l.Data))
+	for n := range l.Data {
+		switch n {
+		case "links", "waitsOn":
+			continue
+		}
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	var parts []string
+	for _, n := range names {
+		parts = append(parts, fmt.Sprintf("%s=%v", n, l.Data[n]))
+	}
+	return strings.Join(parts, " ")
+}
+
+// Timeline is what `flow trace <id> --json` prints: every flow the walk reached, and
+// their journal lines in time order.
+type Timeline struct {
+	Flows []Flow      `json:"flows"`
+	Lines []TraceLine `json:"lines"`
+}
+
+// TraceJSON runs `flow trace <id> --json` and returns the timeline it prints.
+func TraceJSON(mapPath, id string) (Timeline, error) {
+	out, err := run(mapPath, "trace", id, "--json")
+	if err != nil {
+		return Timeline{}, err
+	}
+	return ParseTrace(out)
+}
+
+// ParseTrace reads the object `flow trace --json` prints.
+func ParseTrace(raw []byte) (Timeline, error) {
+	var t Timeline
+	if err := json.Unmarshal(raw, &t); err != nil {
+		return Timeline{}, fmt.Errorf("unexpected trace output: %v", err)
+	}
+	return t, nil
 }
 
 // Trace runs `flow trace <id>` and returns the timeline as flow prints it.

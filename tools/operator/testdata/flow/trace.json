@@ -14,7 +14,6 @@
         "repo": "app",
         "branch": "agent/web-ui/document-tabs"
       },
-      "parent": null,
       "waitsOn": [
         "20260906-030500-request-9a01"
       ],
@@ -32,7 +31,6 @@
       "links": {
         "task": "help-requested-by-web-ui"
       },
-      "parent": "20260906-024801-session-77f0",
       "waitsOn": [],
       "touchedAt": null,
       "expiresAt": null
@@ -108,8 +106,7 @@
       "data": {
         "links": {
           "task": "help-requested-by-web-ui"
-        },
-        "parent": "20260906-024801-session-77f0"
+        }
       }
     },
     {

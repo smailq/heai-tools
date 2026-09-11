@@ -30,8 +30,8 @@ test('a guard: a blocked run resumes when every flow it waits on is done, with b
   store.advance(run, { event: 'started', data: {}, by: 'x' })
   store.advance(run, { event: 'exited', data: { exitCode: 0, requests: 2 }, by: 'x' })
   assert.deepEqual(store.settle(), [], 'waiting on nothing yet does not fire the guard')
-  const r1 = store.start({ definition: 'request', links: { task: 'one' }, parent: run, by: 'x' }).id
-  const r2 = store.start({ definition: 'request', links: { task: 'two' }, parent: run, by: 'x' }).id
+  const r1 = store.start({ definition: 'request', links: { task: 'one', 'filed-by': run }, by: 'x' }).id
+  const r2 = store.start({ definition: 'request', links: { task: 'two', 'filed-by': run }, by: 'x' }).id
   store.link(run, { waitsOn: [r1, r2] }, 'x')
   for (const r of [r1, r2]) {
     store.advance(r, { event: 'picked', data: {}, by: 'x' })
