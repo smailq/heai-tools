@@ -1,6 +1,6 @@
 # What heai-tools can take from oh-my-claudecode
 
-*Idea report, 2026-09-04. A study of [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) (OMC, MIT, at `aaf3882`, v5.2.0) for what heai-tools can reuse and what new tools it suggests. Not a commitment; a companion to [ecc-study.md](ecc-study.md).*
+*Idea report, 2026-09-04. A study of [Yeachan-Heo/oh-my-claudecode](https://github.com/Yeachan-Heo/oh-my-claudecode) (OMC, MIT, at `aaf3882`, v5.2.0) for what heai-tools can reuse and what new tools it suggests. Not a commitment; a companion to [ecc-study.md](ecc-study.md). Re-read against the source and mapped onto the project directory in [project-directory-rehash.md](project-directory-rehash.md), whose last section corrects what this report got wrong.*
 
 ## What OMC is
 

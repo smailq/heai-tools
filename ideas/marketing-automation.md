@@ -1,6 +1,6 @@
 # Marketing automation on heai-tools
 
-*Proposal, 2026-09-06. An idea report: how the skills in [ericosiu/ai-marketing-skills](https://github.com/ericosiu/ai-marketing-skills) - `growth-engine` and `content-ops` first - run as governed work on the tools in this repository, with no tool learning anything about marketing.*
+*Proposal, 2026-09-06. An idea report: how the skills in [ericosiu/ai-marketing-skills](https://github.com/ericosiu/ai-marketing-skills) - `growth-engine` and `content-ops` first - run as governed work on the tools in this repository, with no tool learning anything about marketing. Re-read against the source and mapped onto the project directory in [project-directory-rehash.md](project-directory-rehash.md), whose last section corrects what this report got wrong.*
 
 ## The claim
 

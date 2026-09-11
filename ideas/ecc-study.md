@@ -1,6 +1,6 @@
 # What heai-tools can take from ECC
 
-*Idea report, 2026-09-04. A study of [affaan-m/ECC](https://github.com/affaan-m/ECC) ("Everything Claude Code", MIT, at `e04ea0b`) for what heai-tools can reuse and what new tools it suggests. Not a commitment; a companion to [oh-my-claudecode-study.md](oh-my-claudecode-study.md).*
+*Idea report, 2026-09-04. A study of [affaan-m/ECC](https://github.com/affaan-m/ECC) ("Everything Claude Code", MIT, at `e04ea0b`) for what heai-tools can reuse and what new tools it suggests. Not a commitment; a companion to [oh-my-claudecode-study.md](oh-my-claudecode-study.md). Re-read against the source and mapped onto the project directory in [project-directory-rehash.md](project-directory-rehash.md), whose last section corrects what this report got wrong.*
 
 ## What ECC is
 
