@@ -5,6 +5,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -48,7 +49,8 @@ func main() {
 func run(args []string) int {
 	fs := flag.NewFlagSet("heai-operator", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
-	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
+	// Parse prints a bad flag itself; the usage follows below, on stderr for a mistake and on stdout for --help.
+	fs.Usage = func() {}
 	dirFlag := fs.String("dir", "", "")
 	tasksFlag := fs.String("tasks", "", "")
 	mapFlag := fs.String("map", "", "")
@@ -59,6 +61,12 @@ func run(args []string) int {
 	active := fs.Bool("active", false, "")
 	width := fs.Int("width", 0, "")
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			// --help and -h are a request, not a mistake: the usage on stdout, exit 0.
+			fmt.Fprint(os.Stdout, usage)
+			return 0
+		}
+		fmt.Fprint(os.Stderr, usage)
 		return 2
 	}
 	if fs.NArg() > 0 {
