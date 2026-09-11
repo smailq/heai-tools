@@ -11,15 +11,15 @@ import { resolveRepository, resolveSubject, runGate, subjectGlobs, type Finding,
 import { actorContext, actorsView, contextChain, DEFAULT_SCHEMA, loadMap, ownerOf, resolveMapPath, territoriesView } from './query.ts'
 import { TEMPLATE, type ArchitectureMap } from './validate.ts'
 
-const USAGE = `architect - validates an architecture map, answers questions about it, and checks a diff against it
+const USAGE = `heai-architect - validates an architecture map, answers questions about it, and checks a diff against it
 
-  architect check [<map>] [--format text|json] [--strict]
-  git diff | architect gate <name> | --territory <name> | --actor <name>  [--repo <name>] [--format text|json] [--all]
-  architect owner <path> [--repo <name>] [--json]
-  architect territories [--actor <name>] [--json]
-  architect actors [--json]
-  architect context <actor>|<territory> [--json]
-  architect template
+  heai-architect check [<map>] [--format text|json] [--strict]
+  git diff | heai-architect gate <name> | --territory <name> | --actor <name>  [--repo <name>] [--format text|json] [--all]
+  heai-architect owner <path> [--repo <name>] [--json]
+  heai-architect territories [--actor <name>] [--json]
+  heai-architect actors [--json]
+  heai-architect context <actor>|<territory> [--json]
+  heai-architect template
 
   --map <path>      the map; default HEAI_MAP, else $HEAI_DIR/architecture.yaml, else .heai/architecture.yaml, else architecture.yaml
   --schema <path>   the schema; default the tool's own schemas/architecture.schema.json (or HEAI_SCHEMA)
@@ -170,7 +170,7 @@ async function main(argv: string[]): Promise<number> {
       throw new UsageError(`name the subject once: got "${rest[0]}" and ${values.territory ? '--territory' : '--actor'}`)
     }
     if (process.stdin.isTTY) {
-      throw new UsageError(`no diff on stdin; pipe one, e.g. git diff origin/main... | architect gate <name>\n\n${USAGE}`)
+      throw new UsageError(`no diff on stdin; pipe one, e.g. git diff origin/main... | heai-architect gate <name>\n\n${USAGE}`)
     }
     const map = validMap(mapPath, schemaPath)
     const repository = resolveRepository(map, values.repo)

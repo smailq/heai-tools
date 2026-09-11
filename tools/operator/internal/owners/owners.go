@@ -45,9 +45,9 @@ func Resolve(mapPath string) Result {
 		return Result{Note: "map not found: " + filepath.Base(mapPath)}
 	}
 	r := Result{MapModTime: st.ModTime()}
-	bin, err := exec.LookPath("architect")
+	bin, err := exec.LookPath("heai-architect")
 	if err != nil {
-		r.Note = "architect not on PATH"
+		r.Note = "heai-architect not on PATH"
 		return r
 	}
 	out, err := architect(bin, "territories", "--json", "--map", mapPath)

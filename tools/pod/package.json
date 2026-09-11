@@ -3,14 +3,34 @@
   "version": "0.1.0",
   "description": "One persistent container running a Herdr server: a clone per repository, a worktree per piece of work, an agent or a command in it, and a fact file into a mounted inbox when it settles",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smailq/heai-tools.git",
+    "directory": "tools/pod"
+  },
+  "homepage": "https://github.com/smailq/heai-tools/tree/main/tools/pod#readme",
+  "bugs": {
+    "url": "https://github.com/smailq/heai-tools/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
   "bin": {
-    "pod": "./src/cli.ts"
+    "heai-pod": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schemas",
+    "image"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --test 'test/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

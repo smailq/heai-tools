@@ -1,0 +1,3 @@
+#!/bin/sh
+# Runs the tasks tool from this repository's sources, so the sample needs no npm link.
+exec node "$(cd "$(dirname "$0")/../../tools/tasks" && pwd)/src/cli.ts" "$@"

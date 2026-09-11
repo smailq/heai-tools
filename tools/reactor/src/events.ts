@@ -200,6 +200,14 @@ export class Log {
     return action
   }
 
+  /** Every action for each of the given events, by event id, oldest first; one pass over the directory. */
+  actionsFor(eventIds: Iterable<string>): Map<string, ActionRecord[]> {
+    const out = new Map<string, ActionRecord[]>()
+    for (const id of eventIds) out.set(id, [])
+    for (const a of this.actions()) out.get(a.event)?.push(a)
+    return out
+  }
+
   /** Every action, or those for one event, oldest first. */
   actions(eventId?: string): ActionRecord[] {
     const dir = join(this.dir, 'actions')

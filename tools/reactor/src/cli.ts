@@ -7,21 +7,21 @@ import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { formatDuration, loadConfig, parseDuration, type Rule } from './config.ts'
 import { isRecord, ReactorError, UsageError } from './errors.ts'
-import { Log, type Event } from './events.ts'
+import { Log, type ActionRecord, type Event } from './events.ts'
 import { resolvePaths } from './paths.ts'
 import { Engine, type Decision } from './reactor.ts'
 
-const USAGE = `reactor - reacts to things that happen by running a script with the event in its environment
+const USAGE = `heai-reactor - reacts to things that happen by running a script with the event in its environment
 
-  reactor status [--json]                          sources and their cursors, rules and their last action, the last hour
-  reactor tick                                     one pass: poll every source once, run the rules, exit
-  reactor serve [--port 4949] [--host 127.0.0.1]   the daemon: schedules, polls, the webhook receiver
-  reactor emit <source> <kind> [--key <key>] [--payload '<json>' | --payload -] [--at <iso>] [--act]
+  heai-reactor status [--json]                          sources and their cursors, rules and their last action, the last hour
+  heai-reactor tick                                     one pass: poll every source once, run the rules, exit
+  heai-reactor serve [--port 4949] [--host 127.0.0.1]   the daemon: schedules, polls, the webhook receiver
+  heai-reactor emit <source> <kind> [--key <key>] [--payload '<json>' | --payload -] [--at <iso>] [--act]
                                                    one event into a cli source; --act runs the rules for it now
-  reactor events [--since 24h] [--source s] [--kind k] [--json]
-  reactor retry <event-id>                         run every rule for one event again, ignoring dedupe
-  reactor replay --since <t> [--rule <r>] [--dry-run]
-  reactor test <rule> --event <file.json>          one rule against one event, dry
+  heai-reactor events [--since 24h] [--source s] [--kind k] [--json]
+  heai-reactor retry <event-id>                         run every rule for one event again, ignoring dedupe
+  heai-reactor replay --since <t> [--rule <r>] [--dry-run]
+  heai-reactor test <rule> --event <file.json>          one rule against one event, dry
 
 Options, on every command:
   --dir <path>         the project directory (default: the current directory; HEAI_DIR)
@@ -145,7 +145,7 @@ async function main(argv: string[]): Promise<number> {
         console.log(`state   ${paths.state}\nconfig  ${config.path ?? `${paths.config} (absent)`}\n`)
         console.log('sources')
         if (!sources.length) console.log('  (none)')
-        for (const s of sources) console.log(`  ${pad(s.name, 16)} ${pad(s.type, 9)} ${pad(s.every ? `every ${formatDuration(s.every)}` : s.listens ? `listens ${s.listens}` : s.emits ? 'from reactor emit' : 'idle', 22)} last event ${when(s.lastEvent)}  ${s.cursor}`)
+        for (const s of sources) console.log(`  ${pad(s.name, 16)} ${pad(s.type, 9)} ${pad(s.every ? `every ${formatDuration(s.every)}` : s.listens ? `listens ${s.listens}` : s.emits ? 'from heai-reactor emit' : 'idle', 24)} last event ${when(s.lastEvent)}  ${s.cursor}`)
         console.log('\nrules')
         if (!rules.length) console.log('  (none)')
         for (const r of rules) console.log(`  ${pad(r.name, 24)} on ${pad(r.on, 40)} last ${when(r.lastAction?.at)}${r.lastAction ? (r.lastAction.ok ? ' ok' : ` PROBLEM ${r.lastAction.error}`) : ''}${r.pending ? `  debouncing until ${when(r.pending.until)}` : ''}`)
@@ -156,7 +156,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'tick': {
       const r = await engine.tick()
-      for (const s of r.skipped) console.log(`${s}: needs a listener and cannot run under tick; run reactor serve`)
+      for (const s of r.skipped) console.log(`${s}: needs a listener and cannot run under tick; run heai-reactor serve`)
       console.log(`${r.events.length} event${r.events.length === 1 ? '' : 's'}, ${r.decisions.length} decision${r.decisions.length === 1 ? '' : 's'}`)
       printDecisions(r.decisions)
       return r.decisions.some((d) => d.verdict === 'failed') ? 1 : 0
@@ -183,7 +183,7 @@ async function main(argv: string[]): Promise<number> {
 
     case 'emit': {
       const [, source, kind] = positionals
-      if (!source || !kind) throw new UsageError('emit needs a source and a kind: reactor emit <source> <kind>')
+      if (!source || !kind) throw new UsageError('emit needs a source and a kind: heai-reactor emit <source> <kind>')
       if (values.key !== undefined && !values.key) throw new UsageError('--key must not be empty')
       let at: string | null = null
       if (values.at !== undefined) {
@@ -204,9 +204,11 @@ async function main(argv: string[]): Promise<number> {
     case 'events': {
       const since = parseSince(values.since, '24h', now)
       const events = log.read({ since, source: values.source, kind: values.kind })
-      if (values.json) json(events)
+      const actions = log.actionsFor(events.map((e) => e.id))
+      const outcome = (a: ActionRecord): string => (a.ok ? 'ok' : a.outcome['limited'] === true ? 'limited' : (a.error ?? 'failed'))
+      if (values.json) json(events.map((e) => ({ ...e, actions: actions.get(e.id) ?? [] })))
       else if (!events.length) console.log('(no events)')
-      else for (const e of events) console.log(`${when(e.at)}  ${pad(e.id, 24)} ${pad(e.source, 12)} ${pad(e.kind, 24)} ${e.key}`)
+      else for (const e of events) console.log(`${when(e.at)}  ${pad(e.id, 24)} ${pad(e.source, 12)} ${pad(e.kind, 24)} ${pad(e.key, 40)} ${(actions.get(e.id) ?? []).map((a) => `${a.rule} → ${outcome(a)}`).join(', ')}`.trimEnd())
       return 0
     }
 

@@ -1,0 +1,5 @@
+# Configuration for this task tracker. The one key is optional; without it,
+# `territory` accepts any non-empty value.
+
+# Territories are validated against this map, and each one's owner is read from it.
+map: ../architecture.yaml

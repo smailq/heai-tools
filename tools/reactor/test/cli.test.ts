@@ -70,13 +70,16 @@ test('events, status, test, retry and replay read the same files', () => {
     'oldest first, by the time each event carries'
   )
   assert.equal(list[0]!.id, emitted.stdout.trim())
+  const acted = list as unknown as Array<{ actions: Array<{ rule: string; event: string; ok: boolean; outcome: Record<string, unknown> }> }>
+  assert.deepEqual(acted[0]!.actions.map((a) => [a.rule, a.event === list[0]!.id, a.ok, a.outcome['exitCode']]), [['web', true, true, 0]], 'each event carries the action records rules left on it')
+  assert.deepEqual(acted[1]!.actions.map((a) => [a.rule, a.ok]), [['pick', true]], 'the clock tick matched the clock rule')
   assert.equal(JSON.parse(cli(w, 'events', '--json', '--since', '30d', '--source', 'tasks_cli', '--kind', 'task.*').stdout).length, 1)
-  assert.match(cli(w, 'events', '--since', '30d').stdout, /tasks_cli\s+task\.done\s+site-fix/)
+  assert.match(cli(w, 'events', '--since', '30d').stdout, /tasks_cli\s+task\.done\s+site-fix\s+web → ok$/m, 'the text form says what each rule did')
   assert.ok(!cli(w, 'events').stdout.includes('task.done'), 'the default window is a day, and the emitted event is older')
   const status = cli(w, 'status')
   assert.equal(status.code, 0, status.stderr)
   assert.match(status.stdout, /clock\s+schedule\s+every 10s/)
-  assert.match(status.stdout, /tasks_cli\s+cli\s+from reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 1, pending 0; last 2026-09-01T09:00:00\.000Z task\.done/)
+  assert.match(status.stdout, /tasks_cli\s+cli\s+from heai-reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 1, pending 0; last 2026-09-01T09:00:00\.000Z task\.done/)
   assert.match(status.stdout, /pick\s+on source=clock.*ok/)
   assert.match(status.stdout, /web\s+on source=tasks_cli area="website"\s+last .* ok/, 'the tick acted on the emitted event')
   assert.equal(readFileSync(join(w.dir, 'web.log'), 'utf8'), 'web-task-site-fix\n')

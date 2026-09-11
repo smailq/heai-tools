@@ -1,9 +1,11 @@
 package ui
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -12,8 +14,9 @@ import (
 
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
+	"github.com/smailq/heai-tools/tools/operator/internal/pod"
+	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
 	"github.com/smailq/heai-tools/tools/operator/internal/tracker"
-	"github.com/smailq/heai-tools/tools/operator/internal/workspaces"
 )
 
 // View renders the screen in the alternate buffer.
@@ -42,8 +45,12 @@ func (m Model) Render() string {
 		lines = append(lines, m.traceLines(st)...)
 	case m.detail != nil:
 		lines = append(lines, m.detailLines(st, m.detail, m.width, m.detailOff, m.fullHeight())...)
+	case m.wsDetail != nil:
+		lines = append(lines, m.workspaceLines(st, m.wsDetail)...)
+	case m.evDetail != nil:
+		lines = append(lines, m.eventLines(st, m.evDetail)...)
 	default:
-		// The three panes in a fixed order: the selected one is a table sized to its region, the others one line each.
+		// The five panes in a fixed order: the selected one is a table sized to its region, the others one line each.
 		for p := paneTasks; p < paneCount; p++ {
 			if p == m.pane {
 				lines = append(lines, m.region(st, p)...)
@@ -52,30 +59,17 @@ func (m Model) Render() string {
 			}
 		}
 	}
-	// Pad to the height so the key bar sits on the last line, with the editor just above it.
+	// Pad to the height so the key bar sits on the last line.
 	body := m.height - 1
-	if m.edit != nil {
-		body -= 3
-	}
 	for len(lines) < body {
 		lines = append(lines, "")
 	}
 	if len(lines) > body {
 		lines = lines[:body]
 	}
-	if m.edit != nil {
-		lines = append(lines, m.editorLines(st)...)
-	}
-	switch {
-	case m.pending != nil:
-		lines = append(lines, " "+fitLine(m.pending.command, "   ", "y run · any other key cancels", m.width-1))
-	case m.notice != "":
-		n := " " + m.notice
-		if m.noticeRed {
-			n = st.red.Render(n)
-		}
-		lines = append(lines, n)
-	default:
+	if m.choosing {
+		lines = append(lines, m.chooserLine(st))
+	} else {
 		lines = append(lines, m.keyBar(st))
 	}
 	for i, l := range lines {
@@ -84,14 +78,8 @@ func (m Model) Render() string {
 	return strings.Join(lines, "\n")
 }
 
-// fullHeight is what a view that takes the whole screen may use: the height less the header, the bar, and the editor.
-func (m Model) fullHeight() int {
-	h := m.height - 2
-	if m.edit != nil {
-		h -= 3
-	}
-	return h
-}
+// fullHeight is what a view that takes the whole screen may use: the height less the header and the bar.
+func (m Model) fullHeight() int { return m.height - 2 }
 
 // region is the selected pane's table, padded or cut to exactly its region.
 func (m Model) region(st styles, p pane) []string {
@@ -105,8 +93,10 @@ func (m Model) region(st styles, p pane) []string {
 		}
 	case paneFlows:
 		lines = m.flowsTable(st)
-	case paneSessions:
-		lines = m.sessionsTable(st)
+	case panePod:
+		lines = m.podTable(st)
+	case paneReactor:
+		lines = m.reactorTable(st)
 	}
 	h := m.regionHeight()
 	for len(lines) < h {
@@ -157,18 +147,29 @@ func (m Model) header(st styles) string {
 		}
 		parts = append(parts, meter)
 	}
-	if len(m.sessions.Flows) > 0 {
-		open := 0
-		for _, f := range m.sessions.Flows {
-			if !f.Terminal {
-				open++
-			}
+	if p := m.pod.Status; p != nil {
+		if p.Up() {
+			parts = append(parts, fmt.Sprintf("pod ●%d", linkedCount(m.pod.Workspaces)))
+		} else {
+			parts = append(parts, "pod "+st.yellow.Render("○"))
 		}
-		parts = append(parts, fmt.Sprintf("sessions %d", open))
+	}
+	if r := m.reactor.Status; r != nil {
+		meter := fmt.Sprintf("reactor %d/1h", r.Events.LastHour)
+		if n := len(m.reactor.FailedActions()); n > 0 {
+			meter += " " + st.red.Render(fmt.Sprintf("✗%d", n))
+		} else if n := r.Problems(); n > 0 {
+			meter += " " + st.yellow.Render(fmt.Sprintf("⚠%d", n))
+		}
+		parts = append(parts, meter)
 	}
 	right := fmt.Sprintf("%s  %s", m.opts.Interval.Truncate(time.Second), m.opts.Now().Format("15:04:05"))
 	if m.loading || m.slowPending > 0 {
 		right = "· " + right
+	}
+	// The clock is the honest part of the line: the meters leave from the right before it is cut.
+	for len(parts) > 2 && lipgloss.Width(strings.Join(parts, "  "))+lipgloss.Width(right)+2 > m.width {
+		parts = parts[:len(parts)-1]
 	}
 	return spread(strings.Join(parts, "  "), right, m.width)
 }
@@ -183,8 +184,10 @@ func (m Model) paneLine(st styles, p pane) string {
 		text, right = m.tasksSummary(st)
 	case paneFlows:
 		text, right = m.flowsSummary(st), m.flowsAge(st)
-	case paneSessions:
-		text, right = m.sessionsSummary(st), m.sessionsAge(st)
+	case panePod:
+		text, right = m.podSummary(st), m.podAge(st)
+	case paneReactor:
+		text, right = m.reactorSummary(st), m.reactorAge(st)
 	}
 	left := " " + st.title.Render(pad(paneNames[p], 9)) + text
 	// The age on the right is the honest part of the line; the counts yield to it.
@@ -259,61 +262,87 @@ func (m Model) flowsAge(st styles) string {
 	return age
 }
 
-// sessionsSummary is the sessions by state, then the workspaces by agent state.
-func (m Model) sessionsSummary(st styles) string {
-	var parts []string
-	if len(m.sessions.Flows) == 0 {
-		if m.sessions.Note != "" {
-			parts = append(parts, st.faint.Render(m.sessions.Note))
-		} else if m.sessions.At.IsZero() {
-			parts = append(parts, st.faint.Render("asking…"))
+// podSummary is the container's word, then the linked workspaces by their agent's state.
+func (m Model) podSummary(st styles) string {
+	p := m.pod
+	if p.Status == nil {
+		if p.Note != "" {
+			return st.faint.Render(p.Note)
 		}
-	} else {
-		counts := map[string]int{}
-		var order []string
-		open := 0
-		for _, f := range m.sessions.Flows {
-			if counts[f.State] == 0 {
-				order = append(order, f.State)
-			}
-			counts[f.State]++
-			if !f.Terminal {
-				open++
-			}
-		}
-		var states []string
-		for _, s := range order {
-			states = append(states, st.flowState(s).Render(fmt.Sprintf("%s %d", s, counts[s])))
-		}
-		parts = append(parts, fmt.Sprintf("%d open of %d   %s", open, len(m.sessions.Flows), strings.Join(states, " · ")))
+		return st.faint.Render("asking…")
 	}
-	ws := m.sessions.Workspaces
-	switch {
-	case len(ws.Workspaces) > 0:
+	if !p.Status.Up() {
+		return st.yellow.Render("○ " + p.Status.Summary())
+	}
+	parts := []string{"● " + p.Status.Summary()}
+	if n := linkedCount(p.Workspaces); n > 0 {
 		var states []string
-		for _, c := range workspaces.CountByState(ws.Workspaces) {
+		for _, c := range pod.CountByStatus(p.Workspaces) {
 			states = append(states, st.flowState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
 		}
-		parts = append(parts, fmt.Sprintf("workspaces %d (%s)", len(ws.Workspaces), strings.Join(states, " · ")))
-	case ws.Note != "":
-		parts = append(parts, st.faint.Render("workspaces: "+ws.Note))
-	case !ws.At.IsZero():
+		parts = append(parts, fmt.Sprintf("workspaces %d (%s)", n, strings.Join(states, " · ")))
+	} else {
 		parts = append(parts, st.faint.Render("no workspaces"))
 	}
 	return strings.Join(parts, "   ")
 }
 
-func (m Model) sessionsAge(st styles) string {
-	if m.sessions.At.IsZero() || (len(m.sessions.Flows) == 0 && len(m.sessions.Workspaces.Workspaces) == 0 && !m.sessions.Failed && !m.sessions.Workspaces.Failed) {
-		return "" // never asked, or nothing to be old
+func (m Model) podAge(st styles) string {
+	if m.pod.At.IsZero() || (m.pod.Status == nil && !m.pod.Failed) {
+		return ""
 	}
-	if m.sessions.Failed {
-		return st.red.Render("⚠ "+m.sessions.Note) + " · as of " + m.sessions.At.Format("15:04:05")
+	if m.pod.Failed {
+		return st.red.Render("⚠ "+m.pod.Note) + " · as of " + m.pod.At.Format("15:04:05")
 	}
-	if m.sessions.Workspaces.Failed {
-		return st.red.Render("⚠ "+m.sessions.Workspaces.Note) + " · as of " + m.sessions.Workspaces.At.Format("15:04:05")
+	return "pod " + ago(m.pod.At, m.opts.Now())
+}
+
+// reactorSummary is a dot per source, then the hour's events, the rules, and what failed.
+func (m Model) reactorSummary(st styles) string {
+	r := m.reactor
+	if r.Status == nil {
+		if r.Note != "" {
+			return st.faint.Render(r.Note)
+		}
+		return st.faint.Render("asking…")
 	}
-	return "flow " + ago(m.sessions.At, m.opts.Now())
+	var dots []string
+	for _, src := range r.Status.Sources {
+		if src.Problem() != "" {
+			dots = append(dots, st.yellow.Render("○ "+src.Name))
+		} else {
+			dots = append(dots, "● "+src.Name)
+		}
+	}
+	if len(dots) == 0 {
+		dots = append(dots, st.faint.Render("no sources"))
+	}
+	tail := []string{fmt.Sprintf("%d events/1h", r.Status.Events.LastHour), fmt.Sprintf("%d rules", len(r.Status.Rules))}
+	if n := len(r.FailedActions()); n > 0 {
+		tail = append(tail, st.red.Render(fmt.Sprintf("%d failed", n)))
+	}
+	return strings.Join(dots, "  ") + "   " + strings.Join(tail, " · ")
+}
+
+func (m Model) reactorAge(st styles) string {
+	if m.reactor.At.IsZero() || (m.reactor.Status == nil && !m.reactor.Failed) {
+		return ""
+	}
+	if m.reactor.Failed {
+		return st.red.Render("⚠ "+m.reactor.Note) + " · as of " + m.reactor.At.Format("15:04:05")
+	}
+	return "reactor " + ago(m.reactor.At, m.opts.Now())
+}
+
+// linkedCount is how many workspaces are worktrees, leaving out the clone Herdr opens as one.
+func linkedCount(list []pod.Workspace) int {
+	n := 0
+	for _, w := range list {
+		if w.Linked {
+			n++
+		}
+	}
+	return n
 }
 
 // ---- split ------------------------------------------------------------------
@@ -563,25 +592,11 @@ func (m Model) flowsTable(st styles) []string {
 		}
 		return []string{paneTitle(st, "flows", "", m.flowsAge(st), width), " " + st.faint.Render(msg)}
 	}
-	rows := m.stuckRows()
-	open := 0
-	for _, d := range flows.Count(m.flows.Flows) {
-		open += d.Open
-	}
-	left := fmt.Sprintf("%d stuck older than 1h · %d open", len(m.flows.Stuck), open)
-	if m.filter != "" {
-		left = fmt.Sprintf("%d of %d stuck · filter %q · %d open", len(rows), len(m.flows.Stuck), m.filter, open)
-	}
-	cols := m.flowColumns(width)
-	lines := []string{paneTitle(st, "flows", left, m.flowsAge(st), width), columnHeader(st, cols)}
-	byID := flows.Index(m.flows.Flows)
-	h := m.bodyHeight()
-	end := min(len(rows), m.offset+h)
-	for i := m.offset; i < end; i++ {
-		lines = append(lines, m.stuckRow(st, cols, rows[i], byID, i == m.cursor, width))
-	}
-	if len(rows) == 0 {
-		lines = append(lines, st.faint.Render(" nothing stuck for 1h or longer"))
+	var lines []string
+	if m.flowDef != "" {
+		lines = m.definitionLines(st, width)
+	} else {
+		lines = m.stuckLines(st, width)
 	}
 	lines = append(lines, m.filterLine()...)
 	lines = append(lines, paneRule(st, " ── all open, by definition ", "", width))
@@ -603,6 +618,173 @@ func (m Model) flowsTable(st styles) []string {
 		lines = append(lines, st.faint.Render(" (none open)"))
 	}
 	return lines
+}
+
+// stuckLines is the default flows table: the stuck report as flow prints it.
+func (m Model) stuckLines(st styles, width int) []string {
+	rows := m.stuckRows()
+	open := 0
+	for _, d := range flows.Count(m.flows.Flows) {
+		open += d.Open
+	}
+	left := fmt.Sprintf("%d stuck older than 1h · %d open", len(m.flows.Stuck), open)
+	if m.filter != "" {
+		left = fmt.Sprintf("%d of %d stuck · filter %q · %d open", len(rows), len(m.flows.Stuck), m.filter, open)
+	}
+	cols := m.flowColumns(width)
+	lines := []string{paneTitle(st, "flows", left, m.flowsAge(st), width), columnHeader(st, cols)}
+	byID := flows.Index(m.flows.Flows)
+	h := m.bodyHeight()
+	end := min(len(rows), m.offset+h)
+	for i := m.offset; i < end; i++ {
+		lines = append(lines, m.stuckRow(st, cols, rows[i], byID, i == m.cursor, width))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, st.faint.Render(" nothing stuck for 1h or longer"))
+	}
+	return lines
+}
+
+// definitionLines is the flows table under a chosen definition: every flow of it, with a column per link it carries.
+func (m Model) definitionLines(st styles, width int) []string {
+	rows := m.defRows()
+	all := m.flows.OfDefinition(m.flowDef)
+	open := 0
+	for _, f := range all {
+		if !f.Terminal {
+			open++
+		}
+	}
+	left := fmt.Sprintf("%s · %d open of %d", m.flowDef, open, len(all))
+	if m.filter != "" {
+		left = fmt.Sprintf("%s · %d of %d · filter %q", m.flowDef, len(rows), len(all), m.filter)
+	}
+	lines := []string{paneTitle(st, "flows", left, m.flowsAge(st), width)}
+	if len(all) == 0 {
+		msg := "no flows of definition " + m.flowDef
+		for _, d := range m.flows.Definitions {
+			if d.Name == m.flowDef && d.Problem != nil {
+				msg = "definition " + m.flowDef + " does not read: " + *d.Problem
+				return append(lines, " "+st.red.Render(msg))
+			}
+		}
+		return append(lines, " "+st.faint.Render(msg))
+	}
+	cols := m.definitionColumns(width, all)
+	lines = append(lines, columnHeader(st, cols))
+	h := m.bodyHeight()
+	end := min(len(rows), m.offset+h)
+	for i := m.offset; i < end; i++ {
+		lines = append(lines, m.definitionRow(st, cols, rows[i], i == m.cursor, width))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, st.faint.Render(" (nothing to show)"))
+	}
+	return lines
+}
+
+// linkOrder puts the links every process names first; the rest follow by name.
+var linkOrder = []string{"task", "actor", "repo", "branch"}
+
+// linkNames is every link name the flows carry, in linkOrder then alphabetical.
+func linkNames(list []flows.Flow) []string {
+	seen := map[string]bool{}
+	for _, f := range list {
+		for n := range f.Links {
+			seen[n] = true
+		}
+	}
+	var out []string
+	for _, n := range linkOrder {
+		if seen[n] {
+			out = append(out, n)
+			delete(seen, n)
+		}
+	}
+	rest := make([]string, 0, len(seen))
+	for n := range seen {
+		rest = append(rest, n)
+	}
+	sort.Strings(rest)
+	return append(out, rest...)
+}
+
+// definitionColumns is id, state and age, then one column per link, each as wide as its
+// widest value up to 30, the last taking what is left; link columns leave from the right
+// when the terminal is too narrow for them.
+func (m Model) definitionColumns(width int, list []flows.Flow) []column {
+	cols := []column{{"id", 28, 0}, {"state", 10, 0}, {"age", 5, 0}}
+	used := 1
+	for _, c := range cols {
+		used += c.width + 2
+	}
+	names := linkNames(list)
+	for i, n := range names {
+		need := len([]rune(n))
+		for _, f := range list {
+			need = max(need, lipgloss.Width(f.Links[n]))
+		}
+		need = min(need, 30)
+		left := width - used
+		if left < 8 {
+			break
+		}
+		if i == len(names)-1 || need > left {
+			need = left
+		}
+		cols = append(cols, column{n, need, 0})
+		used += need + 2
+	}
+	return cols
+}
+
+func (m Model) definitionRow(st styles, cols []column, f flows.Flow, selected bool, width int) string {
+	var cells []string
+	for _, c := range cols {
+		var v string
+		switch c.name {
+		case "id":
+			v = f.ID
+		case "state":
+			v = f.State
+		case "age":
+			v = short(m.opts.Now().Sub(f.SinceTime()))
+		default:
+			v = orDash(f.Links[c.name])
+		}
+		cell := pad(v, c.width)
+		if !selected {
+			switch {
+			case f.Terminal:
+				cell = st.faint.Render(cell)
+			case c.name == "state":
+				cell = st.flowState(f.State).Render(cell)
+			}
+		}
+		cells = append(cells, cell)
+	}
+	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
+}
+
+// chooserLine is what d puts in place of the key bar: the stuck report and every definition, the cursor's choice reversed.
+func (m Model) chooserLine(st styles) string {
+	var pills []string
+	for i, c := range m.flowChoices() {
+		label := c
+		if c == "" {
+			label = "stuck"
+		}
+		switch {
+		case i == m.choice:
+			label = st.key.Render(" " + label + " ")
+		case c == m.flowDef:
+			label = st.title.Render("[" + label + "]")
+		default:
+			label = " " + label + " "
+		}
+		pills = append(pills, label)
+	}
+	return spread(" "+st.title.Render("definition")+"  "+strings.Join(pills, " "), "←→ choose · 1-9 pick · ⏎ show · esc back", m.width)
 }
 
 func (m Model) stuckRow(st styles, cols []column, s flows.Stuck, byID map[string]flows.Flow, selected bool, width int) string {
@@ -627,77 +809,81 @@ func (m Model) stuckRow(st styles, cols []column, s flows.Stuck, byID map[string
 	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
 }
 
-// ---- sessions ---------------------------------------------------------------
+// ---- pod --------------------------------------------------------------------
 
-func (m Model) sessionColumns(width int) []column {
+func (m Model) podColumns(width int) []column {
 	cols := []column{
-		{"id", 28, 0},
+		{"id", 4, 0},
 		{"actor", 14, 70},
-		{"task", 0, 0}, // flexible
-		{"state", 9, 0},
-		{"age", 5, 100},
+		{"repo", 8, 90},
+		{"branch", 0, 0}, // flexible
+		{"agent", 12, 100},
+		{"state", 8, 0},
 	}
-	// The task takes what is left up to 30; what remains is the branch.
-	return layout(cols, width, -1, 14, 30, 12, 10, "branch")
+	// The branch takes what is left up to 40; what remains is the label.
+	return layout(cols, width, -1, 16, 40, 12, 10, "label")
 }
 
-// sessionsTable is the session flows, and under them the container's workspaces.
-func (m Model) sessionsTable(st styles) []string {
+// podTable is the container's status on the title and every workspace pod lists under it.
+func (m Model) podTable(st styles) []string {
 	width := m.width
-	rows := m.sessionRows()
-	var lines []string
-	if len(m.sessions.Flows) == 0 {
-		msg := m.sessions.Note
+	p := m.pod
+	if p.Status == nil {
+		msg := p.Note
 		if msg == "" {
-			msg = "asking flow…"
+			msg = "asking pod…"
 		}
-		lines = []string{paneTitle(st, "sessions", "", m.sessionsAge(st), width), " " + st.faint.Render(msg)}
-		for len(lines) < m.regionHeight()-m.workspacesHeight() {
-			lines = append(lines, "")
-		}
-	} else {
-		open := 0
-		for _, f := range m.sessions.Flows {
-			if !f.Terminal {
-				open++
-			}
-		}
-		left := fmt.Sprintf("%d open of %d", open, len(m.sessions.Flows))
-		if m.filter != "" {
-			left = fmt.Sprintf("%d of %d · filter %q", len(rows), len(m.sessions.Flows), m.filter)
-		}
-		cols := m.sessionColumns(width)
-		lines = []string{paneTitle(st, "sessions", left, m.sessionsAge(st), width), columnHeader(st, cols)}
-		h := m.bodyHeight()
-		end := min(len(rows), m.offset+h)
-		for i := m.offset; i < end; i++ {
-			lines = append(lines, m.sessionRow(st, cols, rows[i], i == m.cursor, width))
-		}
-		if len(rows) == 0 {
-			lines = append(lines, st.faint.Render(" (nothing to show)"))
-		}
-		lines = append(lines, m.filterLine()...)
-		for len(lines) < m.regionHeight()-m.workspacesHeight() {
-			lines = append(lines, "")
+		return []string{paneTitle(st, "pod", "", m.podAge(st), width), " " + st.faint.Render(msg)}
+	}
+	if !p.Status.Up() {
+		return []string{
+			paneTitle(st, "pod", st.yellow.Render("○ "+p.Status.Summary()), m.podAge(st), width),
+			" " + st.faint.Render("nothing to list while the container is down · heai-pod status"),
 		}
 	}
-	return append(lines, m.workspaceLines(st, width)...)
+	rows := m.podRows()
+	left := p.Status.Summary() + fmt.Sprintf(" · %d workspaces", linkedCount(p.Workspaces))
+	var states []string
+	for _, c := range p.Status.AgentCounts() {
+		states = append(states, st.flowState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
+	}
+	if len(states) > 0 {
+		left += " · agents " + strings.Join(states, " · ")
+	}
+	if m.filter != "" {
+		left = fmt.Sprintf("%d of %d · filter %q", len(rows), len(p.Workspaces), m.filter)
+	}
+	cols := m.podColumns(width)
+	lines := []string{paneTitle(st, "pod", left, m.podAge(st), width), columnHeader(st, cols)}
+	h := m.bodyHeight()
+	end := min(len(rows), m.offset+h)
+	for i := m.offset; i < end; i++ {
+		lines = append(lines, m.podRow(st, cols, rows[i], i == m.cursor, width))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, st.faint.Render(" (no workspaces)"))
+	}
+	return append(lines, m.filterLine()...)
 }
 
-func (m Model) sessionRow(st styles, cols []column, f flows.Flow, selected bool, width int) string {
+func (m Model) podRow(st styles, cols []column, w pod.Workspace, selected bool, width int) string {
+	label := w.Label
+	if !w.Linked {
+		label += "  (the clone)"
+	}
 	values := map[string]string{
-		"id": f.ID, "actor": orDash(f.Link("actor")), "task": orDash(f.Link("task")), "state": f.State,
-		"age": short(m.opts.Now().Sub(f.SinceTime())), "branch": f.Link("branch"),
+		"id": w.ID, "actor": orDash(w.Actor), "repo": orDash(w.Repo), "branch": orDash(w.Branch),
+		"agent": orDash(w.AgentText()), "state": orDash(w.Status), "label": label,
 	}
 	var cells []string
 	for _, c := range cols {
 		cell := pad(values[c.name], c.width)
 		if !selected {
 			switch {
-			case f.Terminal:
+			case !w.Linked:
 				cell = st.faint.Render(cell)
 			case c.name == "state":
-				cell = st.flowState(f.State).Render(cell)
+				cell = st.flowState(w.Status).Render(cell)
 			}
 		}
 		cells = append(cells, cell)
@@ -705,37 +891,313 @@ func (m Model) sessionRow(st styles, cols []column, f flows.Flow, selected bool,
 	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
 }
 
-// workspaceLines is the rule and the workspaces pod lists, or one line saying why there are none.
-func (m Model) workspaceLines(st styles, width int) []string {
-	ws := m.sessions.Workspaces
-	shown := m.workspacesShown()
-	caption := fmt.Sprintf(" ── workspaces %d · pod list ", len(ws.Workspaces))
-	right := ""
-	if len(ws.Workspaces) > shown {
-		right = fmt.Sprintf("%d more", len(ws.Workspaces)-shown)
+// workspaceLines is one workspace in full: what pod knows about it, its agents and its panes.
+func (m Model) workspaceLines(st styles, w *pod.Workspace) []string {
+	width := m.width
+	title := w.ID + " · " + w.Label
+	right := "heai-pod list"
+	if !w.Linked {
+		right = "the clone · " + right
 	}
-	lines := []string{paneRule(st, caption, right, width)}
-	if len(ws.Workspaces) == 0 {
-		msg := ws.Note
+	lines := []string{paneTitle(st, "workspace", title, right, width)}
+	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
+	lines = append(lines, kv("status", st.flowState(w.Status).Render(orDash(w.Status))))
+	lines = append(lines, kv("actor", orDash(w.Actor)), kv("repo", orDash(w.Repo)), kv("branch", orDash(w.Branch)))
+	lines = append(lines, kv("path", truncate(orDash(w.Path), width-14)))
+	if len(w.Tokens) > 0 {
+		names := make([]string, 0, len(w.Tokens))
+		for n := range w.Tokens {
+			names = append(names, n)
+		}
+		sort.Strings(names)
+		var parts []string
+		for _, n := range names {
+			parts = append(parts, n+"="+w.Tokens[n])
+		}
+		lines = append(lines, kv("tokens", truncate(strings.Join(parts, " "), width-14)))
+	}
+	lines = append(lines, paneRule(st, fmt.Sprintf(" ── agents %d ", len(w.Agents)), "", width))
+	if len(w.Agents) == 0 {
+		lines = append(lines, " "+st.faint.Render("(none started)"))
+	}
+	for _, a := range w.Agents {
+		lines = append(lines, " "+pad(orDash(a.Kind), 10)+pad(orDash(a.Name), 16)+pad(a.Pane, 8)+st.flowState(a.State).Render(a.State))
+	}
+	lines = append(lines, paneRule(st, fmt.Sprintf(" ── panes %d ", len(w.Panes)), "", width))
+	for _, p := range w.Panes {
+		agent := orDash(p.Agent)
+		lines = append(lines, " "+pad(p.ID, 8)+pad(agent, 10)+pad(st.flowState(p.State).Render(p.State), 10)+st.faint.Render(truncate(p.Cwd, width-30)))
+	}
+	return m.scrolled(lines, 1, m.detailOff, m.fullHeight())
+}
+
+// ---- reactor ----------------------------------------------------------------
+
+func (m Model) sourceColumns(width int) []column {
+	cols := []column{
+		{"source", 12, 0},
+		{"type", 8, 0},
+		{"cadence", 16, 80},
+		{"last", 5, 0},
+		{"/1h", 3, 70},
+	}
+	return layout(cols, width, -1, 0, 0, 0, 10, "cursor")
+}
+
+func (m Model) ruleColumns(width int) []column {
+	cols := []column{
+		{"rule", 16, 0},
+		{"on", 0, 0}, // flexible
+		{"run", 20, 90},
+		{"last", 5, 0},
+	}
+	return layout(cols, width, -1, 16, 40, 12, 8, "result")
+}
+
+func (m Model) eventColumns(width int) []column {
+	cols := []column{
+		{"at", 5, 0},
+		{"source", 10, 0},
+		{"kind", 16, 0},
+		{"key", 0, 0}, // flexible
+	}
+	// The key takes what is left up to 36; what remains is each rule's result.
+	return layout(cols, width, -1, 12, 36, 12, 12, "rule → result")
+}
+
+// reactorTable is the sources, then the rules, then the last hour's events, newest first.
+func (m Model) reactorTable(st styles) []string {
+	width := m.width
+	r := m.reactor
+	if r.Status == nil {
+		msg := r.Note
 		if msg == "" {
-			msg = "no workspaces"
-			if ws.At.IsZero() {
-				msg = "asking…"
+			msg = "asking reactor…"
+		}
+		return []string{paneTitle(st, "reactor", "", m.reactorAge(st), width), " " + st.faint.Render(msg)}
+	}
+	rows := m.eventRows()
+	left := fmt.Sprintf("%d sources", len(r.Status.Sources))
+	if n := r.Status.Problems(); n > 0 {
+		left += " " + st.yellow.Render(fmt.Sprintf("⚠ %d", n))
+	}
+	left += fmt.Sprintf(" · %d rules · %d events in the last hour", len(r.Status.Rules), r.Status.Events.LastHour)
+	if n := len(r.FailedActions()); n > 0 {
+		left += " · " + st.red.Render(fmt.Sprintf("%d failed", n))
+	}
+	lines := []string{paneTitle(st, "reactor", left, m.reactorAge(st), width)}
+
+	// Sources: a dot, then the tool's own description of where each stands.
+	scols := m.sourceColumns(width)
+	lines = append(lines, columnHeader(st, scols))
+	shown := m.sourcesShown()
+	for i, src := range r.Status.Sources {
+		if i >= shown {
+			break
+		}
+		lines = append(lines, m.sourceRow(st, scols, src, width))
+	}
+	if len(r.Status.Sources) == 0 {
+		lines = append(lines, st.faint.Render(" (no sources)"))
+	} else if n := len(r.Status.Sources) - shown; n > 0 {
+		lines[len(lines)-1] = st.faint.Render(fmt.Sprintf(" … and %d more sources", n+1))
+	}
+
+	// Rules: what each listens for, and how its last run went.
+	rcols := m.ruleColumns(width)
+	caption := fmt.Sprintf(" ── rules %d ", len(r.Status.Rules))
+	lines = append(lines, paneRule(st, caption, "", width), columnHeader(st, rcols))
+	shown = m.rulesShown()
+	for i, rule := range r.Status.Rules {
+		if i >= shown {
+			break
+		}
+		lines = append(lines, m.ruleRow(st, rcols, rule, width))
+	}
+	if len(r.Status.Rules) == 0 {
+		lines = append(lines, st.faint.Render(" (no rules)"))
+	} else if n := len(r.Status.Rules) - shown; n > 0 {
+		lines[len(lines)-1] = st.faint.Render(fmt.Sprintf(" … and %d more rules", n+1))
+	}
+
+	// Events: the body the cursor moves over.
+	caption = " ── events, newest first · heai-reactor events --since 1h "
+	if m.filter != "" {
+		caption = fmt.Sprintf(" ── events %d of %d · filter %q ", len(rows), len(r.Events), m.filter)
+	}
+	ecols := m.eventColumns(width)
+	lines = append(lines, paneRule(st, caption, "", width), columnHeader(st, ecols))
+	h := m.bodyHeight()
+	end := min(len(rows), m.offset+max(0, h))
+	for i := m.offset; i < end; i++ {
+		lines = append(lines, m.eventRow(st, ecols, rows[i], i == m.cursor, width))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, st.faint.Render(" (no events in the last hour)"))
+	}
+	return append(lines, m.filterLine()...)
+}
+
+func (m Model) sourceRow(st styles, cols []column, src reactor.Source, width int) string {
+	dot, problem := "●", src.Problem()
+	if problem != "" {
+		dot = "○"
+	}
+	last := "-"
+	if t := src.LastEventTime(); !t.IsZero() {
+		last = clock(t, m.opts.Now())
+	}
+	cursor := src.Cursor
+	if problem != "" {
+		cursor = "⚠ " + problem
+	}
+	values := map[string]string{
+		"source": dot + " " + src.Name, "type": src.Type, "cadence": src.Cadence(), "last": last,
+		"/1h": fmt.Sprintf("%d", src.LastHour), "cursor": cursor,
+	}
+	var cells []string
+	for _, c := range cols {
+		cell := pad(values[c.name], c.width)
+		switch {
+		case problem != "" && (c.name == "source" || c.name == "cursor"):
+			cell = st.yellow.Render(cell)
+		case c.name == "cursor":
+			cell = st.faint.Render(cell)
+		}
+		cells = append(cells, cell)
+	}
+	return " " + strings.Join(cells, "  ")
+}
+
+func (m Model) ruleRow(st styles, cols []column, rule reactor.Rule, width int) string {
+	last, result, red := "-", "", false
+	switch a := rule.LastAction; {
+	case a != nil:
+		last, result, red = clock(a.AtTime(), m.opts.Now()), a.Result(), a.Failed()
+	case rule.Limit != nil:
+		result = "limit " + rule.Limit.String()
+	default:
+		result = "never fired"
+	}
+	if rule.Pending != nil {
+		result += " · debouncing until " + clock(reactorTime(rule.Pending.Until), m.opts.Now())
+	}
+	values := map[string]string{"rule": rule.Name, "on": rule.On, "run": rule.Run, "last": last, "result": result}
+	var cells []string
+	for _, c := range cols {
+		cell := pad(values[c.name], c.width)
+		switch {
+		case red && (c.name == "rule" || c.name == "result"):
+			cell = st.red.Render(cell)
+		case c.name == "result" && rule.LastAction == nil:
+			cell = st.faint.Render(cell)
+		case c.name == "run":
+			cell = st.faint.Render(cell)
+		}
+		cells = append(cells, cell)
+	}
+	return " " + strings.Join(cells, "  ")
+}
+
+func (m Model) eventRow(st styles, cols []column, e reactor.Event, selected bool, width int) string {
+	var results []string
+	red := false
+	for _, a := range e.Actions {
+		results = append(results, a.Rule+" → "+a.Result())
+		if a.Failed() {
+			red = true
+		}
+	}
+	values := map[string]string{
+		"at": clock(e.AtTime(), m.opts.Now()), "source": e.Source, "kind": e.Kind, "key": e.Key,
+		"rule → result": orDash(strings.Join(results, ", ")),
+	}
+	var cells []string
+	for _, c := range cols {
+		cell := pad(values[c.name], c.width)
+		if !selected {
+			switch {
+			case red && c.name == "rule → result":
+				cell = st.red.Render(cell)
+			case c.name == "rule → result" && len(results) == 0:
+				cell = st.faint.Render(cell)
 			}
 		}
-		return append(lines, " "+st.faint.Render(msg))
+		cells = append(cells, cell)
 	}
-	agentW := 22
-	for _, w := range ws.Workspaces[:shown] {
-		agent := strings.TrimSpace(w.Agent.Kind + " " + w.Agent.Name)
-		state := st.flowState(w.Agent.State).Render(pad(orDash(w.Agent.State), 8))
-		line := " " + pad(w.ID, 5) + "  " + pad(w.Label, 30) + "  " + pad(orDash(agent), agentW) + "  " + state
-		if rest := width - lipgloss.Width(line) - 2; rest >= 10 {
-			line += "  " + st.faint.Render(truncate(w.Branch, rest))
+	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
+}
+
+// eventLines is one event in full: its fields, its payload, and every action a rule took on it.
+func (m Model) eventLines(st styles, e *reactor.Event) []string {
+	width := m.width
+	lines := []string{paneTitle(st, "event", e.ID, e.Source+" · "+e.Kind, width)}
+	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
+	lines = append(lines, kv("source", e.Source), kv("kind", e.Kind), kv("key", truncate(e.Key, width-14)), kv("at", e.At))
+	lines = append(lines, paneRule(st, " ── payload ", "", width))
+	raw, err := json.MarshalIndent(e.Payload, "", "  ")
+	if err != nil || len(e.Payload) == 0 {
+		lines = append(lines, " "+st.faint.Render("{}"))
+	} else {
+		for _, l := range strings.Split(string(raw), "\n") {
+			lines = append(lines, " "+truncate(l, width-1))
 		}
-		lines = append(lines, line)
 	}
-	return lines
+	acts := e.Actions
+	lines = append(lines, paneRule(st, fmt.Sprintf(" ── actions %d ", len(acts)), "", width))
+	if len(acts) == 0 {
+		lines = append(lines, " "+st.faint.Render("(no rule acted on it)"))
+	}
+	for _, a := range acts {
+		result := a.Result()
+		if a.Failed() {
+			result = st.red.Render(result)
+		}
+		lines = append(lines, " "+st.title.Render(pad(a.Rule, 20))+pad(clock(a.AtTime(), m.opts.Now()), 7)+result)
+		if c := a.Command(); c != "" {
+			lines = append(lines, kv("  run", truncate(c, width-14)))
+		}
+		if l := a.Log(); l != "" {
+			lines = append(lines, kv("  log", st.faint.Render(truncate(l, width-14))))
+		}
+		if len(a.Collapsed) > 0 {
+			lines = append(lines, kv("  collapsed", fmt.Sprintf("%d more events into this run", len(a.Collapsed))))
+		}
+	}
+	return m.scrolled(lines, 1, m.detailOff, m.fullHeight())
+}
+
+// scrolled keeps the first `head` lines and shows a window of the rest from off, within avail lines,
+// saying on the title what is showing when not everything is.
+func (m Model) scrolled(lines []string, head, off, avail int) []string {
+	body := lines[head:]
+	off = min(off, max(0, len(body)-1))
+	shown := body[off:]
+	room := avail - head
+	if room > 0 && len(shown) > room {
+		shown = shown[:room]
+	}
+	out := append([]string{}, lines[:head]...)
+	if off > 0 || len(shown) < len(body) {
+		out[0] = fit(out[0], m.width-22) + fmt.Sprintf(" lines %d-%d of %d", off+1, off+len(shown), len(body))
+	}
+	return append(out, shown...)
+}
+
+// clock is a time of day in the screen's zone.
+func clock(t, now time.Time) string {
+	if t.IsZero() {
+		return "-"
+	}
+	return t.In(now.Location()).Format("15:04")
+}
+
+func reactorTime(s string) time.Time {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
 }
 
 // ---- detail -----------------------------------------------------------------
@@ -837,63 +1299,16 @@ func paneRule(st styles, caption, right string, width int) string {
 	return st.faint.Render(caption + strings.Repeat("─", dashes) + tail)
 }
 
-// ---- editor -----------------------------------------------------------------
-
-// editorLines is the two rows of pills; the focused row's choice is reversed, the other's bracketed.
-func (m Model) editorLines(st styles) []string {
-	e := m.edit
-	summary := ""
-	if c := e.change(); c.Status != nil || c.Priority != nil {
-		var parts []string
-		if c.Status != nil {
-			parts = append(parts, "status "+tracker.Statuses[e.orig[0]]+" → "+*c.Status)
-		}
-		if c.Priority != nil {
-			parts = append(parts, "priority "+orDash(priorityChoices[e.orig[1]])+" → "+orDash(*c.Priority))
-		}
-		summary = strings.Join(parts, " · ")
-	}
-	lines := []string{paneTitle(st, "edit", e.slug+"  "+summary, "⏎ apply through tasks set · esc cancel", m.width)}
-	pills := func(row int, choices []string, chosen int) string {
-		var out []string
-		for i, c := range choices {
-			label := orDash(c)
-			switch {
-			case i == chosen && e.row == row:
-				label = st.key.Render(" " + label + " ")
-			case i == chosen:
-				label = st.title.Render("[" + label + "]")
-			default:
-				label = " " + label + " "
-			}
-			out = append(out, label)
-		}
-		return strings.Join(out, " ")
-	}
-	name := func(row int, label string) string {
-		if e.row == row {
-			return st.title.Render(pad(label, 10))
-		}
-		return st.faint.Render(pad(label, 10))
-	}
-	lines = append(lines, " "+name(0, "status")+pills(0, tracker.Statuses, e.status))
-	lines = append(lines, " "+name(1, "priority")+pills(1, priorityChoices, e.priority))
-	return lines
-}
-
 // ---- help -------------------------------------------------------------------
 
 func (m Model) helpLines(st styles) []string {
 	lines := []string{paneTitle(st, "help", "", "", m.width)}
 	keys := [][2]string{
-		{"1 2 3", "the pane with the table: tasks, flows, sessions"},
+		{"1 2 3 4", "the pane with the table: tasks, flows, pod, reactor"},
 		{"↑ ↓  j k", "move"}, {"pgup pgdn  g G", "page, first, last"},
-		{"enter", "open: the task full width, or the flow's trace (flow trace <id>)"},
+		{"enter", "open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)"},
 		{"p", "show or hide the task pane"}, {"tab", "focus the task pane, to scroll it"},
-		{"e", "edit the task's status and priority (tasks set)"},
-		{"a", "start a session on the task (flow start session, linked to task, actor and repo), after y"},
-		{"c", "cancel the session (scripts/session/cancel.sh <id>), after y"},
-		{"s", "one tick of the daemon (reactor tick)"},
+		{"d", "in flows: choose what the table lists - the stuck report, or one definition's flows"},
 		{"esc", "back, or clear the filter"}, {"b", "every status ↔ the active ones (in-progress, in-review, blocked, todo)"},
 		{"S", "sort tasks: pick-up, age, slug, territory"}, {"/", "filter the pane as you type"},
 		{"+ -", "the tracker's refresh interval"}, {"r", "reload now"}, {"?", "this help"}, {"q", "quit"},
@@ -911,16 +1326,21 @@ func (m Model) helpLines(st styles) []string {
 	}
 	lines = append(lines, " "+pad("routes to", 16)+owners)
 	lines = append(lines, " "+pad("blocker", 16)+"the first `Blocked by [slug](slug.md)` in the body, and that task's status")
-	flowsFrom := fmt.Sprintf("flow list --json · flow stuck --json, every %s", m.opts.SlowInterval)
+	flowsFrom := fmt.Sprintf("flow definitions --json · flow list --json · flow stuck --json, every %s", m.opts.SlowInterval)
 	if m.flows.Note != "" {
 		flowsFrom += "  (" + m.flows.Note + ")"
 	}
 	lines = append(lines, " "+pad("flows", 16)+flowsFrom)
-	sessionsFrom := fmt.Sprintf("flow list session --json · pod list --json, every %s", m.opts.SlowInterval)
-	if m.sessions.Workspaces.Note != "" {
-		sessionsFrom += "  (" + m.sessions.Workspaces.Note + ")"
+	podFrom := fmt.Sprintf("pod status --json · pod list --json when it is up, every %s", m.opts.SlowInterval)
+	if m.pod.Note != "" {
+		podFrom += "  (" + m.pod.Note + ")"
 	}
-	lines = append(lines, " "+pad("sessions", 16)+sessionsFrom)
+	lines = append(lines, " "+pad("pod", 16)+podFrom)
+	reactorFrom := fmt.Sprintf("reactor status --json · reactor events --since 1h --json, every %s", m.opts.SlowInterval)
+	if m.reactor.Note != "" {
+		reactorFrom += "  (" + m.reactor.Note + ")"
+	}
+	lines = append(lines, " "+pad("reactor", 16)+reactorFrom)
 	lines = append(lines, " "+pad("interval", 16)+m.opts.Interval.String()+" for the tracker")
 	return lines
 }
@@ -933,30 +1353,28 @@ func (m Model) keyBar(st styles) string {
 	if m.active {
 		scope = "all"
 	}
-	common := [][2]string{{"1-3", "pane"}, {"s", "tick"}, {"/", "filter"}, {"+/-", "interval"}, {"r", "reload"}, {"?", "help"}, {"q", "quit"}}
+	common := [][2]string{{"1-4", "pane"}, {"/", "filter"}, {"+/-", "interval"}, {"r", "reload"}, {"?", "help"}, {"q", "quit"}}
 	switch {
 	case m.typing:
 		keys = [][2]string{{"type", "to filter"}, {"enter", "keep"}, {"esc", "clear"}}
 	case m.help:
 		keys = [][2]string{{"any key", "back"}, {"q", "quit"}}
-	case m.edit != nil:
-		keys = [][2]string{{"←→", "choose"}, {"↑↓", "row"}, {"1-7", "pick"}, {"⏎", "apply"}, {"esc", "cancel"}}
 	case m.trace != nil:
 		keys = [][2]string{{"↑↓", "scroll"}, {"r", "reload"}, {"esc", "back"}, {"q", "quit"}}
-	case m.detail != nil:
-		keys = [][2]string{{"↑↓", "scroll"}, {"e", "edit"}, {"a", "start"}, {"esc", "back"}, {"q", "quit"}}
+	case m.inDetail():
+		keys = [][2]string{{"↑↓", "scroll"}, {"esc", "back"}, {"q", "quit"}}
+	case m.pane == panePod, m.pane == paneReactor:
+		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}}, common...)
 	case m.pane == paneFlows:
-		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "trace"}}, common...)
-	case m.pane == paneSessions:
-		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "trace"}, {"c", "cancel"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "trace"}, {"d", "definition"}}, common...)
 	case m.split() && m.focus == focusRight:
-		keys = [][2]string{{"↑↓", "scroll"}, {"⇥", "list"}, {"⏎", "expand"}, {"e", "edit"}, {"a", "start"}, {"p", "hide"}, {"esc", "list"}, {"?", "help"}, {"q", "quit"}}
+		keys = [][2]string{{"↑↓", "scroll"}, {"⇥", "list"}, {"⏎", "expand"}, {"p", "hide"}, {"esc", "list"}, {"?", "help"}, {"q", "quit"}}
 	case m.split():
-		keys = append([][2]string{{"↑↓", "move"}, {"⇥", "task"}, {"⏎", "expand"}, {"e", "edit"}, {"a", "start"}, {"p", "hide"}, {"b", scope}, {"S", "sort"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"⇥", "task"}, {"⏎", "expand"}, {"p", "hide"}, {"b", scope}, {"S", "sort"}}, common...)
 	case m.width >= splitAt && !m.opts.NoSplit:
-		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}, {"e", "edit"}, {"a", "start"}, {"p", "task pane"}, {"b", scope}, {"S", "sort"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}, {"p", "task pane"}, {"b", scope}, {"S", "sort"}}, common...)
 	default:
-		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}, {"e", "edit"}, {"a", "start"}, {"b", scope}, {"S", "sort"}}, common...)
+		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}, {"b", scope}, {"S", "sort"}}, common...)
 	}
 	render := func(keys [][2]string) string {
 		var parts []string
@@ -966,7 +1384,7 @@ func (m Model) keyBar(st styles) string {
 		return " " + strings.Join(parts, "  ")
 	}
 	// On a narrow terminal the least-used keys leave the bar first; help and quit stay.
-	for _, drop := range []string{"r", "+/-", "s", "1-3", "S", "b", "/", "p", "⇥", "a", "c", "e", "⏎"} {
+	for _, drop := range []string{"r", "+/-", "1-4", "S", "b", "/", "p", "⇥", "d", "⏎"} {
 		if lipgloss.Width(render(keys)) <= m.width {
 			break
 		}
@@ -1032,7 +1450,7 @@ func (s styles) flowState(state string) lipgloss.Style {
 		return lipgloss.NewStyle()
 	}
 	switch state {
-	case "running", "busy", "in-progress":
+	case "running", "busy", "working", "in-progress":
 		return lipgloss.NewStyle().Foreground(lipgloss.Green)
 	case "blocked", "waiting", "proposed", "in-review", "exited":
 		return lipgloss.NewStyle().Foreground(lipgloss.Yellow)
@@ -1040,7 +1458,7 @@ func (s styles) flowState(state string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(lipgloss.Red)
 	case "queued", "resumable", "todo":
 		return lipgloss.NewStyle().Bold(true)
-	case "clean", "done", "canceled", "landed", "withdrawn", "idle", "-":
+	case "clean", "done", "canceled", "landed", "withdrawn", "idle", "unknown", "-":
 		return lipgloss.NewStyle().Faint(true)
 	}
 	return lipgloss.NewStyle()

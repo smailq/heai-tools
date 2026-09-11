@@ -1,0 +1,15 @@
+# The sample's sources and rules. A webhook whose secret is unset and a poll of
+# a port nothing listens on, so two sources show a problem on the screen; a
+# rule that fails on purpose, so one event is red.
+sources:
+  clock:     { type: schedule, cron: "* * * * *" }
+  tasks_cli: { type: cli, kinds: [task.todo, task.done] }
+  drops:     { type: dir, path: drops, every: 2s }
+  github:    { type: webhook, path: /hook/github, provider: github, secret: env:GITHUB_HOOK_SECRET }
+  health:    { type: poll, url: http://127.0.0.1:9/health, every: 5m, watch: status, timeout: 1s }
+rules:
+  - { name: minute,          on: { source: clock },                       run: scripts/sweep.sh }
+  - { name: pick-now,        on: { source: tasks_cli, kind: task.todo },  run: scripts/pick.sh, debounce: 5s }
+  - { name: session-exited,  on: { source: drops, kind: exited },         run: scripts/session/finish.sh }
+  - { name: session-failed,  on: { source: drops, kind: failed },         run: "echo 'failed.sh: would requeue' && exit 3" }
+  - { name: pr-merged,       on: { source: github, kind: pull_request.closed, merged: true }, run: scripts/merged.sh, limit: 10/hour }

@@ -1,0 +1,11 @@
+{
+  "container": {
+    "name": "heai-workshop",
+    "state": "stopped",
+    "running": false,
+    "image": "docker.io/library/alpine:latest"
+  },
+  "herdr": null,
+  "workspaces": null,
+  "agents": null
+}

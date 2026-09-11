@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2    2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo flow 4s ago
+ pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (bloc pod 4s ago
+ reactor ── 5 sources ⚠ 2 · 4 rules · 3 events in the last hour · 1 failed ─────
+ source        type      cadence           last   /1h  cursor                   
+ ● clock       schedule  every 10s         03:05  1    cron * * * * *; last slo…
+ ● tasks_cli   cli       from emit         03:05  1    kinds task.todo, task.do…
+ … and 3 more sources
+ ── rules 4 ────────────────────────────────────────────────────────────────────
+ rule              on                                        last   result      
+ sweep             source=clock                              03:05  ok          
+ pick-now          source=tasks_cli kind=task.todo           03:05  ok          
+ … and 2 more rules
+ ── events, newest first · heai-reactor events --since 1h ──────────────────────
+ at     source      kind              key                           rule → resu…
+ 03:05  drops       exited            exited.w2@1789095905658.761…  session-exi…
+ 03:05  tasks_cli   task.todo         fetch-company-favicon@todo    pick-now → …
+ 03:05  clock       tick              clock@2026-09-11T03:05:00.0…  sweep → ok  
+ ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

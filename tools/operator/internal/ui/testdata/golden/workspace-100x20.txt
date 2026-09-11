@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3    2s  13:41:00
+ workspace ── w3 · desktop-owner/add-place-entity ──────────────────────────────────── heai-pod list
+ status      working
+ actor       desktop-owner
+ repo        app
+ branch      agent/desktop-owner/add-place-entity
+ path        /worktrees/app/agent-desktop-owner-add-place-entity
+ tokens      actor=desktop-owner branch=agent/desktop-owner/add-place-entity repo=app
+ ── agents 1 ───────────────────────────────────────────────────────────────────────────────────────
+ claude    w3              w3:p2   working
+ ── panes 2 ────────────────────────────────────────────────────────────────────────────────────────
+ w3:p1   -         unknown   /worktrees/app/agent-desktop-owner-add-place-entity
+ w3:p2   claude    working   /worktrees/app/agent-desktop-owner-add-place-entity
+
+
+
+
+
+
+ ↑↓ scroll  esc back  q quit

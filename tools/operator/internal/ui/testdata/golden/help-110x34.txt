@@ -1,15 +1,12 @@
- operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3          2s  13:41:00
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3              2s  13:41:00
  help ────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1 2 3           the pane with the table: tasks, flows, sessions
+ 1 2 3 4         the pane with the table: tasks, flows, pod, reactor
  ↑ ↓  j k        move
  pgup pgdn  g G  page, first, last
- enter           open: the task full width, or the flow's trace (flow trace <id>)
+ enter           open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)
  p               show or hide the task pane
  tab             focus the task pane, to scroll it
- e               edit the task's status and priority (tasks set)
- a               start a session on the task (flow start session, linked to task, actor and repo), after y
- c               cancel the session (scripts/session/cancel.sh <id>), after y
- s               one tick of the daemon (reactor tick)
+ d               in flows: choose what the table lists - the stuck report, or one definition's flows
  esc             back, or clear the filter
  b               every status ↔ the active ones (in-progress, in-review, blocked, todo)
  S               sort tasks: pick-up, age, slug, territory
@@ -25,9 +22,12 @@
  project         /repo
  routes to       architect territories --json · architect check --format json, when the map's mtime moves
  blocker         the first `Blocked by [slug](slug.md)` in the body, and that task's status
- flows           flow list --json · flow stuck --json, every 5s
- sessions        flow list session --json · pod list --json, every 5s
+ flows           flow definitions --json · flow list --json · flow stuck --json, every 5s
+ pod             pod status --json · pod list --json when it is up, every 5s
+ reactor         reactor status --json · reactor events --since 1h --json, every 5s
  interval        2s for the tracker
+
+
 
 
 

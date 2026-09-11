@@ -4,16 +4,16 @@ A task tracker that is markdown files in the repository: one file per task, and 
 It is built for an llm-agent to own and orchestrate work from, which is why the format is a fixed key set, the view is derived, and every change to a task is a commit.
 
 ```sh
-npm install && npm link                                          # puts `tasks` on PATH
-tasks init --dir tasks --map ../architecture.yaml
-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
-tasks set cache-the-index --status in-progress
-tasks list --status todo --json
-tasks show cache-the-index
-tasks build --check
+npm install && npm link                                          # builds dist/ and puts `heai-tasks` on PATH
+heai-tasks init --dir heai-tasks --map ../architecture.yaml
+heai-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
+heai-tasks set cache-the-index --status in-progress
+heai-tasks list --status todo --json
+heai-tasks show cache-the-index
+heai-tasks build --check
 ```
 
-Requires Node 22.18 or newer, which runs the TypeScript sources directly.
+Requires Node 22.18 or newer. `npm install` builds the command into `dist/`; during development `node src/cli.ts` runs the sources directly. Released as `@heai-tools/tasks` on npm: `npm install -g @heai-tools/tasks` puts `heai-tasks` on PATH.
 There is no page: the command line is the whole tool, and a page over the tasks belongs to whatever reads them next, `operator` or a project's own.
 A script reads tasks through `list --json` and `show --json`, so nothing outside this tool parses the frontmatter a second time.
 
@@ -41,13 +41,13 @@ A slug never changes after creation, even when the title is edited - it is the i
 ## The commands
 
 ```
-tasks init  [--dir tasks] [--map <path>]
-tasks new <slug> --title "..." [--status todo] [--priority high]
-tasks set <slug> --status in-progress [--note "..."]
-tasks delete <slug>
-tasks list [--json] [--status <name>] [--territory <name>]
-tasks show <slug> [--json]
-tasks build [--dir tasks] [--check]
+heai-tasks init  [--dir tasks] [--map <path>]
+heai-tasks new <slug> --title "..." [--status todo] [--priority high]
+heai-tasks set <slug> --status in-progress [--note "..."]
+heai-tasks delete <slug>
+heai-tasks list [--json] [--status <name>] [--territory <name>]
+heai-tasks show <slug> [--json]
+heai-tasks build [--dir tasks] [--check]
 ```
 
 | command | what it does |
@@ -61,15 +61,15 @@ tasks build [--dir tasks] [--check]
 | `build` | validate every task file, then regenerate `INDEX.md` |
 | `build --check` | validate, and fail if the view is stale, without writing - the CI gate |
 
-Run them as `tasks <command>`; `npm install && npm link` puts the command on PATH.
+Run them as `heai-tasks <command>`; `npm install && npm link` builds the command and puts it on PATH.
 
 ### Editing is never hand-editing
 
 ```sh
-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
-tasks set cache-the-index --status in-progress --territory api
-tasks set cache-the-index --territory api,web    # crosses a boundary
-tasks set cache-the-index --status blocked --note "Blocked by [x](x.md)."
+heai-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
+heai-tasks set cache-the-index --status in-progress --territory api
+heai-tasks set cache-the-index --territory api,web    # crosses a boundary
+heai-tasks set cache-the-index --status blocked --note "Blocked by [x](x.md)."
 ```
 
 The frontmatter is a fixed key set in a fixed order, which a file written by hand can lose a key from, reorder, or fill with a value no vocabulary allows - and none of that surfaces until the next `build`.
@@ -84,10 +84,10 @@ A body is never rewritten, only added to with `--note`: it is the source of trut
 ### Reading is `list` and `show`
 
 ```sh
-tasks list                                  # a table, in pick-up order
-tasks list --json --status todo --territory api
-tasks show cache-the-index                  # the file, as it is
-tasks show cache-the-index --json | jq -r '.run // empty'
+heai-tasks list                                  # a table, in pick-up order
+heai-tasks list --json --status todo --territory api
+heai-tasks show cache-the-index                  # the file, as it is
+heai-tasks show cache-the-index --json | jq -r '.run // empty'
 ```
 
 `list` answers with every task's slug and frontmatter and nothing from the body, in the order `INDEX.md` uses: status section first, then priority, then slug.
@@ -206,7 +206,7 @@ A configured map that cannot be read is an error, not a silent fallback: a track
 When it and a task file disagree, the file wins and the view needs regenerating - so `build --check` belongs in CI beside the tests:
 
 ```sh
-tasks build --dir tasks --check
+heai-tasks build --dir heai-tasks --check
 ```
 
 The view sorts deterministically - status section, then priority, then slug - so regenerating with nothing changed produces no diff.

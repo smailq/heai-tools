@@ -1,0 +1,133 @@
+# One tool per release. The release's tag names it: `<tool>-v<version>`, for
+# example `tasks-v0.2.0` or `operator-v0.1.0`. Publishing the release runs
+# this: the tool is built and tested, its artifact is attached to the release,
+# and - once npm is set up (docs/releasing.md) - a Node tool is published to
+# the npm registry as @heai-tools/<tool>, whose command is `heai-<tool>`.
+name: release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write   # upload assets to the release
+  id-token: write   # npm provenance, and trusted publishing once configured
+
+jobs:
+  plan:
+    name: which tool
+    runs-on: ubuntu-latest
+    outputs:
+      tool: ${{ steps.parse.outputs.tool }}
+      version: ${{ steps.parse.outputs.version }}
+      kind: ${{ steps.parse.outputs.kind }}
+    steps:
+      - id: parse
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ ! "$TAG" =~ ^([a-z][a-z0-9-]*)-v([0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?)$ ]]; then
+            echo "::error::tag '$TAG' is not <tool>-v<semver>, e.g. tasks-v0.2.0"; exit 1
+          fi
+          tool="${BASH_REMATCH[1]}"; version="${BASH_REMATCH[2]}"
+          case "$tool" in
+            architect|flow|pod|reactor|tasks) kind=node ;;
+            operator) kind=go ;;
+            *) echo "::error::'$tool' is not a released tool (architect, flow, pod, reactor, tasks, operator)"; exit 1 ;;
+          esac
+          echo "tool=$tool" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "kind=$kind" >> "$GITHUB_OUTPUT"
+          echo "releasing $tool $version ($kind)"
+
+  node:
+    name: ${{ needs.plan.outputs.tool }} ${{ needs.plan.outputs.version }}
+    needs: plan
+    if: needs.plan.outputs.kind == 'node'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/${{ needs.plan.outputs.tool }}
+    env:
+      TOOL: ${{ needs.plan.outputs.tool }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: tools/${{ needs.plan.outputs.tool }}/package-lock.json
+      - name: the tag's version is the manifest's
+        run: |
+          have="$(node -p 'require("./package.json").version')"
+          if [ "$have" != "$VERSION" ]; then
+            echo "::error::tag says $VERSION but tools/$TOOL/package.json says $have"; exit 1
+          fi
+          name="$(node -p 'require("./package.json").name')"
+          bin="$(node -p 'Object.keys(require("./package.json").bin).join(" ")')"
+          if [ "$name" != "@heai-tools/$TOOL" ] || [ "$bin" != "heai-$TOOL" ]; then
+            echo "::error::expected package @heai-tools/$TOOL with bin heai-$TOOL, found $name with bin $bin"; exit 1
+          fi
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - name: the built command runs
+        run: node dist/cli.js --help
+      - name: pack
+        run: npm pack --pack-destination ../../dist
+      - name: attach the tarball to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" ../../dist/*.tgz --clobber
+      - name: publish to npm
+        # Off until the registry side is ready; see docs/releasing.md. Flip the
+        # repository variable NPM_PUBLISH to true to turn it on. A granular
+        # NPM_TOKEN secret is used when present; otherwise trusted publishing.
+        if: vars.NPM_PUBLISH == 'true'
+        env:
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm install -g npm@latest
+          if [ -n "$NPM_TOKEN" ]; then
+            echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN}" > "$HOME/.npmrc"
+          fi
+          npm publish --provenance --access public
+
+  go:
+    name: ${{ needs.plan.outputs.tool }} ${{ needs.plan.outputs.version }}
+    needs: plan
+    if: needs.plan.outputs.kind == 'go'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/${{ needs.plan.outputs.tool }}
+    env:
+      TOOL: ${{ needs.plan.outputs.tool }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      TAG: ${{ github.event.release.tag_name }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/${{ needs.plan.outputs.tool }}/go.mod
+          cache-dependency-path: tools/${{ needs.plan.outputs.tool }}/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      - name: build every platform
+        run: |
+          set -euo pipefail
+          out="$PWD/../../dist"; mkdir -p "$out"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"; arch="${target#*/}"
+            stage="$(mktemp -d)"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags="-s -w" -o "$stage/heai-$TOOL" "./cmd/heai-$TOOL"
+            cp README.md "$stage/"
+            tar -C "$stage" -czf "$out/heai-${TOOL}_${VERSION}_${os}_${arch}.tar.gz" .
+          done
+          (cd "$out" && sha256sum *.tar.gz > "heai-${TOOL}_${VERSION}_checksums.txt" && cat "heai-${TOOL}_${VERSION}_checksums.txt")
+      - name: attach the archives to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$TAG" ../../dist/* --clobber

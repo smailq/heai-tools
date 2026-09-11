@@ -1,0 +1,42 @@
+[
+  {
+    "name": "landing",
+    "path": "/repo/flows/landing.yaml",
+    "problem": null,
+    "states": [
+      "proposed",
+      "landed",
+      "refused",
+      "withdrawn"
+    ]
+  },
+  {
+    "name": "request",
+    "path": "/repo/flows/request.yaml",
+    "problem": null,
+    "states": [
+      "todo",
+      "in-progress",
+      "done",
+      "canceled"
+    ]
+  },
+  {
+    "name": "session",
+    "path": "/repo/flows/session.yaml",
+    "problem": null,
+    "states": [
+      "queued",
+      "running",
+      "waiting",
+      "exited",
+      "clean",
+      "violation",
+      "blocked",
+      "resumable",
+      "failed",
+      "canceled",
+      "lost"
+    ]
+  }
+]

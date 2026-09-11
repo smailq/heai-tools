@@ -10,21 +10,21 @@ import { openStore, FlowError, UsageError, type Action, type Line, type Snapshot
 import { formatDuration, parseDuration, RESERVED_EVENTS } from './definition.ts'
 import { humanize } from './cli-format.ts'
 
-const USAGE = `flow - a state machine per record, a journal per flow, and one command that says where anything is
+const USAGE = `heai-flow - a state machine per record, a journal per flow, and one command that says where anything is
 
-  flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."]
-  flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
-  flow touch <id>                            the heartbeat: an \`after\` counts from the last touch
-  flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>]
-  flow show <id> [--json]                    state, links, the journal, and the actions
-  flow list [<definition>] [--in <state>] [--link name=value] [--json]
-  flow trace <id | name=value> [--json]      one timeline across every linked flow
-  flow stuck [--older 1h] [--json]           non-terminal flows nothing has moved or touched in that long
-  flow settle                                expire states, fire guards, rebuild views; run the actions
-  flow check [--fix]                         definitions, journals, snapshots and indexes; --fix rebuilds the views; runs no action
-  flow reindex [--repin]                     rebuild every snapshot and both indexes from the journals; runs no action;
+  heai-flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."]
+  heai-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
+  heai-flow touch <id>                            the heartbeat: an \`after\` counts from the last touch
+  heai-flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>]
+  heai-flow show <id> [--json]                    state, links, the journal, and the actions
+  heai-flow list [<definition>] [--in <state>] [--link name=value] [--json]
+  heai-flow trace <id | name=value> [--json]      one timeline across every linked flow
+  heai-flow stuck [--older 1h] [--json]           non-terminal flows nothing has moved or touched in that long
+  heai-flow settle                                expire states, fire guards, rebuild views; run the actions
+  heai-flow check [--fix]                         definitions, journals, snapshots and indexes; --fix rebuilds the views; runs no action
+  heai-flow reindex [--repin]                     rebuild every snapshot and both indexes from the journals; runs no action;
                                              --repin first rewrites every open flow's pinned definition from the file under flows/
-  flow definitions                           every definition in the flows directory
+  heai-flow definitions                           every definition in the flows directory
 
 Options, on every command:
   --dir <path>         the project directory, where scripts run (default: HEAI_DIR, else the current directory)

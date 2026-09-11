@@ -3,17 +3,39 @@
   "version": "0.1.0",
   "description": "Tracks a multi-stage process as a state machine per record and a graph of records: a definition, an append-only journal per flow, and one command that says where anything is",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smailq/heai-tools.git",
+    "directory": "tools/flow"
+  },
+  "homepage": "https://github.com/smailq/heai-tools/tree/main/tools/flow#readme",
+  "bugs": {
+    "url": "https://github.com/smailq/heai-tools/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
   "bin": {
-    "flow": "./src/cli.ts"
+    "heai-flow": "./dist/cli.js"
   },
   "exports": {
-    ".": "./src/store.ts"
+    ".": {
+      "types": "./dist/store.d.ts",
+      "default": "./dist/store.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --test 'test/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

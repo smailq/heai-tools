@@ -17,32 +17,32 @@ import { createRepos } from './repos.ts'
 import { closeWorkspace, listWorkspaces, openWorkspace, type WorkspaceView } from './workspaces.ts'
 import { notify, promptAgent, readTarget, runCommand, sendKeys, settle, startAgent, waitArgs, type Box, type Settled } from './agents.ts'
 
-const USAGE = `pod - one persistent container running Herdr: a clone per repository, a worktree per piece of work, an agent or a command in it, a fact file when it settles
+const USAGE = `heai-pod - one persistent container running Herdr: a clone per repository, a worktree per piece of work, an agent or a command in it, a fact file when it settles
 
-  pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
-  pod down  [--force]                          refused while an agent is working
-  pod status [--json]
-  pod build                                    the base, then every image in the configuration's images:
-  pod build base [--tag <image>] [--image-dir <dir>]
-  pod build <image> [--image-dir <dir>]        one extended image, FROM the base
+  heai-pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
+  heai-pod down  [--force]                          refused while an agent is working
+  heai-pod status [--json]
+  heai-pod build                                    the base, then every image in the configuration's images:
+  heai-pod build base [--tag <image>] [--image-dir <dir>]
+  heai-pod build <image> [--image-dir <dir>]        one extended image, FROM the base
 
-  pod repo add <name> [<source>]               clone into <state>/repos/<name>; the source is the map's localPath, else remotePath
-  pod repo list [--json]
-  pod repo fetch [<name>]
-  pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into the source checkout
+  heai-pod repo add <name> [<source>]               clone into <state>/repos/<name>; the source is the map's localPath, else remotePath
+  heai-pod repo list [--json]
+  heai-pod repo fetch [<name>]
+  heai-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into the source checkout
 
-  pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
-  pod list [--json]
-  pod close <workspace> [--keep-worktree] [--force]
-  pod attach [<workspace>]                     the Herdr UI in this terminal
+  heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
+  heai-pod list [--json]
+  heai-pod close <workspace> [--keep-worktree] [--force]
+  heai-pod attach [<workspace>]                     the Herdr UI in this terminal
 
-  pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
-  pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>] [--timeout <ms>]]
-  pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-  pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
-  pod read   <target> [--lines N] [--ansi]
-  pod keys   <target> <key>...
-  pod herdr  -- <any herdr command>
+  heai-pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
+  heai-pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>] [--timeout <ms>]]
+  heai-pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
+  heai-pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
+  heai-pod read   <target> [--lines N] [--ansi]
+  heai-pod keys   <target> <key>...
+  heai-pod herdr  -- <any herdr command>
 
 Options, on every command:
   --dir <path>         the project directory (default: HEAI_DIR, else the map's directory, else the cwd)

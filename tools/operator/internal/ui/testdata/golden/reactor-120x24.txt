@@ -1,0 +1,24 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3  reactor 3/1h ✗1       2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 · todo 2 · backlog 1 · done 1 · canceled 1 items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
+ pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (blocked 1 · idle 1 · working 1)              pod 4s ago
+ reactor ── 5 sources ⚠ 2 · 4 rules · 3 events in the last hour · 1 failed ────────────────────────────── reactor 5s ago
+ source        type      cadence           last   /1h  cursor                                                           
+ ● clock       schedule  every 10s         03:05  1    cron * * * * *; last slot 2026-09-11T03:05:00.000Z               
+ ● tasks_cli   cli       from emit         03:05  1    kinds task.todo, task.done; emitted 1, pending 0; last 2026-09-1…
+ ● drops       dir       every 2s          03:05  1    drops; 1 taken, last exited (exited.w2) at 2026-09-11T03:05:05.6…
+ ○ github      webhook   listens /hook/g…  -      0    ⚠ env:GITHUB_HOOK_SECRET is not set                              
+ ○ health      poll      every 5m          -      0    ⚠ fetch failed                                                   
+ ── rules 4 ────────────────────────────────────────────────────────────────────────────────────────────────────────────
+ rule              on                                        run                   last   result                        
+ sweep             source=clock                              scripts/sweep.sh      03:05  ok                            
+ pick-now          source=tasks_cli kind=task.todo           scripts/pick.sh       03:05  ok                            
+ session-exited    source=drops kind=exited                  exit 3                03:05  exited 3                      
+ pr-merged         source=github kind=pull_request.closed …  scripts/merged.sh     -      limit 10/hour                 
+ ── events, newest first · heai-reactor events --since 1h ──────────────────────────────────────────────────────────────
+ at     source      kind              key                                   rule → result                               
+ 03:05  drops       exited            exited.w2@1789095905658.7617@b0f27d…  session-exited → exited 3                   
+ 03:05  tasks_cli   task.todo         fetch-company-favicon@todo            pick-now → ok                               
+ 03:05  clock       tick              clock@2026-09-11T03:05:00.000Z        sweep → ok                                  
+
+ ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

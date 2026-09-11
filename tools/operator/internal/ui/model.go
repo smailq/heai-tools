@@ -1,6 +1,6 @@
-// Package ui is the screen: an htop-shaped view over the tracker, the flows and
-// the sessions, each pane refreshed on its own clock, holding nothing but the
-// last thing it read.
+// Package ui is the screen: an htop-shaped view over the tracker, the flows,
+// the container and the reactor, each pane refreshed on its own clock, holding
+// nothing but the last thing it read.
 package ui
 
 import (
@@ -10,12 +10,12 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/smailq/heai-tools/tools/operator/internal/actions"
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
 	"github.com/smailq/heai-tools/tools/operator/internal/owners"
+	"github.com/smailq/heai-tools/tools/operator/internal/pod"
+	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
 	"github.com/smailq/heai-tools/tools/operator/internal/tracker"
-	"github.com/smailq/heai-tools/tools/operator/internal/workspaces"
 )
 
 // Options is everything the screen is told once.
@@ -28,7 +28,7 @@ type Options struct {
 	Cwd     string
 	// Interval is the tracker's clock; +/- move it.
 	Interval time.Duration
-	// SlowInterval is the clock for the panes that ask a sibling CLI, flows and sessions.
+	// SlowInterval is the clock for the panes that ask a sibling CLI: flows, pod and reactor.
 	SlowInterval time.Duration
 	// Plain disables colour and attributes, for --once and for golden tests.
 	Plain bool
@@ -44,16 +44,6 @@ type Snapshot struct {
 	MapPath string
 	Owners  owners.Result
 	At      time.Time
-}
-
-// Sessions is the sessions pane's reading: the session flows, and the container's workspaces.
-type Sessions struct {
-	Flows []flows.Flow `json:"flows"`
-	// Note says why Flows is empty or old: no session flows, flow not on PATH, not configured here, or the failure.
-	Note       string            `json:"note,omitempty"`
-	Failed     bool              `json:"failed,omitempty"`
-	Workspaces workspaces.Result `json:"workspaces"`
-	At         time.Time         `json:"at"`
 }
 
 // Load takes a snapshot of the tracker. Owners are re-asked of architect only
@@ -87,28 +77,11 @@ func Load(opts Options, prev Snapshot) Snapshot {
 // LoadFlows asks flow for everything open and everything stuck.
 func LoadFlows(mapPath string, now time.Time) flows.Result { return flows.Poll(mapPath, now) }
 
-// LoadSessions asks flow for the session flows and pod for the workspaces.
-func LoadSessions(mapPath string, now time.Time) Sessions {
-	s := Sessions{At: now}
-	switch ok, why := flows.Configured(mapPath); {
-	case !flows.Installed():
-		s.Note = "flow not on PATH"
-	case !ok:
-		s.Note = why
-	default:
-		list, err := flows.List(mapPath, "session")
-		switch {
-		case err != nil:
-			s.Note, s.Failed = err.Error(), true
-		case len(list) == 0:
-			s.Note = "no session flows"
-		default:
-			s.Flows = list
-		}
-	}
-	s.Workspaces = workspaces.Poll(now)
-	return s
-}
+// LoadPod asks pod for the container's status and, when it is up, its workspaces.
+func LoadPod(project string, now time.Time) pod.Result { return pod.Poll(project, now) }
+
+// LoadReactor asks reactor for its sources and rules and the last hour's events.
+func LoadReactor(project string, now time.Time) reactor.Result { return reactor.Poll(project, now) }
 
 func mapMoved(path string, seen time.Time) bool {
 	if path == "" {
@@ -128,26 +101,28 @@ const (
 
 var sortNames = []string{"pick-up", "age", "slug", "territory"}
 
-// pane is which of the three has the table; the other two are one line each.
+// pane is which of the four has the table; the other three are one line each.
 type pane int
 
 const (
 	paneTasks pane = iota
 	paneFlows
-	paneSessions
+	panePod
+	paneReactor
 	paneCount
 )
 
-var paneNames = []string{"tasks", "flows", "sessions"}
+var paneNames = []string{"tasks", "flows", "pod", "reactor"}
 
 // Model is the Bubble Tea model.
 type Model struct {
-	opts     Options
-	snap     Snapshot
-	flows    flows.Result
-	sessions Sessions
-	width    int
-	height   int
+	opts    Options
+	snap    Snapshot
+	flows   flows.Result
+	pod     pod.Result
+	reactor reactor.Result
+	width   int
+	height  int
 
 	pane   pane
 	cursor int
@@ -168,19 +143,20 @@ type Model struct {
 	// panelOff hides the task pane; p toggles it, and the list takes the whole width.
 	panelOff bool
 
+	// flowDef is the definition whose flows the flows pane lists; "" is the stuck report.
+	flowDef string
+	// choosing is the definition chooser open on the bar, with choice its cursor over flowChoices.
+	choosing bool
+	choice   int
+
 	// detail is a task opened full width; detailOff scrolls its body, the split pane's, and a trace.
 	detail    *tracker.Task
 	detailOff int
+	// wsDetail is a workspace opened full width; evDetail an event with the actions it caused.
+	wsDetail *pod.Workspace
+	evDetail *reactor.Event
 	// trace is a flow's timeline opened full width, from `flow trace <id>`.
 	trace *traceView
-
-	// edit is the status and priority editor open on one task, or nil.
-	edit *editor
-	// pending is a command shown on the bar, waiting for y.
-	pending *pending
-	// notice is the last action's command and outcome, shown on the bar until the next key.
-	notice    string
-	noticeRed bool
 }
 
 // traceView is `flow trace <id>` as flow printed it, or why it could not.
@@ -190,42 +166,6 @@ type traceView struct {
 	err     string
 	loading bool
 }
-
-// pending is one command the bar shows before y runs it.
-type pending struct {
-	command string
-	run     func() actions.Result
-}
-
-// editor holds the two rows of pills: which row has focus, and the chosen index in each.
-type editor struct {
-	slug     string
-	row      int // 0 status, 1 priority
-	status   int // index into tracker.Statuses
-	priority int // index into priorityChoices
-	orig     [2]int
-}
-
-// priorityChoices is the priority vocabulary with "not triaged" first, shown as "-".
-var priorityChoices = append([]string{""}, tracker.Priorities...)
-
-func (e *editor) changed() bool { return e.status != e.orig[0] || e.priority != e.orig[1] }
-
-// change is what Enter would ask tasks to set: only the fields that moved.
-func (e *editor) change() actions.Change {
-	var c actions.Change
-	if e.status != e.orig[0] {
-		s := tracker.Statuses[e.status]
-		c.Status = &s
-	}
-	if e.priority != e.orig[1] {
-		p := priorityChoices[e.priority]
-		c.Priority = &p
-	}
-	return c
-}
-
-type actionMsg actions.Result
 
 const (
 	focusLeft = iota
@@ -252,8 +192,11 @@ func (m Model) WithSnapshot(s Snapshot) Model { m.snap = s; return m }
 // WithFlows seeds the flows pane, for --once and for tests.
 func (m Model) WithFlows(r flows.Result) Model { m.flows = r; return m }
 
-// WithSessions seeds the sessions pane, for --once and for tests.
-func (m Model) WithSessions(s Sessions) Model { m.sessions = s; return m }
+// WithPod seeds the pod pane, for --once and for tests.
+func (m Model) WithPod(r pod.Result) Model { m.pod = r; return m }
+
+// WithReactor seeds the reactor pane, for --once and for tests.
+func (m Model) WithReactor(r reactor.Result) Model { m.reactor = r; return m }
 
 // WithSize sets the terminal size, for --once and for tests.
 func (m Model) WithSize(w, h int) Model { m.width, m.height = w, h; return m }
@@ -264,23 +207,26 @@ func (m Model) WithActive() Model { m.active = true; return m }
 // Flows is the flows pane's last answer, for --json.
 func (m Model) Flows() flows.Result { return m.flows }
 
-// Sessions is the sessions pane's last answer, for --json.
-func (m Model) Sessions() Sessions { return m.sessions }
+// Project is the project directory pod and reactor are asked about, for --once and --json.
+func (m Model) Project() string { return m.project() }
 
-// RowCount is how many rows the tasks table would show, so --once can size itself to fit them all.
-func (m Model) RowCount() int { return len(m.rows()) }
+// OnceHeight is tall enough for every task row: the header, the pane title, the
+// column header, the rows, the other panes' lines, and the key bar.
+func (m Model) OnceHeight() int { return len(m.rows()) + 4 + int(paneCount-1) }
 
 // Red reports whether anything on the screen is red: an invalid task, a blocker
-// that will never clear, or a stuck flow whose wait stands at a dead end.
+// that will never clear, a stuck flow whose wait stands at a dead end, or a
+// reactor rule that ran and failed in the last hour.
 func (m Model) Red() bool {
-	return (m.snap.Tracker != nil && m.snap.Tracker.Red()) || m.flows.Red()
+	return (m.snap.Tracker != nil && m.snap.Tracker.Red()) || m.flows.Red() || m.reactor.Red()
 }
 
 type tickMsg time.Time
 type slowTickMsg time.Time
 type loadedMsg Snapshot
 type flowsMsg flows.Result
-type sessionsMsg Sessions
+type podMsg pod.Result
+type reactorMsg reactor.Result
 type traceMsg struct {
 	id   string
 	text string
@@ -300,14 +246,15 @@ func (m Model) load() tea.Cmd {
 	return func() tea.Msg { return loadedMsg(Load(opts, prev)) }
 }
 
-// loadSlow polls flow and pod, two commands that come back on their own.
+// loadSlow polls flow, pod and reactor, three commands that come back on their own.
 func (m *Model) loadSlow() tea.Cmd {
-	mapPath, now := m.snap.MapPath, m.opts.Now
-	m.slowPending = 2
+	mapPath, project, now := m.snap.MapPath, m.project(), m.opts.Now
+	m.slowPending = 3
 	m.slowStarted = true
 	return tea.Batch(
 		func() tea.Msg { return flowsMsg(LoadFlows(mapPath, now())) },
-		func() tea.Msg { return sessionsMsg(LoadSessions(mapPath, now())) },
+		func() tea.Msg { return podMsg(LoadPod(project, now())) },
+		func() tea.Msg { return reactorMsg(LoadReactor(project, now())) },
 	)
 }
 
@@ -323,7 +270,7 @@ func (m Model) loadTrace(id string) tea.Cmd {
 	}
 }
 
-// project is the directory the scripts run in and reactor reads.
+// project is the project directory pod and reactor are asked about.
 func (m Model) project() string {
 	if m.opts.Project != "" {
 		return m.opts.Project
@@ -381,16 +328,35 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.clamp()
 		return m, nil
-	case sessionsMsg:
+	case podMsg:
 		m.slowPending--
-		s := Sessions(msg)
-		if s.Failed && len(m.sessions.Flows) > 0 {
-			s.Flows, s.At = m.sessions.Flows, m.sessions.At
+		r := pod.Result(msg)
+		if r.Failed && m.pod.Status != nil {
+			// Keep the last answer, and say it is old.
+			m.pod.Note, m.pod.Failed = r.Note, true
+		} else {
+			m.pod = r
 		}
-		if s.Workspaces.Failed && len(m.sessions.Workspaces.Workspaces) > 0 {
-			s.Workspaces.Workspaces, s.Workspaces.At = m.sessions.Workspaces.Workspaces, m.sessions.Workspaces.At
+		if m.wsDetail != nil {
+			// Keep the open workspace current, or close it if it went away.
+			m.wsDetail = m.workspaceByID(m.wsDetail.ID)
 		}
-		m.sessions = s
+		m.clamp()
+		return m, nil
+	case reactorMsg:
+		m.slowPending--
+		r := reactor.Result(msg)
+		if r.Failed && m.reactor.Status != nil {
+			m.reactor.Note, m.reactor.Failed = r.Note, true
+		} else {
+			m.reactor = r
+		}
+		if m.evDetail != nil {
+			// Keep the open event current; one that aged out of the hour stays as it was read.
+			if e := m.eventByID(m.evDetail.ID); e != nil {
+				m.evDetail = e
+			}
+		}
 		m.clamp()
 		return m, nil
 	case traceMsg:
@@ -398,11 +364,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.trace.text, m.trace.err, m.trace.loading = msg.text, msg.err, false
 		}
 		return m, nil
-	case actionMsg:
-		r := actions.Result(msg)
-		m.notice = noticeLine(r.Command, r.Summary, m.width-1)
-		m.noticeRed = !r.OK()
-		return m, m.reload()
 	case tea.KeyPressMsg:
 		return m.key(msg)
 	}
@@ -431,17 +392,8 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if k == "ctrl+c" {
 		return m, tea.Quit
 	}
-	m.notice, m.noticeRed = "", false
-	if m.pending != nil {
-		p := m.pending
-		m.pending = nil
-		if k == "y" {
-			return m, func() tea.Msg { return actionMsg(p.run()) }
-		}
-		return m, nil
-	}
-	if m.edit != nil {
-		return m.editKey(k)
+	if m.choosing {
+		return m.chooseKey(k)
 	}
 	if m.typing {
 		switch k {
@@ -481,25 +433,17 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				m.trace.loading = true
 				return m, m.loadTrace(m.trace.id)
 			}
-		case "s":
-			return m, m.reactorTick()
 		default:
 			m.scrollKey(k)
 		}
 		return m, nil
 	}
-	if m.detail != nil {
+	if m.inDetail() {
 		switch k {
 		case "q":
 			return m, tea.Quit
-		case "e":
-			return m.openEditor(), nil
-		case "a":
-			return m.offerStart(), nil
-		case "s":
-			return m, m.reactorTick()
 		case "esc", "enter", "left", "h":
-			m.detail, m.detailOff = nil, 0
+			m.closeDetail()
 		default:
 			m.scrollKey(k)
 		}
@@ -520,16 +464,13 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.help = true
-	case "1", "2", "3":
+	case "1", "2", "3", "4":
 		m.switchPane(pane(k[0] - '1'))
-	case "e":
-		return m.openEditor(), nil
-	case "a":
-		return m.offerStart(), nil
-	case "c":
-		return m.offerCancel(), nil
-	case "s":
-		return m, m.reactorTick()
+	case "d":
+		if m.pane == paneFlows {
+			m.choosing = true
+			m.choice = max(0, indexOf(m.flowChoices(), m.flowDef))
+		}
 	case "p":
 		if m.pane == paneTasks {
 			m.panelOff = !m.panelOff
@@ -591,7 +532,14 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// scrollKey moves a body: a task's, the split pane's, or a trace's.
+// inDetail reports whether something is open full width: a task, a workspace or an event.
+func (m Model) inDetail() bool { return m.detail != nil || m.wsDetail != nil || m.evDetail != nil }
+
+func (m *Model) closeDetail() {
+	m.detail, m.wsDetail, m.evDetail, m.detailOff = nil, nil, nil, 0
+}
+
+// scrollKey moves a body: a task's, the split pane's, a workspace's, an event's, or a trace's.
 func (m *Model) scrollKey(k string) {
 	switch k {
 	case "up", "k":
@@ -613,144 +561,46 @@ func (m *Model) switchPane(p pane) {
 	}
 	m.pane = p
 	m.cursor, m.offset, m.detailOff = 0, 0, 0
-	m.filter, m.typing = "", false
+	m.filter, m.typing, m.choosing = "", false, false
 	m.focus = focusLeft
 }
 
-// open is Enter: a task full width, or a flow's trace.
-func (m Model) open() (tea.Model, tea.Cmd) {
-	switch m.pane {
-	case paneTasks:
-		if rows := m.rows(); len(rows) > 0 {
-			t := rows[m.cursor]
-			m.detail, m.detailOff = &t, 0
-		}
-	case paneFlows:
-		if rows := m.stuckRows(); len(rows) > 0 {
-			return m.openTrace(rows[m.cursor].Flow.ID)
-		}
-	case paneSessions:
-		if rows := m.sessionRows(); len(rows) > 0 {
-			return m.openTrace(rows[m.cursor].ID)
+// flowChoices is what d offers: the stuck report, then every definition the project declares or has flows of.
+func (m Model) flowChoices() []string {
+	return append([]string{""}, m.flows.DefinitionNames()...)
+}
+
+// chooseKey drives the definition chooser: ← → move, a digit picks, ⏎ selects, esc keeps what was shown.
+func (m Model) chooseKey(k string) (tea.Model, tea.Cmd) {
+	choices := m.flowChoices()
+	switch k {
+	case "q":
+		return m, tea.Quit
+	case "esc", "d":
+		m.choosing = false
+	case "left", "h", "up", "k":
+		m.choice = (m.choice + len(choices) - 1) % len(choices)
+	case "right", "l", "down", "j", "tab":
+		m.choice = (m.choice + 1) % len(choices)
+	case "home", "g":
+		m.choice = 0
+	case "end", "G":
+		m.choice = len(choices) - 1
+	case "enter":
+		m.selectDefinition(choices[m.choice])
+	default:
+		if len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < len(choices) {
+			m.selectDefinition(choices[k[0]-'1'])
 		}
 	}
 	return m, nil
 }
 
-func (m Model) openTrace(id string) (tea.Model, tea.Cmd) {
-	m.trace = &traceView{id: id, loading: true}
-	m.detailOff = 0
-	return m, m.loadTrace(id)
-}
-
-// selected is the task the keys act on: the one opened full width, else the one under the cursor in the tasks pane.
-func (m Model) selected() *tracker.Task {
-	if m.detail != nil {
-		return m.detail
-	}
-	if m.pane != paneTasks {
-		return nil
-	}
-	if rows := m.rows(); len(rows) > 0 && m.cursor < len(rows) {
-		t := rows[m.cursor]
-		return &t
-	}
-	return nil
-}
-
-// selectedSession is the session under the cursor in the sessions pane.
-func (m Model) selectedSession() *flows.Flow {
-	if m.pane != paneSessions {
-		return nil
-	}
-	if rows := m.sessionRows(); len(rows) > 0 && m.cursor < len(rows) {
-		f := rows[m.cursor]
-		return &f
-	}
-	return nil
-}
-
-func (m Model) openEditor() Model {
-	t := m.selected()
-	if t == nil {
-		return m
-	}
-	e := &editor{slug: t.Slug}
-	e.status = indexOf(tracker.Statuses, t.Status)
-	if e.status < 0 {
-		e.status = indexOf(tracker.Statuses, "todo")
-	}
-	e.priority = max(0, indexOf(priorityChoices, t.Priority))
-	e.orig = [2]int{e.status, e.priority}
-	m.edit = e
-	return m
-}
-
-// offerStart is a: `flow start session` for the task under the cursor, linked to
-// the actor its territories route to and the map's repository, shown on the
-// bar until y. A task that routes nowhere, or to two actors, is a human's to
-// start, and the bar says so instead.
-func (m Model) offerStart() Model {
-	t := m.selected()
-	if t == nil {
-		return m
-	}
-	say := func(s string) Model { m.notice = "a: " + s; return m }
-	if !t.Valid() {
-		return say(t.Slug + " is not a valid task file; fix it first")
-	}
-	if len(t.Territories) == 0 {
-		return say(t.Slug + " has no territory, so no actor to start")
-	}
-	if m.snap.Owners.Owners == nil {
-		return say("no owners to route by (" + orDash(m.snap.Owners.Note) + ")")
-	}
-	actor := m.snap.Owners.Owners.RoutesTo(t.Territories)
-	if strings.Contains(actor, "?") {
-		return say(t.Slug + " names a territory the map does not declare")
-	}
-	if strings.Contains(actor, ",") {
-		return say(t.Slug + " routes to " + actor + "; a task routed to two actors is left for a human")
-	}
-	if len(m.snap.Owners.Repos) == 0 {
-		return say("the map declares no repository to link (or architect check could not read it)")
-	}
-	repo := m.snap.Owners.Repos[0]
-	project, mapPath, slug := m.project(), m.snap.MapPath, t.Slug
-	m.pending = &pending{
-		command: "flow " + strings.Join(actions.StartSessionCommand(mapPath, slug, actor, repo), " "),
-		run:     func() actions.Result { return actions.StartSession(project, mapPath, slug, actor, repo) },
-	}
-	return m
-}
-
-// offerCancel is c: the project's own cancel script on the session under the cursor, shown until y.
-func (m Model) offerCancel() Model {
-	f := m.selectedSession()
-	if f == nil {
-		return m
-	}
-	if f.Terminal {
-		m.notice = "c: " + f.ID + " is " + f.State + " already"
-		return m
-	}
-	project := m.project()
-	if !actions.HasCancelScript(project) {
-		m.notice = "c: no cancel script (" + project + "/" + actions.CancelScript + ")"
-		return m
-	}
-	id := f.ID
-	m.pending = &pending{
-		command: actions.CancelScript + " " + id,
-		run:     func() actions.Result { return actions.CancelSession(project, id) },
-	}
-	return m
-}
-
-// reactorTick is s: one tick of the daemon, run at once, its outcome on the bar.
-func (m Model) reactorTick() tea.Cmd {
-	project := m.project()
-	return func() tea.Msg { return actionMsg(actions.ReactorTick(project)) }
+// selectDefinition switches the flows table to one definition's flows, or back to the stuck report for "".
+func (m *Model) selectDefinition(name string) {
+	m.flowDef, m.choosing = name, false
+	m.cursor, m.offset, m.detailOff = 0, 0, 0
+	m.clamp()
 }
 
 func indexOf(list []string, v string) int {
@@ -762,10 +612,40 @@ func indexOf(list []string, v string) int {
 	return -1
 }
 
-// apply runs tasks for the editor's change, off the event loop.
-func (m Model) apply() tea.Cmd {
-	dir, slug, c := m.opts.TasksDir, m.edit.slug, m.edit.change()
-	return func() tea.Msg { return actionMsg(actions.SetTask(dir, slug, c)) }
+// open is Enter: a task full width, a flow's trace, a workspace, or an event with its actions.
+func (m Model) open() (tea.Model, tea.Cmd) {
+	switch m.pane {
+	case paneTasks:
+		if rows := m.rows(); len(rows) > 0 {
+			t := rows[m.cursor]
+			m.detail, m.detailOff = &t, 0
+		}
+	case panePod:
+		if rows := m.podRows(); len(rows) > 0 {
+			w := rows[m.cursor]
+			m.wsDetail, m.detailOff = &w, 0
+		}
+	case paneReactor:
+		if rows := m.eventRows(); len(rows) > 0 {
+			e := rows[m.cursor]
+			m.evDetail, m.detailOff = &e, 0
+		}
+	case paneFlows:
+		if m.flowDef != "" {
+			if rows := m.defRows(); len(rows) > 0 {
+				return m.openTrace(rows[m.cursor].ID)
+			}
+		} else if rows := m.stuckRows(); len(rows) > 0 {
+			return m.openTrace(rows[m.cursor].Flow.ID)
+		}
+	}
+	return m, nil
+}
+
+func (m Model) openTrace(id string) (tea.Model, tea.Cmd) {
+	m.trace = &traceView{id: id, loading: true}
+	m.detailOff = 0
+	return m, m.loadTrace(id)
 }
 
 // rows is what the tasks table shows: every task unless b narrows it to the active ones, then the filter, in the chosen order.
@@ -823,19 +703,73 @@ func (m Model) stuckWaits(s flows.Stuck) string {
 	return s.WaitsOn(byID) + " " + stands
 }
 
-// sessionRows is what the sessions table shows: the session flows as flow lists them, filtered.
-func (m Model) sessionRows() []flows.Flow {
+// defRows is what the flows table shows under a chosen definition: its flows as flow lists them, filtered.
+func (m Model) defRows() []flows.Flow {
+	all := m.flows.OfDefinition(m.flowDef)
 	needle := strings.ToLower(m.filter)
 	if needle == "" {
-		return m.sessions.Flows
+		return all
 	}
 	var out []flows.Flow
-	for _, f := range m.sessions.Flows {
+	for _, f := range all {
 		if strings.Contains(strings.ToLower(flowText(f)), needle) {
 			out = append(out, f)
 		}
 	}
 	return out
+}
+
+// podRows is what the pod table shows: the workspaces as pod lists them, filtered.
+func (m Model) podRows() []pod.Workspace {
+	needle := strings.ToLower(m.filter)
+	if needle == "" {
+		return m.pod.Workspaces
+	}
+	var out []pod.Workspace
+	for _, w := range m.pod.Workspaces {
+		hay := strings.ToLower(strings.Join([]string{w.ID, w.Label, w.Repo, w.Branch, w.Actor, w.Status, w.AgentText()}, " "))
+		if strings.Contains(hay, needle) {
+			out = append(out, w)
+		}
+	}
+	return out
+}
+
+func (m Model) workspaceByID(id string) *pod.Workspace {
+	for i := range m.pod.Workspaces {
+		if m.pod.Workspaces[i].ID == id {
+			return &m.pod.Workspaces[i]
+		}
+	}
+	return nil
+}
+
+// eventRows is what the reactor table shows: the last hour's events, newest first, filtered by their text and their actions'.
+func (m Model) eventRows() []reactor.Event {
+	needle := strings.ToLower(m.filter)
+	if needle == "" {
+		return m.reactor.Events
+	}
+	var out []reactor.Event
+	for _, e := range m.reactor.Events {
+		parts := []string{e.ID, e.Source, e.Kind, e.Key}
+		for _, a := range e.Actions {
+			parts = append(parts, a.Rule, a.Result())
+		}
+		if strings.Contains(strings.ToLower(strings.Join(parts, " ")), needle) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func (m Model) eventByID(id string) *reactor.Event {
+	for i := range m.reactor.Events {
+		if m.reactor.Events[i].ID == id {
+			return &m.reactor.Events[i]
+		}
+	}
+	return nil
 }
 
 func flowText(f flows.Flow) string {
@@ -850,9 +784,14 @@ func flowText(f flows.Flow) string {
 func (m Model) rowCount() int {
 	switch m.pane {
 	case paneFlows:
+		if m.flowDef != "" {
+			return len(m.defRows())
+		}
 		return len(m.stuckRows())
-	case paneSessions:
-		return len(m.sessionRows())
+	case panePod:
+		return len(m.podRows())
+	case paneReactor:
+		return len(m.eventRows())
 	}
 	return len(m.rows())
 }
@@ -886,18 +825,14 @@ func (m *Model) clamp() {
 }
 
 // regionHeight is the height the pane with the table gets: the screen less the
-// header, the key bar, the other two panes' lines, and the editor.
+// header, the key bar, and the other four panes' lines.
 func (m Model) regionHeight() int {
-	h := m.height - 2 - int(paneCount-1)
-	if m.edit != nil {
-		h -= 3
-	}
-	return max(1, h)
+	return max(1, m.height-2-int(paneCount-1))
 }
 
 // bodyHeight is how many table rows fit in the current pane: its region less
-// the title, the column header, the filter line, and what sits under the rows -
-// the open-flows summary, or the workspaces.
+// the title, the column header, the filter line, and what sits around the rows -
+// the open-flows summary under them, or the reactor's sources and rules above.
 func (m Model) bodyHeight() int {
 	h := m.regionHeight() - 2
 	if m.typing || m.filter != "" {
@@ -906,8 +841,9 @@ func (m Model) bodyHeight() int {
 	switch m.pane {
 	case paneFlows:
 		h -= m.summaryHeight()
-	case paneSessions:
-		h -= m.workspacesHeight()
+	case paneReactor:
+		// The sources' header and rows, the rules' caption, header and rows, and the events' caption.
+		h -= m.sourcesHeight() + m.rulesHeight() + 1
 	}
 	return h
 }
@@ -923,73 +859,28 @@ func (m Model) summaryHeight() int {
 	return 1 + max(1, n)
 }
 
-// workspacesHeight is the rule and the workspaces, capped at a third of the region so the sessions keep their rows.
-func (m Model) workspacesHeight() int {
-	return 1 + m.workspacesShown()
-}
+// sourcesHeight is the column header and the sources shown.
+func (m Model) sourcesHeight() int { return 1 + m.sourcesShown() }
 
-func (m Model) workspacesShown() int {
-	n := len(m.sessions.Workspaces.Workspaces)
-	if n == 0 {
-		return 1
-	}
-	return min(n, max(1, m.regionHeight()/3))
-}
+// rulesHeight is the caption, the column header and the rules shown.
+func (m Model) rulesHeight() int { return 2 + m.rulesShown() }
 
-// editKey drives the editor: ← → along a row, ↑ ↓ between rows, Enter applies, Esc cancels.
-func (m Model) editKey(k string) (tea.Model, tea.Cmd) {
-	e := m.edit
-	rowLen := []int{len(tracker.Statuses), len(priorityChoices)}
-	cur := []*int{&e.status, &e.priority}[e.row]
-	switch k {
-	case "q":
-		return m, tea.Quit
-	case "esc":
-		m.edit = nil
-	case "up", "k", "down", "j", "tab":
-		e.row = 1 - e.row
-	case "left", "h":
-		*cur = (*cur + rowLen[e.row] - 1) % rowLen[e.row]
-	case "right", "l":
-		*cur = (*cur + 1) % rowLen[e.row]
-	case "home", "g":
-		*cur = 0
-	case "end", "G":
-		*cur = rowLen[e.row] - 1
-	case "enter":
-		if !e.changed() {
-			m.edit = nil
-			return m, nil
-		}
-		cmd := m.apply()
-		m.edit = nil
-		return m, cmd
-	default:
-		// A digit picks directly: 1-7 for status, 1-5 for priority.
-		if len(k) == 1 && k[0] >= '1' && int(k[0]-'1') < rowLen[e.row] {
-			*cur = int(k[0] - '1')
-		}
-	}
-	return m, nil
-}
+func (m Model) sourcesShown() int { s, _ := m.reactorBlocks(); return s }
+func (m Model) rulesShown() int   { _, r := m.reactorBlocks(); return r }
 
-// noticeLine is "command  →  outcome", with the command cut from the middle when the
-// line is too long: the outcome is what the person is waiting to read.
-func noticeLine(command, outcome string, width int) string {
-	return fitLine(command, "  →  ", outcome, width)
-}
-
-// fitLine joins a command and what follows it, cutting the command from the
-// middle when the line is too long, since its ends are what identify it.
-func fitLine(command, sep, outcome string, width int) string {
-	if len([]rune(command))+len([]rune(sep))+len([]rune(outcome)) <= width {
-		return command + sep + outcome
+// reactorBlocks is how many sources and rules the pane shows: every one when
+// the region allows, else what is left after the six fixed lines and a few
+// rows for the events, split between them with the rules yielding first.
+func (m Model) reactorBlocks() (sources, rules int) {
+	st := m.reactor.Status
+	if st == nil {
+		return 0, 0
 	}
-	room := width - len([]rune(sep)) - len([]rune(outcome))
-	if room < 16 {
-		return command + sep + outcome // nothing sensible to cut; the screen truncates the tail
+	room := m.regionHeight() - 6 - min(3, max(1, len(m.reactor.Events)))
+	if m.typing || m.filter != "" {
+		room--
 	}
-	r := []rune(command)
-	head := (room - 1) / 2
-	return string(r[:head]) + "…" + string(r[len(r)-(room-1-head):]) + sep + outcome
+	rules = min(max(1, len(st.Rules)), max(1, room/2))
+	sources = min(max(1, len(st.Sources)), max(1, room-rules))
+	return sources, rules
 }

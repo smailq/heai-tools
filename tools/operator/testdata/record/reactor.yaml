@@ -1,0 +1,15 @@
+# The configuration testdata/record.sh records the reactor fixtures against:
+# one source of each type that tick can drive, a webhook whose secret is unset
+# and a poll whose URL cannot answer, so two sources report a problem; and a
+# rule that fails on purpose, so one action record is red.
+sources:
+  clock:     { type: schedule, cron: "* * * * *" }
+  tasks_cli: { type: cli, kinds: [task.todo, task.done] }
+  drops:     { type: dir, path: drops, every: 2s }
+  github:    { type: webhook, path: /hook/github, provider: github, secret: env:GITHUB_HOOK_SECRET }
+  health:    { type: poll, url: http://127.0.0.1:9/health, every: 5m, watch: status, timeout: 1s }
+rules:
+  - { name: sweep,           on: { source: clock },                       run: scripts/sweep.sh }
+  - { name: pick-now,        on: { source: tasks_cli, kind: task.todo },  run: scripts/pick.sh, debounce: 5s }
+  - { name: session-exited,  on: { source: drops, kind: exited },         run: "exit 3" }
+  - { name: pr-merged,       on: { source: github, kind: pull_request.closed, merged: true }, run: scripts/merged.sh, limit: 10/hour }

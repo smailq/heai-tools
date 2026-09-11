@@ -3,14 +3,33 @@
   "version": "0.1.0",
   "description": "Reacts to things that happen - a clock reaching a time, a branch moving, a service posting, a URL answering differently, a script or a person emitting an event - by running a script with the event in its environment",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smailq/heai-tools.git",
+    "directory": "tools/reactor"
+  },
+  "homepage": "https://github.com/smailq/heai-tools/tree/main/tools/reactor#readme",
+  "bugs": {
+    "url": "https://github.com/smailq/heai-tools/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
   "bin": {
-    "reactor": "./src/cli.ts"
+    "heai-reactor": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --test 'test/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

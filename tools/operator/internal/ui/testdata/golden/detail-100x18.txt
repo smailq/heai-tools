@@ -1,4 +1,4 @@
- operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  sessions 3 2s  13:41:00
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3    2s  13:41:00
  task ── blocked · document-tabs ─────────────────────────────────────────────── modified 2026-09-06
  title       Document tabs
  status      blocked
@@ -15,4 +15,4 @@
  `2026`.
 
 
- ↑↓ scroll  e edit  a start  esc back  q quit
+ ↑↓ scroll  esc back  q quit

@@ -1,0 +1,24 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3    2s  13:41:00
+ event ── 20260911-030505-c23f53 ──────────────────────────────────────────────────── drops · exited
+ source      drops
+ kind        exited
+ key         exited.w2@1789095905658.7617@b0f27d35650e
+ at          2026-09-11T03:05:05.658Z
+ ── payload ────────────────────────────────────────────────────────────────────────────────────────
+ {
+   "agent": "w2",
+   "exitCode": 0,
+   "file": "exited.w2",
+   "flow": "20260906-024801-session-77f0",
+   "pane": "w2:p2",
+   "state": "exited",
+   "workspace": "w2"
+ }
+ ── actions 1 ──────────────────────────────────────────────────────────────────────────────────────
+ session-exited      03:05  exited 3
+   run       exit 3
+   log       /repo/reactor/actions/20260911-030505-c23f53.session-exited.log
+
+
+
+ ↑↓ scroll  esc back  q quit

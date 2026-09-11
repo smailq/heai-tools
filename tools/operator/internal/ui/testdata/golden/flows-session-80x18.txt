@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2    2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
+ flows ── session · 3 open of 4 ──────────────────────────────────── flow 4s ago
+ id                            state       age    task                actor     
+ 20260906-031244-session-9a1c  running     6m     add-place-entity    desktop-o…
+ 20260906-024801-session-77f0  blocked     2h     document-tabs       web-ui    
+ 20260905-235010-session-e4a2  clean       4h     category-buttons    web-ui    
+ 20260903-101010-session-1f2e  blocked     3d     merge-two-entities  core-revi…
+ ── all open, by definition ────────────────────────────────────────────────────
+ landing     proposed   1
+ request     todo       1
+ session     blocked    2   running    1
+
+
+
+ pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (bloc pod 4s ago
+ reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
+ ↑↓ move  ⏎ trace  d definition  1-4 pane  / filter  ? help  q quit

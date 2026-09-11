@@ -1,0 +1,82 @@
+# The sample's map: one human, seven llm-agents, one repository, eight territories.
+# The territories are the ones the tasks under tasks/items name.
+version: 1
+unowned: allow
+
+actors:
+  smailq:
+    type: human
+    identity: '@smailq'
+  core-reviewer:
+    type: llm-agent
+    context: You own the domain model. No I/O in the model; every aggregate has a test.
+    watches: [api, desktop]
+  desktop-owner:
+    type: llm-agent
+    context: You own the desktop app. Keep the shell thin; state lives in core.
+  ui-owner:
+    type: llm-agent
+    context: You own the shared UI components.
+  mail-owner:
+    type: llm-agent
+    context: You own mail ingestion and rendering.
+  api-owner:
+    type: llm-agent
+    context: You own the HTTP API. Handlers stay thin; rules live in core.
+  website-owner:
+    type: llm-agent
+    context: You own the marketing site.
+  ontology-owner:
+    type: llm-agent
+    context: You own the ontology and entity identity.
+
+repositories:
+  app:
+    remotePath: github.com/example/app
+    localPath: ../sample_app
+
+territories:
+  platform:
+    owner: smailq
+    scope:
+      - repository: app
+        globs: ['architecture.yaml', '.github/**', 'ci/**']
+    context: The map itself, CI, and the guard tooling stay with a person.
+  core:
+    owner: core-reviewer
+    scope:
+      - repository: app
+        globs: ['src/core/**']
+  ontology:
+    owner: ontology-owner
+    scope:
+      - repository: app
+        globs: ['src/ontology/**']
+  desktop:
+    owner: desktop-owner
+    scope:
+      - repository: app
+        globs: ['apps/desktop/**']
+    dependsOn: [core, ui]
+  ui:
+    owner: ui-owner
+    scope:
+      - repository: app
+        globs: ['packages/ui/**']
+  mail:
+    owner: mail-owner
+    scope:
+      - repository: app
+        globs: ['src/mail/**']
+    dependsOn: [core]
+  api:
+    owner: api-owner
+    scope:
+      - repository: app
+        globs: ['src/api/**']
+    dependsOn: [core]
+  website:
+    owner: website-owner
+    scope:
+      - repository: app
+        globs: ['apps/website/**']

@@ -1,0 +1,18 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2    2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 ·  items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo flow 4s ago
+ pod ── heai-workshop running · herdr 0.9.0 · 3 workspaces · agents blocked 1 · 
+ id    actor           branch                             state     label       
+ w1    -               main                               unknown   app  (the c…
+ w3    desktop-owner   agent/desktop-owner/add-place-en…  working   desktop-own…
+ w4    web-ui          agent/web-ui/document-tabs         idle      web-ui/docu…
+ w2    core-reviewer   agent/core-reviewer/merge-two-en…  blocked   core-review…
+
+
+
+
+
+
+
+ reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
+ ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

@@ -5,16 +5,16 @@ Sources produce events, rules match them, and the one action is a shell command.
 Every event and every action is a file.
 
 ```sh
-npm install && npm link                      # once: the `reactor` bin on PATH
-reactor tick                                 # one pass over every source, then exit
-reactor serve                                # the daemon, with the webhook receiver on 4949
-reactor emit tasks_cli task.todo --key t1 --payload '{"slug":"t1"}'   # one event by hand, into a cli source
-reactor status                               # sources and cursors, rules and their last action
-reactor events --since 1h                    # the log
-reactor test sentry-to-owner --event e.json
+npm install && npm link                      # once: builds dist/ and puts `heai-reactor` on PATH
+heai-reactor tick                                 # one pass over every source, then exit
+heai-reactor serve                                # the daemon, with the webhook receiver on 4949
+heai-reactor emit tasks_cli task.todo --key t1 --payload '{"slug":"t1"}'   # one event by hand, into a cli source
+heai-reactor status                               # sources and cursors, rules and their last action
+heai-reactor events --since 1h                    # the log
+heai-reactor test sentry-to-owner --event e.json
 ```
 
-Requires Node 22.18 or newer, which runs the TypeScript sources directly; without the link, every command is `node src/cli.ts <command>` from this directory.
+Requires Node 22.18 or newer. `npm install` builds the command into `dist/`, and `npm link` puts it on PATH as `heai-reactor`; without the link, every command is `node dist/cli.js <command>` from this directory, and during development `node src/cli.ts <command>` runs the sources directly. Released as `@heai-tools/reactor` on npm: `npm install -g @heai-tools/reactor`.
 Two runtime dependencies: a YAML parser and a JSON Schema validator.
 
 ## The shape of it
@@ -26,18 +26,18 @@ Two runtime dependencies: a YAML parser and a JSON Schema validator.
   webhook                                       (deduped, debounced, its output in a log beside the record
   poll                                          limited)
   dir  ◄── a file dropped by anything that can write one
-  cli  ◄── reactor emit, from a script or a person
+  cli  ◄── heai-reactor emit, from a script or a person
 ```
 
 - **An event** is `{ id, source, kind, key, at, payload }`, appended once to `reactor/events/<date>.jsonl`. `key` identifies the thing that happened - a commit on a branch, a Sentry issue, a cron slot - so two deliveries of the same thing are one event, and a rule acts on it once.
 - **A rule** is an entry in `reactor.yaml`: what it listens for, what it runs, and optionally a debounce, a rate limit and a timeout.
 - **A source** produces events. Six types ship, and a module path loads a custom one. A source never decides what to do with what it saw.
 - **The action is `run`**: a shell command, with the event in its environment.
-- **Nothing runs unless `reactor serve` or `reactor tick` does**, except `emit --act`, which runs the rules for the one event it just emitted.
+- **Nothing runs unless `heai-reactor serve` or `heai-reactor tick` does**, except `emit --act`, which runs the rules for the one event it just emitted.
 
 ## Sources
 
-Each source is a plugin behind one contract, [`src/source.ts`](src/source.ts): given its options and a cursor, it polls once and returns events with stable keys, exposes an HTTP listener, or takes events from `reactor emit`.
+Each source is a plugin behind one contract, [`src/source.ts`](src/source.ts): given its options and a cursor, it polls once and returns events with stable keys, exposes an HTTP listener, or takes events from `heai-reactor emit`.
 
 | type | emits | key | cursor |
 | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ Each source is a plugin behind one contract, [`src/source.ts`](src/source.ts): g
 | `git` | `commit`, `branch-created`, `branch-deleted` | `<branch>@<sha>` | the sha per watched branch |
 | `webhook` | what the provider parses: `pull_request.closed`, `issue.created`, `deployment.error` | the delivery or issue id | received and dropped counts |
 | `poll` | `changed` | `<source>@<time>@<hash>` | the last answer |
-| `cli` | what `reactor emit` says, within `kinds` | `--key`, else the event id | the emissions not yet handled, the last one |
+| `cli` | what `heai-reactor emit` says, within `kinds` | `--key`, else the event id | the emissions not yet handled, the last one |
 | `dir` | the file's name up to the first dot | `<file>@<mtime>@<hash>` | files taken, the last one |
 
 **`schedule`** evaluates a cron expression, local time unless `utc: true`, and emits one event per slot.
@@ -99,7 +99,7 @@ sources:
   health:   { type: poll, url: https://api.example.com/health, every: 5m, watch: status }
 ```
 
-**`cli`** is a source whose events come only from `reactor emit <source> <kind>`.
+**`cli`** is a source whose events come only from `heai-reactor emit <source> <kind>`.
 It polls nothing; an emitted event waits as pending in the cursor until the next `tick` or `serve` pass runs the rules over it.
 `kinds` restricts what may be emitted, any kind by default; a kind outside the list is refused at `emit`, exit `2`.
 The key is `--key`, else the event's own id; the payload is `--payload`, a JSON object, else empty.
@@ -155,7 +155,7 @@ rules:
 
   - name: session-exited
     on: { source: drops, kind: exited }
-    run: flow advance "{{ flow }}" exited --data "$(jq -c .payload "$REACTOR_EVENT")" --by reactor
+    run: heai-flow advance "{{ flow }}" exited --data "$(jq -c .payload "$REACTOR_EVENT")" --by reactor
 ```
 
 | key | meaning |
@@ -189,7 +189,7 @@ The environment carries the event:
 | `REACTOR_<FIELD>` | every scalar payload field, upper-cased |
 | `REACTOR_PAYLOAD_<FIELD>` | a payload field named `id`, `kind`, `event`, `source`, `key`, `at` or `rule`, so the event's own values are never shadowed |
 
-Exit `0` is success; anything else is recorded as a failure with the code, and `reactor retry <event>` runs it again.
+Exit `0` is success; anything else is recorded as a failure with the code, and `heai-reactor retry <event>` runs it again.
 
 ```sh
 #!/bin/sh
@@ -215,19 +215,20 @@ A restart resumes from the cursors.
 ## The CLI
 
 ```
-reactor status [--json]                          sources and their cursors, rules and their last action, the last hour
-reactor tick                                     one pass: poll every source once, run the rules, exit
-reactor serve [--port 4949] [--host 127.0.0.1]   the daemon: schedules, polls, the webhook receiver
-reactor emit <source> <kind> [--key <key>] [--payload '<json>' | --payload -] [--at <iso>] [--act]
-reactor events [--since 24h] [--source s] [--kind k] [--json]
-reactor retry <event-id>                         every rule for one event again, ignoring dedupe and debounce
-reactor replay --since <t> [--rule <r>] [--dry-run]
-reactor test <rule> --event <file.json>          one rule against one event, dry
+heai-reactor status [--json]                          sources and their cursors, rules and their last action, the last hour
+heai-reactor tick                                     one pass: poll every source once, run the rules, exit
+heai-reactor serve [--port 4949] [--host 127.0.0.1]   the daemon: schedules, polls, the webhook receiver
+heai-reactor emit <source> <kind> [--key <key>] [--payload '<json>' | --payload -] [--at <iso>] [--act]
+heai-reactor events [--since 24h] [--source s] [--kind k] [--json]   the log, each event with the actions rules took on it
+heai-reactor retry <event-id>                         every rule for one event again, ignoring dedupe and debounce
+heai-reactor replay --since <t> [--rule <r>] [--dry-run]
+heai-reactor test <rule> --event <file.json>          one rule against one event, dry
 ```
 
 - **`tick`** is for a machine with a system cron and no daemon. A webhook source reports that it cannot run under `tick`; a debounce fires on the first tick after its window closes.
 - **`serve`** is one process, restartable, stopped by `SIGINT` or `SIGTERM` after the runs in flight finish.
 - **`emit`** appends one event to a `cli` source and prints its id. `--payload -` reads the object from stdin; `--at` dates the event. With `--act`, the rules run for that event at once, the decisions are printed, and the event is marked handled; a rule that failed is exit `1`. An unknown source, a source of another type, a refused kind, or a payload that is not a JSON object is exit `2`, and nothing is logged.
+- **`events`** prints the log, oldest first, and beside each event what every rule did with it: `<rule> → ok`, `→ limited`, or the error. Under `--json` each event carries its `actions`, the records under `actions/` verbatim, so a reader need not walk that directory.
 - **`retry`** runs every rule for one event again.
 - **`replay`** runs the rules over logged events again with dedupe still holding: how a new rule acts on what it missed, and how limited events are picked up. `--dry-run` prints what would happen and touches nothing.
 - **`test`** reads `{ source, kind, key, payload }` from a file and prints whether the rule matches and the rendered command.

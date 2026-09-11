@@ -182,14 +182,14 @@ test('--act exits 1 when a rule failed, as tick does', () => {
 test('status shows a cli source with its last event', () => {
   const w = makeWorld(YAML, makeClock())
   const before = cli(w, 'status')
-  assert.match(before.stdout, /tasks_cli\s+cli\s+from reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 0, pending 0\n/)
-  assert.match(before.stdout, /notes\s+cli\s+from reactor emit\s+last event -\s+kinds any; emitted 0, pending 0\n/)
+  assert.match(before.stdout, /tasks_cli\s+cli\s+from heai-reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 0, pending 0\n/)
+  assert.match(before.stdout, /notes\s+cli\s+from heai-reactor emit\s+last event -\s+kinds any; emitted 0, pending 0\n/)
   // status reports the last day by the real clock, so the event is dated an hour ago.
   const at = new Date(Math.floor(Date.now() / 60_000) * 60_000 - 3_600_000).toISOString()
   cli(w, 'emit', 'tasks_cli', 'task.done', '--key', 'k', '--at', at)
   const after = cli(w, 'status')
   const shown = at.slice(0, 19).replace('T', ' ')
-  assert.match(after.stdout, new RegExp(`tasks_cli\\s+cli\\s+from reactor emit\\s+last event ${shown}\\s+kinds task\\.todo, task\\.done; emitted 1, pending 1; last ${at.replace(/\\./g, '\\\\.')} task\\.done\\n`))
+  assert.match(after.stdout, new RegExp(`tasks_cli\\s+cli\\s+from heai-reactor emit\\s+last event ${shown}\\s+kinds task\\.todo, task\\.done; emitted 1, pending 1; last ${at.replace(/\\./g, '\\\\.')} task\\.done\\n`))
   const js = JSON.parse(cli(w, 'status', '--json').stdout)
   assert.equal(js.sources[1].lastEvent, at)
 })

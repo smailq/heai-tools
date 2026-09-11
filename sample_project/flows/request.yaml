@@ -1,0 +1,14 @@
+# A change one actor asked of another: a task filed in the other territory,
+# and a flow the asking session waits on until it is done.
+name: request
+states: [todo, in-progress, done, canceled]
+initial: todo
+terminal: [done, canceled]
+links:
+  task:  { required: true }
+  from:  { required: false }        # the actor that asked
+  to:    { required: false }        # the actor that owns the territory
+transitions:
+  - { from: todo,        to: in-progress, on: started }
+  - { from: in-progress, to: done,        on: done }
+  - { from: [todo, in-progress], to: canceled, on: canceled }

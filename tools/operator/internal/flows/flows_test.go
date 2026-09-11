@@ -3,6 +3,7 @@ package flows
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -50,6 +51,27 @@ func TestParseRecordedList(t *testing.T) {
 	}
 	if (Flow{Links: map[string]string{"z": "1", "a": "2"}}).About() != "a 2" {
 		t.Error("about falls back to the first link by name")
+	}
+}
+
+// testdata/flow/definitions.json is `heai-flow definitions --json` recorded from sample_project, its path rewritten to /repo.
+func TestParseDefinitionsAndTheNamesAResultKnows(t *testing.T) {
+	defs, err := ParseDefinitions(fixture(t, "definitions.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(defs) != 3 || defs[0].Name != "landing" || defs[0].Problem != nil || len(defs[2].States) != 11 {
+		t.Errorf("definitions: %+v", defs)
+	}
+	r := Result{Definitions: defs, Flows: []Flow{{ID: "x", Definition: "zebra"}, {ID: "y", Definition: "session"}}}
+	if names := r.DefinitionNames(); strings.Join(names, ",") != "landing,request,session,zebra" {
+		t.Errorf("names: %v", names)
+	}
+	if of := r.OfDefinition("session"); len(of) != 1 || of[0].ID != "y" {
+		t.Errorf("of session: %+v", of)
+	}
+	if _, err := ParseDefinitions([]byte(`{}`)); err == nil {
+		t.Error("expected an error")
 	}
 }
 
@@ -164,7 +186,7 @@ func TestConfiguredLooksBesideTheMapWithoutCreatingAnything(t *testing.T) {
 func TestPollWithoutFlowIsANoteNotAnError(t *testing.T) {
 	t.Setenv("PATH", t.TempDir())
 	r := Poll("/nowhere/architecture.yaml", time.Now())
-	if r.Note != "flow not on PATH" || r.Failed || len(r.Flows) != 0 {
+	if r.Note != "heai-flow not on PATH" || r.Failed || len(r.Flows) != 0 {
 		t.Errorf("%+v", r)
 	}
 }

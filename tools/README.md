@@ -9,6 +9,8 @@ Tools here target different languages and ecosystems, so there is no shared buil
 - **A manifest of its ecosystem** - `package.json`, `go.mod`, `pyproject.toml`, `Cargo.toml`.
 - **`test` and `typecheck` (or the ecosystem's equivalent), runnable from the tool's own directory** with no root-level setup.
 - **A `README.md`** covering what it does, how it is invoked, and its exit codes.
+- **A released command named `heai-<tool>`**, where `<tool>` is the directory name: a Node tool sets `bin` to that name and builds into `dist/` on `npm install` (so an installed package never depends on Node stripping types under `node_modules`); a Go tool keeps its `main` under `cmd/heai-<tool>`. A tool that shells out to another asks for it by the released name.
+- **A release per tool**, from a GitHub release tagged `<tool>-v<version>`; [`docs/releasing.md`](../docs/releasing.md) has the procedure.
 
 ## Independence
 
@@ -23,7 +25,7 @@ Tools read [`architect/schemas/architecture.schema.json`](architect/schemas/arch
 - [`architect`](architect) - the reference validator for the map, the owner, territory, actor and context queries other tools shell out for, and the scope gate that checks a diff against the map's ownership boundaries, as a command and a library.
 - [`map-editor`](_map-editor) - a web editor for visualizing and editing the map.
 - [`tasks`](tasks) - a file-based task tracker for a repository, managed by an agent.
-- [`reactor`](reactor) - the one daemon, and a router: ticks, commits, webhooks, polls and `reactor emit` become events, and each event runs the one script its rule names.
+- [`reactor`](reactor) - the one daemon, and a router: ticks, commits, webhooks, polls and `heai-reactor emit` become events, and each event runs the one script its rule names.
 - [`pod`](pod) - one persistent container running Herdr, a worktree per piece of work, an agent or a command in it, and a fact file when it settles.
 - [`flow`](flow) - a state machine per record and a graph of records: a definition per process with one script per state, an append-only journal per flow, the script run on each state entered, and one command that says what state anything is in, what it waits on, and what is stuck.
 - [`operator`](operator) - an `htop`-shaped terminal view of the tools' state: tasks, flows and sessions, read from their files and CLIs.

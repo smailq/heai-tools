@@ -1,10 +1,10 @@
 # operator - design
 
-*Design, 2026-09-06, trimmed on 2026-09-09 to what is not built. The tasks, flows and sessions panes and the keys `e`, `a`, `c` and `s` are built and described in [`README.md`](README.md), which replaces this document pane by pane as they land. The actors, runs and lanes panes, the `agent-host` provider, and the `pages` line were removed from the plan when [`docs/project.md`](../../docs/project.md) moved process out of the tools: sessions are flows now, lanes are one project's files, and nothing has a page.*
+*Design, 2026-09-06, trimmed on 2026-09-09 to what is not built, and again on 2026-09-10 when the pod and reactor panes landed. The tasks, flows, pod and reactor panes are built and described in [`README.md`](README.md); a sessions pane, built on 2026-09-09, was folded into the flows pane on 2026-09-10 - one pane per definition does not scale, so the flows pane lists whichever definition `d` chooses, which replaces this document pane by pane as they land; the keys `e`, `a`, `c` and `s` that wrote through the sibling CLIs were built and then removed on 2026-09-10, so the screen only reads. The actors, runs and lanes panes, the `agent-host` provider, and the `pages` line were removed from the plan when [`docs/project.md`](../../docs/project.md) moved process out of the tools: sessions are flows now, lanes are one project's files, and nothing has a page.*
 
 `operator`: one full-screen terminal view, in the shape of `htop`, of what every heai-tools tool is doing right now.
-It refreshes on its own, answers a keypress at once, and takes the two or three actions a person takes from a status screen without leaving it.
-It holds no state, runs no server, and learns everything it shows by asking each tool's own CLI or reading each tool's own files.
+It refreshes on its own and answers a keypress at once.
+It holds no state, runs no server, changes nothing, and learns everything it shows by asking each tool's own CLI or reading each tool's own files.
 
 ## What the survey found
 
@@ -49,12 +49,12 @@ Built panes keep these and unbuilt ones must:
 - **Polling is asking the tool, not reimplementing it.** Where a tool answers in JSON the provider runs that command and shows its answer, and a recording of that answer under `testdata/` is the format contract, pinned by a test.
 - **Each pane has its own clock**, and its title carries the age of its data; a poll that fails leaves the pane as it was, marked stale with the reason.
 - **Nothing is remembered between frames but the last answer.** No cache on disk, no history, no state directory.
-- **Every write is a sibling CLI, verbatim**, shown on the bar before it runs and with its outcome after.
+- **No writes.** Every command this tool runs is a query. The first build bound four writes to keys, each a sibling CLI run verbatim and shown on the bar; they went, so that a change is made where it is recorded, at the shell, and the screen is only a reading.
 - **Sixteen colours**, so the screen follows the terminal's theme; `NO_COLOR` and a dumb terminal degrade to bold and dim.
 
 ## The panes not built
 
-### map - `architect check --format json`
+### map - `heai-architect check --format json`
 
 One line, which is also a header meter:
 
@@ -75,41 +75,21 @@ Table, when selected or when the map has errors, since an invalid map is the fir
 The map pane polls on the file's mtime, not on a clock; `changed 8s ago` is the mtime, so a human who just saved sees the verdict of what they saved.
 The owners provider already runs `check --format json` when the mtime moves, for the repositories; this pane is the same answer's `errors` and `warnings` drawn, so it costs no second command.
 
-### reactor - `reactor status --json` and `reactor events --since 1h --json`
+### reactor and pod - built
 
-One line, a dot per source:
+Both landed on 2026-09-10 and are described in the README. Two departures from the reactor pane as it was drawn here, kept so the choice can be revisited:
 
-```
- reactor  ● clock  ● records  ● tasks  ● github  ○ uptime (no poll 14m)      12 events/1h · 9 acted · 3 rate-limited     5s
-```
+- **Quiet is not marked.** The drawing made a source `○` when it had not produced or polled within twice its interval. `status --json` says when a source last produced but not when it last polled, and a git source with no commits for a day is quiet and fine; so only a source whose own cursor reports a `PROBLEM` is `○`, and the problem is shown in its words.
+- **Actions come with the events.** The first build read `actions/<event>.<rule>.json` under reactor's state directory, because no reactor command joined events to the actions they caused; `heai-reactor events --json` now carries each event's actions, and the reader went the same day.
 
-Table, sources above, the recent stream below:
-
-```
- reactor ── 5 sources · 1 quiet · 12 events in the last hour ─────────────────────────────────────────────────────── 5s
- source           type      last event                 cursor / next                     rules
- clock            schedule  14:01  tick                 next 14:02                        pick
- records          flow      13:58  session.exited       20260906-024801-session-77f0@3    (hook: finish.sh)
- tasks            tasks     13:52  task.todo            fetch-company-favicon@todo        pick-now
- github           webhook   13:58  pull_request.closed  -                                 pr-merged
- uptime           poll      13:48  ok                   ○ no poll in 14m (every 5m)       uptime-down       ⚠
- ── events, newest first ──
- at     source    kind                 key                                rule / hook      action                      result
- 13:58  records   session.exited       20260906-024801-session-77f0@3     hook exited      run scripts/session/finish.sh  exit 0
- 13:58  github    pull_request.closed  412                                pr-merged        fact → landing pr=412         merged
- 13:52  tasks     task.todo            fetch-company-favicon@todo         pick-now         run scripts/session/pick.sh    exit 0
-```
-
-A source is `○` and amber when it has not produced or polled within twice its interval; a webhook source has no interval and is `●` when its receiver is listening.
-`Enter` on an event opens it with every action it caused and the task or flow each produced; a hook's run is an action like a rule's, keyed by the journal line, so each hook's last run is a row here.
-The pane waits on the reactor, which is designed and not built; what it needs from it is `status --json` and `events --json`, both in the reactor's design.
+The pod pane had no drawing here: it grew out of the workspaces block the sessions pane carried, which moved to a pane of its own once `heai-pod status --json` gave the container a line to stand on.
 
 ### A pane whose tool is absent, unconfigured, or not answering
 
 The three dimmed forms, each one line, as the built panes already draw them:
 
 ```
- reactor   not installed  (no `reactor` on PATH)
+ reactor   not installed  (no `heai-reactor` on PATH)
  reactor   not configured here  (no reactor.yaml or reactor/ beside the map)
  flows     ⚠ flow: timed out after 10s · as of 13:59:40
 ```
@@ -118,8 +98,8 @@ A stale pane keeps its last table under that title; a pane that has never answer
 
 ## What v1 deliberately leaves out
 
-- **Any write the sibling CLIs and the project's scripts do not offer under a key.** No landing, no promotion, no task moves beyond status and priority: each is a script in the project, run by a hook or a human at the shell.
-- **History and graphs.** No sparkline of sessions per hour, no log of what the screen saw. The tools' files are the history; `flow trace` is the graph.
+- **Any write.** No task move, no session start or cancel, no tick: each is the tool's own command, run by a hook or a human at the shell.
+- **History and graphs.** No sparkline of sessions per hour, no log of what the screen saw. The tools' files are the history; `heai-flow trace` is the graph.
 - **Persisted setup.** Sort, filter and hidden columns reset on exit. `htop` keeps them in `htoprc`; where this tool would keep them is the project's `.heai/`, and that is not adopted yet.
 - **Mouse.** Bubble Tea supports it; the key bar is the interface, and mouse comes later if asked for.
 - **Themes and 24-bit colour.** Sixteen colours is the point.
@@ -128,5 +108,5 @@ A stale pane keeps its last table under that title; a pane that has never answer
 ## Open questions
 
 1. **A pane for the map, or a header meter.** The map's verdict is one line; a pane earns its height only when the map has errors. The first build may be the meter alone, with the table only while errors exist.
-2. **Whether the stuck threshold is a key.** `flow stuck` defaults to an hour and takes `--older`; the pane uses the default. A key to widen or narrow it costs nothing and may be wanted.
-3. **Whether `s` should confirm.** `reactor tick` runs at once today, since a tick is what `cron` does every minute; a project whose hooks are expensive may want the `y` that `a` and `c` ask for.
+2. **Whether the stuck threshold is a key.** `heai-flow stuck` defaults to an hour and takes `--older`; the pane uses the default. A key to widen or narrow it costs nothing and may be wanted.
+3. **Whether any key should write again.** The four that did were removed; if one comes back, the convention it kept - the sibling CLI verbatim, shown on the bar before it runs and with its outcome after - is the one to keep.

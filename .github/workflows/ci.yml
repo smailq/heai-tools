@@ -1,0 +1,54 @@
+# Every tool, on every push and pull request: typecheck, test, and a dry run
+# of the artifact the release workflow would publish. One job per tool,
+# because each tool is built and tested from its own directory.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  node:
+    name: ${{ matrix.tool }} (node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tool: [architect, flow, pod, reactor, tasks]
+        node: [22, 24]
+    defaults:
+      run:
+        working-directory: tools/${{ matrix.tool }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+          cache-dependency-path: tools/${{ matrix.tool }}/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: node dist/cli.js --help
+      - run: npm pack --dry-run
+
+  go:
+    name: operator
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/operator
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/operator/go.mod
+          cache-dependency-path: tools/operator/go.sum
+      - run: go vet ./...
+      - run: go test ./...
+      - run: go build -trimpath -o heai-operator ./cmd/heai-operator
+      - run: ./heai-operator --help

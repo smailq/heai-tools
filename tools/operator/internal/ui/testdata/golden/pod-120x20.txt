@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3  reactor 3/1h ✗1       2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 · todo 2 · backlog 1 · done 1 · canceled 1 items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
+ pod ── heai-workshop running · herdr 0.9.0 · 3 workspaces · agents blocked 1 · idle 1 · working 1 ────────── pod 4s ago
+ id    actor           repo      branch                                    agent         state     label                
+ w1    -               app       main                                      -             unknown   app  (the clone)     
+ w3    desktop-owner   app       agent/desktop-owner/add-place-entity      claude w3     working   desktop-owner/add-pl…
+ w4    web-ui          app       agent/web-ui/document-tabs                claude w4     idle      web-ui/document-tabs 
+ w2    core-reviewer   app       agent/core-reviewer/merge-two-entities    claude w2     blocked   core-reviewer/merge-…
+
+
+
+
+
+
+
+
+
+ reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
+ ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit

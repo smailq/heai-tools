@@ -1,0 +1,3 @@
+# the operator binary run.sh builds; the tools' state directories ignore themselves
+bin/heai-operator
+drops/

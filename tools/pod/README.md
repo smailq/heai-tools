@@ -8,19 +8,19 @@ The tool keeps no record of work.
 A piece of work is a Herdr workspace, named by the id Herdr gave it, and the caller keeps its own record under that id.
 
 ```sh
-npm install && npm link                                          # puts `pod` on PATH
-pod build                                            # the base image, then every image in pod.yaml
-pod up --image aw3/workshop                          # one container from that image, herdr server inside
-pod repo add app ~/Code/app                          # a clone
-ws=$(pod open app --branch agent/api-owner/t1 --actor api-owner)   # prints w2
-pod start "$ws" --agent claude                       # prints w2:p2
-pod prompt "$ws" --file prompt.md --notify /heai/inbox --event exited
-pod run "$ws" "npm test" --wait                      # prints the exit code, and exits with it
-pod attach "$ws"                                     # the Herdr UI, at that workspace
+npm install && npm link                                          # builds dist/ and puts `heai-pod` on PATH
+heai-pod build                                            # the base image, then every image in pod.yaml
+heai-pod up --image aw3/workshop                          # one container from that image, herdr server inside
+heai-pod repo add app ~/Code/app                          # a clone
+ws=$(heai-pod open app --branch agent/api-owner/t1 --actor api-owner)   # prints w2
+heai-pod start "$ws" --agent claude                       # prints w2:p2
+heai-pod prompt "$ws" --file prompt.md --notify /heai/inbox --event exited
+heai-pod run "$ws" "npm test" --wait                      # prints the exit code, and exits with it
+heai-pod attach "$ws"                                     # the Herdr UI, at that workspace
 ```
 
-Requires Node 22.18 or newer, which runs the TypeScript sources directly, and one of Apple's `container` CLI, Docker or Podman on the host.
-`npm install` pulls two runtime dependencies, a YAML parser and a JSON Schema validator.
+Requires Node 22.18 or newer, and one of Apple's `container` CLI, Docker or Podman on the host. Released as `@heai-tools/pod` on npm: `npm install -g @heai-tools/pod` puts `heai-pod` on PATH.
+`npm install` pulls two runtime dependencies, a YAML parser and a JSON Schema validator, and builds the command into `dist/`; during development `node src/cli.ts` runs the sources directly.
 
 ## The shape of it
 
@@ -28,16 +28,16 @@ Requires Node 22.18 or newer, which runs the TypeScript sources directly, and on
 image/Containerfile ─ herdr, git, jq, the helpers ─────────────────────► heai/pod-base
   <project>/images/<x>/Containerfile ─ FROM ${BASE}, plus toolchains, agents ─► aw3/workshop, aw3/ops, ...
                                                                                      │
-  pod up --image aw3/workshop ───────────────────────────────► one persistent container
+  heai-pod up --image aw3/workshop ───────────────────────────────► one persistent container
                                                                           herdr server, headless
   /repos/<name>       a clone per repository, on a mounted volume                     │
   /worktrees/...      one worktree per piece of work, on a mounted volume             │
                                                                                      │
-  pod open app --branch agent/api-owner/t1 ──► herdr worktree create ──► w2   (Herdr's id)
-  pod start w2 --agent claude              ──► pane split + agent start ──► w2:p2
-  pod prompt w2 "..." --notify /heai/inbox --event exited ──► a fact file when settled
-  pod run w2 "npm test" --wait              ──► pane split + pane run + wait-output
-  pod attach w2                             ──► the human, in Herdr, at that workspace
+  heai-pod open app --branch agent/api-owner/t1 ──► herdr worktree create ──► w2   (Herdr's id)
+  heai-pod start w2 --agent claude              ──► pane split + agent start ──► w2:p2
+  heai-pod prompt w2 "..." --notify /heai/inbox --event exited ──► a fact file when settled
+  heai-pod run w2 "npm test" --wait              ──► pane split + pane run + wait-output
+  heai-pod attach w2                             ──► the human, in Herdr, at that workspace
 ```
 
 - **A base image, and the user's images on it.** The tool ships the base `Containerfile` - Herdr, git, jq, the in-container helpers, `herdr server` as the entrypoint.
@@ -90,12 +90,12 @@ Several images serve several containers: one image per kind of actor, or one per
 ## The container
 
 ```
-pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
-pod down  [--force]
-pod status [--json]
-pod build                                       the base, then every image in the configuration's images:
-pod build base [--tag <image>] [--image-dir <dir>]
-pod build <image> [--image-dir <dir>]           one extended image, FROM the base
+heai-pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
+heai-pod down  [--force]
+heai-pod status [--json]
+heai-pod build                                       the base, then every image in the configuration's images:
+heai-pod build base [--tag <image>] [--image-dir <dir>]
+heai-pod build <image> [--image-dir <dir>]           one extended image, FROM the base
 ```
 
 `up` creates the container from `--image` if it does not exist and starts it if it is stopped.
@@ -122,10 +122,10 @@ The default is `apple` on macOS and `docker` elsewhere.
 ## Repositories
 
 ```
-pod repo add <name> [<source>]          clone into <state>/repos/<name>
-pod repo list [--json]
-pod repo fetch [<name>]                 fetch origin and fast-forward the clone's checked-out branch
-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into a host checkout
+heai-pod repo add <name> [<source>]          clone into <state>/repos/<name>
+heai-pod repo list [--json]
+heai-pod repo fetch [<name>]                 fetch origin and fast-forward the clone's checked-out branch
+heai-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into a host checkout
 ```
 
 The clone is made and updated **by the host**, on the mounted volume, so the container never needs credentials for the real repository.
@@ -141,10 +141,10 @@ A worktree's `.git` file points into `/repos/<name>/.git`, a container path, so 
 ## Workspaces
 
 ```
-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
-pod list [--json]
-pod close <workspace> [--keep-worktree] [--force]
-pod attach [<workspace>]
+heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
+heai-pod list [--json]
+heai-pod close <workspace> [--keep-worktree] [--force]
+heai-pod attach [<workspace>]
 ```
 
 `open` is `herdr worktree create --cwd /repos/<repo> --branch <name> [--base <ref>] --label <label> --no-focus --trust-repository` and prints the workspace id.
@@ -161,13 +161,13 @@ The clone itself appears as a workspace, `linked: false`, because Herdr opens th
 ## Agents, prompts and commands
 
 ```
-pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
-pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
-pod read   <target> [--lines N] [--ansi]
-pod keys   <target> <key>...
-pod herdr  -- <any herdr command>
+heai-pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
+heai-pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
+heai-pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
+heai-pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
+heai-pod read   <target> [--lines N] [--ansi]
+heai-pod keys   <target> <key>...
+heai-pod herdr  -- <any herdr command>
 ```
 
 `<target>` is a pane id, `w2:p2`, or an agent name; `<workspace>` is `w2`.

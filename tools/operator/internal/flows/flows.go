@@ -183,15 +183,52 @@ func Count(flows []Flow) []DefinitionCount {
 	return out
 }
 
-// Result is one poll of flow: everything open or closed, and what is stuck.
+// Definition is one entry of `flow definitions --json`: a file under flows/, by the name it declares.
+type Definition struct {
+	Name    string   `json:"name"`
+	Path    string   `json:"path"`
+	Problem *string  `json:"problem"`
+	States  []string `json:"states"`
+}
+
+// Result is one poll of flow: the definitions, everything open or closed, and what is stuck.
 type Result struct {
-	Flows []Flow  `json:"flows"`
-	Stuck []Stuck `json:"stuck"`
+	Definitions []Definition `json:"definitions"`
+	Flows       []Flow       `json:"flows"`
+	Stuck       []Stuck      `json:"stuck"`
 	// Note says why the lists are empty or old: flow not on PATH, not configured beside this map, or the command's last line.
 	Note string `json:"note,omitempty"`
 	// Failed is true when flow could not answer; the screen keeps its last answer and says so.
 	Failed bool      `json:"failed,omitempty"`
 	At     time.Time `json:"at"`
+}
+
+// DefinitionNames is every definition the project declares or has flows of, in name order.
+func (r Result) DefinitionNames() []string {
+	seen := map[string]bool{}
+	for _, d := range r.Definitions {
+		seen[d.Name] = true
+	}
+	for _, f := range r.Flows {
+		seen[f.Definition] = true
+	}
+	names := make([]string, 0, len(seen))
+	for n := range seen {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// OfDefinition is the flows of one definition, in the order flow lists them.
+func (r Result) OfDefinition(name string) []Flow {
+	var out []Flow
+	for _, f := range r.Flows {
+		if f.Definition == name {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // Red reports whether anything in the result is red: a stuck flow whose wait stands at missing or terminal-but-not-done.
@@ -210,7 +247,7 @@ var Timeout = 10 * time.Second
 
 // Installed reports whether flow is on PATH.
 func Installed() bool {
-	_, err := exec.LookPath("flow")
+	_, err := exec.LookPath("heai-flow")
 	return err == nil
 }
 
@@ -234,15 +271,20 @@ func Configured(mapPath string) (bool, string) {
 	return false, "not configured here (no flow.yaml or flow/ beside the map)"
 }
 
-// Poll runs `flow list --json` and `flow stuck --json` against the map's directory.
+// Poll runs `flow definitions --json`, `flow list --json` and `flow stuck --json` in the map's directory, the project.
 func Poll(mapPath string, now time.Time) Result {
 	r := Result{At: now}
 	if !Installed() {
-		r.Note = "flow not on PATH"
+		r.Note = "heai-flow not on PATH"
 		return r
 	}
 	if ok, why := Configured(mapPath); !ok {
 		r.Note = why
+		return r
+	}
+	defs, err := DefinitionList(mapPath)
+	if err != nil {
+		r.Note, r.Failed = err.Error(), true
 		return r
 	}
 	flows, err := List(mapPath, "")
@@ -255,8 +297,26 @@ func Poll(mapPath string, now time.Time) Result {
 		r.Note, r.Failed = err.Error(), true
 		return r
 	}
-	r.Flows, r.Stuck = flows, stuck
+	r.Definitions, r.Flows, r.Stuck = defs, flows, stuck
 	return r
+}
+
+// DefinitionList runs `flow definitions --json`.
+func DefinitionList(mapPath string) ([]Definition, error) {
+	out, err := run(mapPath, "definitions", "--json")
+	if err != nil {
+		return nil, err
+	}
+	return ParseDefinitions(out)
+}
+
+// ParseDefinitions reads the array `flow definitions --json` prints.
+func ParseDefinitions(raw []byte) ([]Definition, error) {
+	var list []Definition
+	if err := json.Unmarshal(raw, &list); err != nil {
+		return nil, fmt.Errorf("unexpected definitions output: %v", err)
+	}
+	return list, nil
 }
 
 // List runs `flow list [<definition>] --json`.
@@ -308,13 +368,15 @@ func ParseStuck(raw []byte) ([]Stuck, error) {
 	return list, nil
 }
 
+// run executes heai-flow with `--dir` set to the map's directory, which is the
+// project directory flow looks in for flow.yaml, flows/ and flow/.
 func run(mapPath string, args ...string) ([]byte, error) {
-	bin, err := exec.LookPath("flow")
+	bin, err := exec.LookPath("heai-flow")
 	if err != nil {
-		return nil, errors.New("flow not on PATH")
+		return nil, errors.New("heai-flow not on PATH")
 	}
 	if mapPath != "" {
-		args = append(args, "--map", mapPath)
+		args = append(args, "--dir", filepath.Dir(mapPath))
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), Timeout)
 	defer cancel()
@@ -329,7 +391,7 @@ func run(mapPath string, args ...string) ([]byte, error) {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			msg = fmt.Sprintf("timed out after %s", Timeout)
 		}
-		return nil, errors.New("flow: " + msg)
+		return nil, errors.New("flow: " + strings.TrimPrefix(msg, "flow: "))
 	}
 	return out, nil
 }

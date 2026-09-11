@@ -1,23 +1,133 @@
 [
   {
+    "id": "w1",
+    "label": "app",
+    "repo": "app",
+    "branch": "main",
+    "actor": null,
+    "path": "/repos/app",
+    "linked": false,
+    "status": "unknown",
+    "tokens": {},
+    "agents": [],
+    "panes": [
+      {
+        "id": "w1:p1",
+        "agent": null,
+        "state": "unknown",
+        "cwd": "/repos/app"
+      }
+    ]
+  },
+  {
     "id": "w3",
     "label": "desktop-owner/add-place-entity",
     "repo": "app",
     "branch": "agent/desktop-owner/add-place-entity",
-    "agent": { "kind": "claude", "name": "desktop-owner", "state": "running" }
+    "actor": "desktop-owner",
+    "path": "/worktrees/app/agent-desktop-owner-add-place-entity",
+    "linked": true,
+    "status": "working",
+    "tokens": {
+      "repo": "app",
+      "branch": "agent/desktop-owner/add-place-entity",
+      "actor": "desktop-owner"
+    },
+    "agents": [
+      {
+        "name": "w3",
+        "kind": "claude",
+        "pane": "w3:p2",
+        "state": "working"
+      }
+    ],
+    "panes": [
+      {
+        "id": "w3:p1",
+        "agent": null,
+        "state": "unknown",
+        "cwd": "/worktrees/app/agent-desktop-owner-add-place-entity"
+      },
+      {
+        "id": "w3:p2",
+        "agent": "claude",
+        "state": "working",
+        "cwd": "/worktrees/app/agent-desktop-owner-add-place-entity"
+      }
+    ]
   },
   {
-    "id": "w1",
+    "id": "w4",
     "label": "web-ui/document-tabs",
     "repo": "app",
     "branch": "agent/web-ui/document-tabs",
-    "agent": { "kind": "claude", "name": "web-ui", "state": "idle" }
+    "actor": "web-ui",
+    "path": "/worktrees/app/agent-web-ui-document-tabs",
+    "linked": true,
+    "status": "idle",
+    "tokens": {
+      "repo": "app",
+      "branch": "agent/web-ui/document-tabs",
+      "actor": "web-ui"
+    },
+    "agents": [
+      {
+        "name": "w4",
+        "kind": "claude",
+        "pane": "w4:p2",
+        "state": "idle"
+      }
+    ],
+    "panes": [
+      {
+        "id": "w4:p1",
+        "agent": null,
+        "state": "unknown",
+        "cwd": "/worktrees/app/agent-web-ui-document-tabs"
+      },
+      {
+        "id": "w4:p2",
+        "agent": "claude",
+        "state": "idle",
+        "cwd": "/worktrees/app/agent-web-ui-document-tabs"
+      }
+    ]
   },
   {
     "id": "w2",
     "label": "core-reviewer/merge-two-entities",
     "repo": "app",
     "branch": "agent/core-reviewer/merge-two-entities",
-    "agent": { "kind": "claude", "name": "core-reviewer", "state": "blocked" }
+    "actor": "core-reviewer",
+    "path": "/worktrees/app/agent-core-reviewer-merge-two-entities",
+    "linked": true,
+    "status": "blocked",
+    "tokens": {
+      "repo": "app",
+      "branch": "agent/core-reviewer/merge-two-entities",
+      "actor": "core-reviewer"
+    },
+    "agents": [
+      {
+        "name": "w2",
+        "kind": "claude",
+        "pane": "w2:p2",
+        "state": "blocked"
+      }
+    ],
+    "panes": [
+      {
+        "id": "w2:p1",
+        "agent": null,
+        "state": "unknown",
+        "cwd": "/worktrees/app/agent-core-reviewer-merge-two-entities"
+      },
+      {
+        "id": "w2:p2",
+        "agent": "claude",
+        "state": "blocked",
+        "cwd": "/worktrees/app/agent-core-reviewer-merge-two-entities"
+      }
+    ]
   }
 ]

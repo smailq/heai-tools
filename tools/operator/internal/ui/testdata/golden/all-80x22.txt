@@ -1,4 +1,4 @@
- operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  ses
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2    2s  13:41:00
  tasks ── all 11 of 11 ─────────────────────────────────── items/ changed 3m ago
  status       pri     slug                  territory                           
  in-progress  high    add-place-entity      core,desktop                        
@@ -16,7 +16,7 @@
 
 
 
-
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo flow 4s ago
- sessions 3 open of 4   running 1 · blocked 2 · clean 1   workspace flow 4s ago
- ↑↓ move  ⏎ open  e edit  a start  b active  S sort  / filter  ? help  q quit
+ pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (bloc pod 4s ago
+ reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
+ ↑↓ move  ⏎ open  b active  S sort  1-4 pane  / filter  ? help  q quit

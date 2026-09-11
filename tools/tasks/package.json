@@ -3,17 +3,39 @@
   "version": "0.1.0",
   "description": "File-based task tracker for a repository, kept in markdown and edited through a validating command line",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smailq/heai-tools.git",
+    "directory": "tools/tasks"
+  },
+  "homepage": "https://github.com/smailq/heai-tools/tree/main/tools/tasks#readme",
+  "bugs": {
+    "url": "https://github.com/smailq/heai-tools/issues"
+  },
   "type": "module",
   "engines": {
     "node": ">=22.18"
   },
   "bin": {
-    "tasks": "./src/cli.ts"
+    "heai-tasks": "./dist/cli.js"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "schemas"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
     "test": "node --test 'test/*.test.ts'",
     "typecheck": "tsc --noEmit"
   },

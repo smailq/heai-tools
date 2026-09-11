@@ -6,23 +6,23 @@ A journal per flow records every move.
 One command answers what state anything is in, what it waits on, and what is stuck.
 
 ```sh
-npm install && npm link                                            # once: the `flow` bin on PATH
-flow definitions                                                   # every definition under flows/
-flow start session --link actor=alpha --link task=t1 --link repo=app   # prints the new flow's id
-flow advance 20260909-140750-session-2e49 started --by start.sh
-flow trace task=t1                                                 # one timeline across every linked flow
-flow settle                                                        # the catch-up a cron line runs
+npm install && npm link                                            # once: builds dist/ and puts `heai-flow` on PATH
+heai-flow definitions                                                   # every definition under flows/
+heai-flow start session --link actor=alpha --link task=t1 --link repo=app   # prints the new flow's id
+heai-flow advance 20260909-140750-session-2e49 started --by start.sh
+heai-flow trace task=t1                                                 # one timeline across every linked flow
+heai-flow settle                                                        # the catch-up a cron line runs
 ```
 
-Requires Node 22.18 or newer, which runs the TypeScript sources directly; without the link, every command is `node src/cli.ts <command>` from this directory.
+Requires Node 22.18 or newer. `npm install` builds the command into `dist/`, and `npm link` puts it on PATH as `heai-flow`; without the link, every command is `node dist/cli.js <command>` from this directory, and during development `node src/cli.ts <command>` runs the sources directly. Released as `@heai-tools/flow` on npm: `npm install -g @heai-tools/flow`.
 Two runtime dependencies: a YAML parser and a JSON Schema validator.
 
 ## The shape of it
 
 ```
-flows/<name>.yaml ──► flow start ──► flow/flows/<id>/journal.jsonl  (append-only, the truth)
+flows/<name>.yaml ──► heai-flow start ──► flow/flows/<id>/journal.jsonl  (append-only, the truth)
                                           │
-  a script: flow advance <id> <event> ────┤  each line: one transition, refused if illegal
+  a script: heai-flow advance <id> <event> ────┤  each line: one transition, refused if illegal
   the clock: a state's `after` elapsed ───┤  settle makes the move
   a linked flow reaching a state ─────────┘  a guard is satisfied; settle makes the move
                                           │
@@ -36,9 +36,9 @@ flows/<name>.yaml ──► flow start ──► flow/flows/<id>/journal.jsonl  
 - **A definition** is a flat state machine in a YAML file: states, one initial, some terminal, and transitions each with a `from`, a `to` and the `on` event that makes it. A state may name the script to start when a flow enters it.
 - **A flow** is one record moving through one definition, with an id that sorts by time, links to the things it is about and to other flows, and a journal of every transition. It keeps a pinned copy of the definition it started under.
 - **The journal is the truth.** The snapshot and the two indexes are regenerated views. A flow's current state is the `to` of its last journal line.
-- **Moves come from three places:** `flow advance`, the clock expiring a state, and a linked flow reaching a state a guard waits for. The first is immediate; the other two happen at settle.
+- **Moves come from three places:** `heai-flow advance`, the clock expiring a state, and a linked flow reaching a state a guard waits for. The first is immediate; the other two happen at settle.
 - **Every state entered starts one script**, detached, and `flow` forgets it. No ordering, no retry, no timeout, no waiting.
-- **The graph is links.** There is no definition of a whole process. `flow trace` reconstructs the chain by walking `parent`, child and `waits-on` links.
+- **The graph is links.** There is no definition of a whole process. `heai-flow trace` reconstructs the chain by walking `parent`, child and `waits-on` links.
 
 ## Definitions
 
@@ -81,7 +81,7 @@ hooks:
 
 | key | meaning |
 | --- | --- |
-| `name` | the definition's name; `flow start <name>` finds it among the files under `flows/` |
+| `name` | the definition's name; `heai-flow start <name>` finds it among the files under `flows/` |
 | `states`, `initial`, `terminal` | the states, the one a flow starts in, the ones it ends in |
 | `links` | the link names a flow of this definition carries, and which are required at `start`; values are opaque strings |
 | `transitions` | the legal moves, in order |
@@ -101,14 +101,14 @@ A transition's keys:
 `when` does not combine with `after` or `requires`, and `after` does not combine with `requires`.
 A definition is validated whenever it is read, every problem at once: every transition names known states, the initial state is not terminal, every non-terminal state has a way out, no terminal state has one, every hook names a state and one command.
 `parent` and `waits-on` are flow-to-flow links every definition has and none may declare.
-Definitions live one per file under `flows/` in the project directory, and are found by the `name` each declares, not by file name; a file that does not validate, or declares a name another file already took, is listed by `flow definitions` with its problem and refused by name.
+Definitions live one per file under `flows/` in the project directory, and are found by the `name` each declares, not by file name; a file that does not validate, or declares a name another file already took, is listed by `heai-flow definitions` with its problem and refused by name.
 
 ## Actions
 
 After every journal line that enters a state, `flow` starts the command the flow's pinned definition names for that state, if any: `/bin/sh -c <run>`, detached, in the project directory, its output to a log file.
 A `link` line and a `touch` enter no state.
 `check` and `reindex` write no journal line and run nothing.
-The start happens after the flow's lock and the settle lock are released, so a script that calls `flow advance` on the same flow never waits.
+The start happens after the flow's lock and the settle lock are released, so a script that calls `heai-flow advance` on the same flow never waits.
 The command's own shell writes its exit code to a file when it ends; a missing script is exit `127` there, not an error the caller sees.
 
 The environment on top of the process's own:
@@ -163,7 +163,7 @@ A link value becomes a directory name with letters, digits, `.`, `_` and `-` kep
 A second writer waits up to three seconds for the lock; a lock older than a minute is broken.
 A torn last line, from a crash mid-append, is ignored by readers, reported by `check`, and cut before the next append.
 
-A process that cannot run the CLI hands its fact to something that can, such as an event router whose rule runs `flow advance`.
+A process that cannot run the CLI hands its fact to something that can, such as an event router whose rule runs `heai-flow advance`.
 
 **`by`** on a transition restricts who may take it.
 Scripts pass `--by <name>`; a human at the CLI is `human`, the default; the clock and guards are `flow`, and that name is refused from a caller.
@@ -182,7 +182,7 @@ Every command but `check` settles first, under `settle.lock`:
 3. rewrite any snapshot behind its journal, and make the index entries say what the snapshot says.
 
 It is idempotent and reads only files.
-`flow settle` runs it alone, for a cron line.
+`heai-flow settle` runs it alone, for a cron line.
 Every state a settle enters starts its script once the lock is released.
 Two settlers at once are serialized by the lock; the one that finds it held does nothing.
 
@@ -194,31 +194,31 @@ Three link kinds, all recorded on the child:
 - **`waits-on`**: flows whose state a `requires` guard reads.
 - **Declared links**: not a flow but a thing, `task=<slug>`, `actor=<name>`, `branch=<ref>`, whatever the definition's `links` names.
 
-`flow trace <id>` walks `parent` upward, children downward and `waits-on` both ways, and prints one timeline across every flow it found, in time order.
-`flow trace name=value` starts from everything linked to that value.
+`heai-flow trace <id>` walks `parent` upward, children downward and `waits-on` both ways, and prints one timeline across every flow it found, in time order.
+`heai-flow trace name=value` starts from everything linked to that value.
 
 ```
 2026-09-06 19:36:42  20260902-165954-req-9a01   request  in-review → done         land.sh
 2026-09-06 19:36:42  20260902-165952-run-132f   run      blocked → resumable      flow           (waits-on all done: 20260902-165954-req-9a01:done)
 ```
 
-`flow stuck [--older 1h]` lists non-terminal flows with no transition or touch in that long, grouped by definition and state, with what each waits on.
+`heai-flow stuck [--older 1h]` lists non-terminal flows with no transition or touch in that long, grouped by definition and state, with what each waits on.
 
 ## The CLI
 
 ```
-flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."] [--definition <path>]
-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
-flow touch <id>
-flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...]
-flow show <id> [--json]                    state, links, hooks, the journal, and the actions
-flow list [<definition>] [--in <state>] [--link name=value] [--json]
-flow trace <id | name=value> [--json]
-flow stuck [--older 1h] [--json]
-flow settle                                the clock, the guards, the views; then the actions
-flow check [--fix]                         definitions, journals, snapshots, indexes; runs no action
-flow reindex [--repin]                     rebuild the views; --repin first rewrites every open flow's pinned definition from the file on disk
-flow definitions                           every definition under flows/, with its states or its problem
+heai-flow start <definition> [--id <id>] [--link name=value ...] [--parent <flow>] [--waits-on <flow> ...] [--by <who>] [--note "..."] [--definition <path>]
+heai-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
+heai-flow touch <id>
+heai-flow link <id> [name=value ...] [--parent <flow>] [--waits-on <flow> ...]
+heai-flow show <id> [--json]                    state, links, hooks, the journal, and the actions
+heai-flow list [<definition>] [--in <state>] [--link name=value] [--json]
+heai-flow trace <id | name=value> [--json]
+heai-flow stuck [--older 1h] [--json]
+heai-flow settle                                the clock, the guards, the views; then the actions
+heai-flow check [--fix]                         definitions, journals, snapshots, indexes; runs no action
+heai-flow reindex [--repin]                     rebuild the views; --repin first rewrites every open flow's pinned definition from the file on disk
+heai-flow definitions                           every definition under flows/, with its states or its problem
 ```
 
 `start` prints the new id and nothing else; `--definition <path>` takes a file outside `flows/`.

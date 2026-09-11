@@ -1,0 +1,8 @@
+# The container the sessions would run in. Nothing here is built or started:
+# operator's pod pane shows the container as absent until `heai-pod build`
+# and `heai-pod up --image sample/dev` are run.
+runtime: apple
+name: heai-sample
+base: heai/pod-base
+images:
+  sample/dev: ./images/dev

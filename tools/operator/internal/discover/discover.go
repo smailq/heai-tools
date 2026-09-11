@@ -60,7 +60,7 @@ func Map(flag string, env Env, configured string, cwd string) string {
 	return ""
 }
 
-// Project is the directory the scripts run in and reactor reads: HEAI_DIR when
+// Project is the project directory, what pod and reactor are asked about: HEAI_DIR when
 // set, else the directory holding the map, else the tracker's parent. Under the
 // .heai/ convention it is the .heai/ directory itself, since that is the
 // project directory placed inside a repository.

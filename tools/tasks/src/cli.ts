@@ -17,14 +17,14 @@ import {
   type TaskStatus
 } from './model.ts'
 
-const USAGE = `tasks - a file-based task tracker kept in markdown
+const USAGE = `heai-tasks - a file-based task tracker kept in markdown
 
-  tasks init [--dir tasks] [--map <path>]
-  tasks new <slug> --title "..." [--status todo] [--priority high]
-  tasks set <slug> --status in-progress [--note "..."]
-  tasks list [--json] [--status <name>] [--territory <name>]
-  tasks show <slug> [--json]
-  tasks build [--dir tasks] [--check]
+  heai-tasks init [--dir tasks] [--map <path>]
+  heai-tasks new <slug> --title "..." [--status todo] [--priority high]
+  heai-tasks set <slug> --status in-progress [--note "..."]
+  heai-tasks list [--json] [--status <name>] [--territory <name>]
+  heai-tasks show <slug> [--json]
+  heai-tasks build [--dir tasks] [--check]
 
 Commands:
   init                 create a tracker directory: items/, tasks.yaml, README.md
@@ -143,7 +143,7 @@ function build(dir: string, check: boolean): number {
   if (check) {
     const current = existsSync(view.path) ? readFileSync(view.path, 'utf8') : ''
     if (current !== view.rendered) {
-      console.error(`${view.name} is stale - run \`tasks build\``)
+      console.error(`${view.name} is stale - run \`heai-tasks build\``)
       return 1
     }
     console.log(`${INDEX_FILE} is fresh (${counts})`)

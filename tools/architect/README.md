@@ -3,13 +3,13 @@
 The architecture map as one tool: it validates the map, answers questions about it, and checks a diff against its ownership boundaries, as a command and as a TypeScript library.
 
 ```sh
-architect check                                      # the map is valid, or every error and warning
-architect owner src/core/db/schema.ts                # which territory claims a path, and who owns it
-git diff origin/main... | architect gate --actor api-owner   # may this actor have made this change?
+heai-architect check                                      # the map is valid, or every error and warning
+heai-architect owner src/core/db/schema.ts                # which territory claims a path, and who owns it
+git diff origin/main... | heai-architect gate --actor api-owner   # may this actor have made this change?
 ```
 
-Requires Node 22.18 or newer, which runs the TypeScript sources directly.
-From this directory, `npm install` pulls two runtime dependencies, a YAML parser and a JSON Schema validator, and `node src/cli.ts` runs the command; `npm link` puts `architect` on the path.
+Requires Node 22.18 or newer. Released as `@heai-tools/architect` on npm: `npm install -g @heai-tools/architect` puts `heai-architect` on PATH.
+From this directory, `npm install` pulls two runtime dependencies, a YAML parser and a JSON Schema validator, and builds the command into `dist/`; `npm link` puts it on the path as `heai-architect`. During development `node src/cli.ts` runs the sources directly.
 
 ## The map
 
@@ -93,10 +93,10 @@ territories:
 Against this map:
 
 ```
-$ architect owner src/core/db/schema.ts
+$ heai-architect owner src/core/db/schema.ts
 src/core/db/schema.ts  core-db  owned by core-owner (llm-agent)
 
-$ printf 'src/api/x.ts\nsrc/core/y.ts\n' | architect gate --actor api-owner
+$ printf 'src/api/x.ts\nsrc/core/y.ts\n' | heai-architect gate --actor api-owner
 scope gate: FAIL
   subject     actor api-owner (owns api)
   repository  app
@@ -107,7 +107,7 @@ scope gate: FAIL
 
   api-owner may change: src/api/**
 
-$ architect actors
+$ heai-architect actors
 smailq               human      owns platform, docs
 api-owner            llm-agent  owns api
 core-owner           llm-agent  owns core, core-db  watches api
@@ -186,7 +186,7 @@ Declaring edges on the territory keeps its whole definition in one place.
 Context is the map's one annotation mechanism, held in the map itself so it cannot drift from the boundary it describes or fall outside the map's own protection.
 A territory's `context` holds the invariants, review discipline, and background needed to work in and review the territory, and is optional whoever owns it.
 The layers compose: an llm-agent working in a territory receives its own `context`, each ancestor territory's, outermost first, and the territory's own, where they have one.
-`architect context <actor>` prints that composition.
+`heai-architect context <actor>` prints that composition.
 
 ### Postures
 
@@ -225,7 +225,7 @@ Beyond matching, the tool decides whether two globs can match a common path and 
 
 ## Validation
 
-`architect check` validates against the schema first, then against the rules the schema cannot express.
+`heai-architect check` validates against the schema first, then against the rules the schema cannot express.
 A schema failure is reported alone, since the rules assume the shape.
 
 **Errors** make the map wrong:
@@ -257,13 +257,13 @@ Where an exclusion subtracts more subtly than covering a whole glob, or a child 
 ## The command
 
 ```
-architect check [<map>] [--format text|json] [--strict]
-architect gate <name> | --territory <name> | --actor <name>  [--repo <name>] [--format text|json] [--all]
-architect owner <path> [--repo <name>] [--json]
-architect territories [--actor <name>] [--json]
-architect actors [--json]
-architect context <actor>|<territory> [--json]
-architect template
+heai-architect check [<map>] [--format text|json] [--strict]
+heai-architect gate <name> | --territory <name> | --actor <name>  [--repo <name>] [--format text|json] [--all]
+heai-architect owner <path> [--repo <name>] [--json]
+heai-architect territories [--actor <name>] [--json]
+heai-architect actors [--json]
+heai-architect context <actor>|<territory> [--json]
+heai-architect template
 
   --map <path>      the map; default HEAI_MAP, else $HEAI_DIR/architecture.yaml, else .heai/architecture.yaml, else architecture.yaml
   --schema <path>   the schema; default this repository's, or HEAI_SCHEMA
@@ -313,19 +313,19 @@ Exit `2` covers anything that makes the question unanswerable rather than answer
 
 ```sh
 # What an agent's branch changed, against the territory it declared.
-git diff origin/main... | architect gate --territory api
+git diff origin/main... | heai-architect gate --territory api
 
 # Include untracked files: git diff does not report them until they are marked.
-git add -AN && git diff HEAD | architect gate --territory api
+git add -AN && git diff HEAD | heai-architect gate --territory api
 
 # An actor working across every territory it owns.
-git diff origin/main... | architect gate --actor api-owner
+git diff origin/main... | heai-architect gate --actor api-owner
 
 # A map governing several repositories needs to be told which one.
-git diff origin/main... | architect gate --territory api --repo app
+git diff origin/main... | heai-architect gate --territory api --repo app
 
 # In CI, with the result as JSON.
-git diff --name-only origin/main... | architect gate --territory "$TERRITORY" --format json > scope.json
+git diff --name-only origin/main... | heai-architect gate --territory "$TERRITORY" --format json > scope.json
 ```
 
 **Attribution.**
