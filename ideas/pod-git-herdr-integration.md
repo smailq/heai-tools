@@ -2,6 +2,8 @@
 
 *Proposal, 2026-09-18. `pod` already runs two gits - the host's, over the clones under `pod/repos`, and Herdr's, over the worktrees inside the container - and admits to neither. Everything a process actually wants to know about a piece of work is a git question (what changed, against what, is it committed, is it home) and today every one of those is answered by a script reaching around the tool: [`examples.md:96`](../examples.md) runs `git -C pod/repos/app diff --name-only "main...$branch"` because `pod` offers nothing. This document proposes making git a first-class part of `pod` alongside Herdr, and says plainly which design principle that breaks and what the amended principle should read. Not a commitment.*
 
+*Revised the same day after a review against the sources. The review found one hazard that already exists (host `git gc` can prune live container worktrees), one contradiction with the fact-file protocol in the proposed exemption, and one design gap - everything was keyed by a workspace id the README itself calls non-durable. All three are folded in below; the last section lists every change.*
+
 ## The short version
 
 Five things, in order of how much they are worth:
@@ -18,7 +20,7 @@ The README is explicit that the principles bind: *"These hold for every tool in 
 
 > **Git and Herdr are pod's substrate, not its peers.**
 > Principles 1, 3 and 5 govern how the tools in this repository relate to *each other*. They do not govern the things a tool is built out of. `pod` may depend on git and on Herdr as deeply as it needs to: call them directly, model their objects, pin their versions, and refuse to run without them. A branch, a worktree, a commit and a workspace are `pod`'s own vocabulary, not a plugin's.
-> The exemption is narrow, and these still hold for `pod`: no other heai tool may be invoked by it or may invoke it; nothing it learns from git reaches another tool except as a file; and no tool other than `pod` may read or write anything under `pod/`.
+> The exemption is narrow, and these still hold for `pod`: no other heai tool may be invoked by it or may invoke it; what it learns from git reaches another tool only as a file or as the output of its own command line; and `pod/repos` and `pod/worktrees` are its own, read and written by nothing else. `pod/inbox` is not covered by that last clause - it is a mailbox, and a `dir` source in `reactor.yaml` reading it is principle 3 working as intended.
 
 What the exemption buys, stated as a test: after it, `heai-pod diff <ws> --name-only | heai-architect gate --actor <a>` is idiomatic, and `git -C pod/repos/app ...` in a project's script is a smell. What it does not buy: `pod` calling `heai-architect` itself, `pod` knowing what a flow or a task is, or `flow` reading `pod/repos`.
 
@@ -55,21 +57,25 @@ Two corollaries worth building on:
 
 - **`pod` reads work without the box running.** `pod diff`, `pod log`, `pod list --git` against a stopped container are legitimate and should be. Only `status` needs the runtime.
 - **Credentials stay where they are.** The container never gains a remote. `push` is a host operation from the clone to `origin`, which is the clone's own source - the map's `localPath` or `remotePath` that `repos.ts` already resolves.
+- **The durable key is `<repo> <branch>`, not the workspace id.** The README already says it: *the branch is the durable name of the work; the workspace id is Herdr's handle on it for as long as the server runs.* `close` removes the workspace and its tokens; a Herdr restart may renumber. A gate or a landing script runs exactly then. So every read below takes either a workspace id or a `<repo> <branch>` pair, the workspace form is sugar that resolves to the pair through the tokens, and anything `pod` needs to remember about a branch lives in git, not in Herdr: `git config branch.<branch>.heai-base <ref>` on the clone, with `heai-actor` and any caller-supplied `heai-task` beside it. The tokens become a cache of the same facts for `list`.
+- **The clone must be told not to prune.** A linked worktree's registration under `pod/repos/<name>/.git/worktrees/` points at `/worktrees/...`, a container path. On the host that path does not exist, so host `git worktree prune` - and `git gc`, which runs it with a three-month expiry - would delete the registration of a *live* worktree. This is not a new risk; `repo fetch` can trigger auto-gc today. `repo add` sets `gc.worktreePruneExpire=never` on the clone, and pruning is a container operation. See section 7.
 
 ## 4. The surface
 
 Proposed additions, in the shape the existing commands take. Everything prints plain text and takes `--json`.
 
 ```sh
-heai-pod open <repo> --branch <n> --base <ref> ...     # --base recorded as a metadata token, and defaulted
-heai-pod diff  <workspace> [--name-only|--stat|--patch] [--base <ref>] [--json]
-heai-pod log   <workspace> [-n <count>] [--json]       # the branch's commits since base
-heai-pod show  <workspace> [--json]                    # head sha, subject, author, committed at
-heai-pod git   <workspace> -- <any git command>        # the escape hatch, run in the clone, branch-scoped
+heai-pod open <repo> --branch <n> --base <ref> [--set k=v]...   # base recorded in the clone's git config, and defaulted
+heai-pod diff  <work> [--name-only|--stat|--patch] [--base <ref>] [--json]
+heai-pod log   <work> [-n <count>] [--json]            # the branch's commits since base
+heai-pod show  <work> [--json]                         # head sha, subject, author, committed at
+heai-pod git   <work> -- <any git command>             # the escape hatch, run in the clone, branch-scoped
 heai-pod commit <workspace> -m <msg> [--all]           # in the container, attributed and trailered
-heai-pod push  <workspace> [--remote origin] [--force-with-lease]   # host, clone to origin
-heai-pod repo prune [<name>]                           # worktrees Herdr reports prunable, then `git worktree prune`
+heai-pod push  <work> [--force-with-lease]             # host, clone to a remotePath origin
+heai-pod repo prune [<name>]                           # in the container: worktrees Herdr reports prunable
 ```
+
+`<work>` is a workspace id, `w2`, or a `<repo> <branch>` pair; the reads and `push` take either and need no container. `commit` takes a workspace only, because it needs the working tree.
 
 **`diff` is the one that matters.** `heai-pod diff <ws> --name-only` is `git diff --name-only <base>...<branch>` in the clone, with the base taken from the workspace's recorded token, so `examples.md`'s gate script becomes:
 
@@ -79,7 +85,7 @@ if heai-pod diff "$HEAI_LINK_WORKSPACE" --name-only | heai-architect gate --acto
 
 which knows no paths, no clone layout and no base ref. The old line keeps working; nothing about the clone changes.
 
-**`--base` becomes durable.** `open` writes a `base=<ref>` token beside `repo`, `branch` and `actor`, and, when `--base` is absent, resolves and records the clone's current default branch rather than leaving it implicit. Every later read uses the token. This is a two-line change in `workspaces.ts` and the precondition for all of the above.
+**`--base` becomes durable.** `open` writes `branch.<branch>.heai-base` into the clone's config, and `heai-actor` beside it, and, when `--base` is absent, resolves and records the clone's checked-out branch by name rather than leaving it implicit. A name, not a sha: the three-dot diff finds the merge base, so `main` moving after `open` still gives "what this work changed". `--set k=v` stores any further caller fact the same way - `--set task=t1` is how a task id reaches a commit trailer without `pod` learning what a task is. The same facts go into the Herdr tokens for `list`, but git is the copy that outlives the workspace. This is a small change in `workspaces.ts` and `repos.ts` and the precondition for all of the above.
 
 **Git in `list --json` and `status`.** Each workspace gains a `git` object, computed on the host in one batched call per repository:
 
@@ -87,7 +93,7 @@ which knows no paths, no clone layout and no base ref. The old line keeps workin
 {"branch":"agent/api-owner/t1","base":"main","head":"9f21c0a","subject":"cache the index","ahead":3,"behind":0,"changedFiles":7,"dirty":true,"lastCommitAt":"2026-09-18T11:02:14Z"}
 ```
 
-`dirty` is the only field needing the container; it is `null` when the container is down, and the rest still answers. `operator` gets "idle, 3 commits, clean" for free, which is the line a human actually reads.
+`dirty` is the only field needing the container; it is `null` when the container is down, and the rest still answers. The data for an `operator` line reading "idle, 3 commits, clean" is then there in the JSON it already reads; the line itself is a change to `operator`, and the one a human actually looks at.
 
 **Git in the fact file.** The body gains the same object under `git`, so a `dir` source in `reactor.yaml` carries it as event data and a flow's `when:` can branch on `ahead > 0` without a `git` source polling the same clone a minute later:
 
@@ -96,7 +102,7 @@ which knows no paths, no clone layout and no base ref. The old line keeps workin
  "git":{"branch":"agent/api-owner/t1","base":"main","head":"9f21c0a","ahead":3,"dirty":false}}
 ```
 
-This is the one piece that must be computed **inside** the container, because `--notify` detaches and the host process is gone by the time it settles. `settled` gains a small git read against `/repos/<repo>` - the same object store, seen from the other side - and `fact` merges it into the body. It stays POSIX shell and `jq`, and it is the only new code that runs in the box.
+This is the one piece that must be computed **inside** the container, because `--notify` detaches and the host process is gone by the time it settles. `settled` gains a small git read in the pane's own worktree - `git -C <cwd>` resolves there, the base comes from `branch.<branch>.heai-base` through the shared config, and one location serves both `ahead` and, if it is kept, `dirty` - and `fact` merges it into the body. It stays POSIX shell and `jq`, and it is the only new code that runs in the box. The fact reports what is committed - `branch`, `base`, `head`, `ahead`; `dirty` stays in `list --json`, where a wrong answer is cheap, rather than in the event a flow acts on.
 
 **Attribution.** The pane's environment gains `GIT_AUTHOR_EMAIL` and `GIT_COMMITTER_EMAIL` from a new `identity:` block in `pod.yaml` (`<actor>@<domain>`, defaulting to the current `heai@localhost`), and `pod commit` appends trailers:
 
@@ -106,9 +112,11 @@ Heai-Workspace: w2
 Heai-Branch: agent/api-owner/t1
 ```
 
-The actor and workspace come from the workspace's tokens, so a caller that wants a task id on the commit passes it as a label token at `open` and gets `Heai-Task:` without `pod` learning what a task is. Trailers, not a message convention, because `git log --format='%(trailers:key=Heai-Actor)'` is a query and prose is not. An agent committing on its own is unaffected; only `pod commit` trailers.
+The actor comes from the branch's config, the workspace from the tokens, and anything set with `--set` at `open` becomes a trailer of its own, `Heai-Task:` for `--set task=t1`. Trailers, not a message convention, because `git log --format='%(trailers:key=Heai-Actor)'` is a query and prose is not. An agent committing on its own is unaffected; only `pod commit` trailers. `commit` refuses the clone's own workspace - the one `list` shows as `linked: false`, which Herdr opens when the first worktree is made - because a commit there lands on the clone's checked-out branch, not on a piece of work.
 
-**Safety, as refusals rather than documentation.** `push` refuses a branch with no commits ahead of base, exit 1. `repo fetch` takes a lock file under the state directory so two fetches do not interleave, and refuses to move a branch that any open workspace holds. `diff` against a base the clone does not have fetches once and then refuses, exit 2, naming the ref. Each of these is a line in the exit-code table the README already has.
+**`push` is for a remote origin.** When the clone's source is the map's `remotePath`, `push` is the last hop home and the one that needs the host's credentials; it refuses a branch with no commits ahead of base, exit 1. When the source is a `localPath` checkout, `push` is the wrong tool - git refuses to update the branch that checkout has out, and any other branch is what `repo pull-branch` already does from the receiving side - so `push` refuses a `localPath` origin, exit 1, and names `pull-branch`.
+
+**Safety, as refusals rather than documentation.** `repo fetch` takes a lock file under the state directory so two fetches do not interleave; it cannot move a worktree's branch, and git refuses that on its own, so no further guard is claimed. `diff` against a base the clone does not have refuses, exit 2, naming the ref and `repo fetch` - a read that works with the container down must not quietly reach the network. Each of these is a line in the exit-code table the README already has.
 
 ## 5. What `pod` delegates to Herdr, stated once
 
@@ -119,25 +127,26 @@ The exemption cuts both ways: being allowed to depend on Herdr deeply means deci
 | making and removing worktrees, and the branch at creation | the clone, and every remote operation |
 | the workspace, its panes, its metadata tokens | what the tokens mean: repo, branch, base, actor |
 | the agent's lifecycle and state | what the agent produced, in git terms |
-| the worktree's `is_prunable`, `is_detached`, `branch` | acting on those - `repo prune`, and refusing a detached workspace |
+| the worktree's `is_prunable`, `is_detached`, `branch` | acting on those - `repo prune`, run in the container, and refusing a detached workspace |
 | resuming agents on restore | nothing; `pod` does not second-guess it |
 
-Two mechanical follow-ons. `image/HERDR_VERSION` pins 0.9.0 and the client in `herdr.ts` reads exactly the fields recorded in `test/fixtures/herdr/`; a tighter integration means a version probe at `up` that refuses a container whose `herdr --version` is below the pinned floor, exit 2, rather than failing later on a missing field. And the fixtures become the contract: any field this proposal starts reading needs a recorded response before the code reads it.
+Two mechanical follow-ons. `image/HERDR_VERSION` pins 0.9.0 and the client in `herdr.ts` reads exactly the fields recorded in `test/fixtures/herdr/`; a tighter integration means a version probe at `up` that refuses a container whose Herdr is below the pinned floor, exit 2, rather than failing later on a missing field - through `herdr --version` if it exists, which the fixtures do not show, else the `version` a `status` response carries, to be recorded first. And the fixtures become the contract: any field this proposal starts reading needs a recorded response before the code reads it.
 
 ## 6. Phases
 
 Each phase is independently useful and independently reviewable.
 
 1. **The exemption.** The README paragraph above, plus the delegation table, plus a matching note in [`project.md`](../project.md)'s pod section. No code. Everything else depends on it being accepted as written.
-2. **`base` becomes durable, and a git read layer.** The `base` token at `open`; a `git.ts` in `tools/pod/src` that runs host git in the clone and returns the object above; `list --json` and `status` carry it. Tests against a real temporary clone, not a fake - host git is cheap to fake badly and there is no reason to.
+2. **`base` becomes durable, and a git read layer.** `branch.<branch>.heai-*` written at `open`; `gc.worktreePruneExpire=never` set at `repo add` and on every existing clone at first use; a `git.ts` in `tools/pod/src` that runs host git in the clone, resolves `<work>` to a `<repo> <branch>` pair, and returns the object above; `list --json` and `status` carry it. Tests against a real temporary clone, not a fake - host git is cheap to fake badly and there is no reason to.
 3. **The read commands.** `diff`, `log`, `show`, `git --`. `examples.md` and `sample_project/scripts` switch to `heai-pod diff`; the old form stays valid and undocumented.
-4. **The fact file's git object.** `settled` and `fact` in `image/bin`, with the helper tests under `sh` extended; a fixture for the merged body. This is the phase that changes the protocol, so it carries the version note in the README.
+4. **The fact file's git object.** `settled` and `fact` in `image/bin`, with the helper tests under `sh` extended; a fixture for the merged body. Additive - a new key in the same object - so nothing that reads today's facts changes.
 5. **Write operations and hygiene.** `commit` with trailers, `push` with its refusals, `identity:` in `pod.yaml` and its schema entry, `repo prune`, the fetch lock, the Herdr version probe.
 
 Phases 1 and 2 are the proposal's core; 3 is what callers feel; 4 and 5 can wait behind a real use.
 
 ## 7. Risks, and what this does not do
 
+- **Host git can prune live worktrees, today.** The clone's `.git/worktrees/<id>/gitdir` names a container path. On the host it is missing, so `git worktree prune` there removes it, and auto-gc runs `worktree prune` with a three-month expiry - a clone that has been fetched from the host for long enough loses a worktree that is still open in the container. Phase 2 sets `gc.worktreePruneExpire=never` on every clone; `repo prune` runs only in the container; and no host command in this proposal runs `gc` or `prune`. The failure mode before the fix is silent, which is why it is first here.
 - **Ownership on the bind mount.** The container's git writes as root into `pod/repos/<name>/.git`; the host's git then writes into the same object store as the invoking user. `safe.directory` handles the trust check and not the permissions. Phase 2 should fail loudly on a permission error and say which side wrote last, rather than producing a half-updated ref store. Worth a shared-repository setting on the clone.
 - **Two writers, one object store.** Host `fetch` and container commits are concurrent by construction. Git's own locking makes this safe for refs; the lock proposed above is for `pod`'s sequencing, not git's correctness. No phase here introduces a host operation that rewrites history in the clone, and none should.
 - **The surface grows.** `pod` gains eight commands and a config block, against a README that is already long. The mitigation is that six of them are one git invocation each and share one module; if `git.ts` grows past a few hundred lines, that is the signal the rule in section 3 has been broken somewhere.
@@ -146,5 +155,21 @@ Phases 1 and 2 are the proposal's core; 3 is what callers feel; 4 and 5 can wait
 ## 8. Open questions
 
 1. **Does `push` belong here at all?** It is the one command that touches the real remote with real credentials, and a project may well want that to be a script with a policy in it, the way `pick.sh` is. The argument for `pod` owning it is that `pod` owns the clone and nothing else may read under `pod/`; the argument against is that landing is a decision, not a mechanic.
-2. **Should `dirty` be in the fact file?** It needs a working-tree read in the container at settle time, which is the one place a wrong answer is expensive. Reporting only what is committed - `ahead`, `head` - is honest and cheaper.
+2. **Should `dirty` be in the fact file at all?** The proposal now says no - the fact carries what is committed, `list --json` carries the working tree. The case for adding it back is a flow that wants to catch an agent that stopped with uncommitted work; that flow can ask `list --json` when the fact arrives.
 3. **`pod git -- <cmd>` as an escape hatch.** It keeps projects from reaching around the tool while the surface is incomplete, and it is also how the surface stays incomplete forever. Ship it in phase 3 and reconsider at the first release where nothing in the repository uses it.
+
+## 9. What the review changed
+
+Against the first draft, in the order of the findings:
+
+1. `repo prune` ran `git worktree prune` without saying where; on the host that deletes live worktrees' registrations. It is a container operation now, `gc.worktreePruneExpire=never` is set on every clone in phase 2, and the pre-existing auto-gc hazard is the first risk in section 7.
+2. The exemption said nothing but `pod` reads under `pod/`, which contradicts reactor's `dir` source over `pod/inbox`, and said git facts leave only as files, which misses `operator` reading `list --json`. Both clauses reworded.
+3. Every command was keyed by a workspace id that dies with `close` or a Herdr restart. Reads and `push` now take `<repo> <branch>` as well, and the workspace form is sugar.
+4. `base` lived in a Herdr token and was lost at `close`. It lives in `branch.<branch>.heai-base` on the clone now, with the actor and `--set` facts beside it; the token is a cache.
+5. A `repo fetch` refusal about moving a branch a workspace holds described something fetch cannot do. Removed; the lock stays.
+6. `diff` fetched a missing base itself, putting the network inside a read that is meant to work offline. It refuses and names `repo fetch`.
+7. `push` was proposed without saying it only makes sense for a `remotePath` origin; for a `localPath` checkout it is `pull-branch` from the wrong side. It refuses `localPath`.
+8. The fact's git object was read from `/repos/<repo>`; it is read in the pane's worktree, one location, and `dirty` is out of the fact.
+9. `commit` on the clone's own workspace was not refused. It is.
+10. Three overstatements softened: `operator` does not get a new line "for free", adding a key to the fact is not a protocol change, and `herdr --version` is unverified.
+
