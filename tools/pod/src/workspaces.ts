@@ -6,6 +6,8 @@ import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { UsageError } from './config.ts'
 import { asAgent, asPane, asWorkspace, asWorktree, items, object, paneNumber, type Herdr, type PaneInfo, type WorkspaceInfo } from './herdr.ts'
+import { createPodGit } from './git.ts'
+import { spawnCollect } from './runtime.ts'
 
 export const REPOS = '/repos'
 export const WORKTREES = '/worktrees'
@@ -16,6 +18,7 @@ export interface OpenOptions {
   base?: string
   actor?: string
   label?: string
+  set?: Record<string, string>
 }
 
 export interface Opened {
@@ -28,15 +31,25 @@ export interface Opened {
 /** `herdr worktree create` in the clone, then the metadata tokens; prints nothing, returns the ids. */
 export async function openWorkspace(herdr: Herdr, reposDir: string, opts: OpenOptions): Promise<Opened> {
   if (!existsSync(join(reposDir, opts.repo, '.git'))) throw new UsageError(`no clone of ${opts.repo} under ${reposDir}; run \`pod repo add ${opts.repo}\``)
+  const podGit = createPodGit({ reposDir, run: spawnCollect })
+  const current = (await spawnCollect('git', ['-C', join(reposDir, opts.repo), 'rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() || null
+  const base = opts.base ?? current ?? null
   const args = ['worktree', 'create', '--cwd', `${REPOS}/${opts.repo}`, '--branch', opts.branch, '--label', opts.label ?? opts.branch, '--no-focus', '--trust-repository']
-  if (opts.base) args.splice(6, 0, '--base', opts.base)
+  if (base) args.splice(6, 0, '--base', base)
   const r = await herdr.call(args)
   const ws = asWorkspace(object(r, 'workspace'))
   const pane = asPane(object(r, 'root_pane'))
   const wt = asWorktree(object(r, 'worktree'))
   const tokens = ['--token', `repo=${opts.repo}`, '--token', `branch=${opts.branch}`]
   if (opts.actor) tokens.push('--token', `actor=${opts.actor}`)
+  if (base) tokens.push('--token', `base=${base}`)
+  for (const [k, v] of Object.entries(opts.set ?? {})) tokens.push('--token', `${k}=${v}`)
   await herdr.call(['workspace', 'report-metadata', ws.workspace_id, '--source', 'pod', ...tokens])
+  const facts: Record<string, string> = {}
+  if (base) facts['base'] = base
+  if (opts.actor) facts['actor'] = opts.actor
+  Object.assign(facts, opts.set ?? {})
+  if (Object.keys(facts).length) await podGit.setBranchFacts(opts.repo, opts.branch, facts)
   return { workspace: ws.workspace_id, pane: pane.pane_id, path: wt.path || ws.worktree?.checkout_path || '', branch: wt.branch ?? opts.branch }
 }
 
@@ -52,6 +65,16 @@ export interface WorkspaceView {
   linked: boolean
   status: string
   tokens: Record<string, string>
+  git?: {
+    branch: string
+    base: string | null
+    head: string | null
+    subject: string | null
+    ahead: number | null
+    behind: number | null
+    changedFiles: number | null
+    lastCommitAt: string | null
+  }
   agents: { name: string | null; kind: string | null; pane: string; state: string }[]
   panes: { id: string; agent: string | null; state: string; cwd: string | null }[]
 }

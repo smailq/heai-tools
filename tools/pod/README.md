@@ -141,21 +141,25 @@ A worktree's `.git` file points into `/repos/<name>/.git`, a container path, so 
 ## Workspaces
 
 ```
-heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
+heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>] [--set key=value]...   → prints the workspace id
 heai-pod list [--json]
+heai-pod diff <workspace | repo branch> [--name-only|--stat|--patch] [--base <ref>] [--json]
+heai-pod log  <workspace | repo branch> [-n <count>] [--json]
+heai-pod show <workspace | repo branch> [--json]
 heai-pod close <workspace> [--keep-worktree] [--force]
 heai-pod attach [<workspace>]
 ```
 
 `open` is `herdr worktree create --cwd /repos/<repo> --branch <name> [--base <ref>] --label <label> --no-focus --trust-repository` and prints the workspace id.
 The branch is the durable name of the work; the workspace id is Herdr's handle on it for as long as the server runs.
-`open` records repo, branch and actor as Herdr workspace metadata, which is how `list` answers "what is `w2` about" and how `start` learns the actor to attribute commits to.
+`open` records repo, branch, base and actor as Herdr workspace metadata, and writes the same facts as `branch.<branch>.heai-*` in the clone's git config.
+`--set key=value` writes additional `heai-*` facts under the branch and mirrors them as workspace tokens.
 The worktree lands at `/worktrees/<repo>/<branch with / as ->`, which is `<state>/worktrees/...` on the host.
 
 `close` removes the worktree and the workspace; with `--keep-worktree` it closes the workspace and leaves the files, and `open` on the same branch later reopens them.
 `attach` opens the Herdr UI in this terminal, focused on the workspace named; the human sees every workspace, because that is what Herdr shows.
 
-`list --json` gives, for each workspace, Herdr's id, label and metadata tokens, the repository, branch and worktree path, the rolled-up agent status, every agent in it with its kind, name, pane and state, and every pane.
+`list --json` gives, for each workspace, Herdr's id, label and metadata tokens, the repository, branch and worktree path, a host-git summary (`base`, `head`, `ahead/behind`, changed file count and last commit), the rolled-up agent status, every agent in it with its kind, name, pane and state, and every pane.
 The clone itself appears as a workspace, `linked: false`, because Herdr opens the source repository as one when the first worktree is created.
 
 ## Agents, prompts and commands
@@ -186,10 +190,11 @@ The host process may be long gone by then; the fact is written anyway.
 
 **The fact file.**
 Named by `--event`, default `settled`; written as `<event>.<workspace>.tmp` then renamed to `<event>.<workspace>`, so a reader never sees a torn file and two workspaces reporting the same event do not collide.
-Its body is one JSON object with the workspace and pane ids, the agent's name and settled state, and for a command the exit code:
+Its body is one JSON object with the workspace and pane ids, the agent's name and settled state, and for a command the exit code.
+When the workspace has git metadata, it also carries a committed-work summary (`branch`, `base`, `head`, `ahead`):
 
 ```json
-{"workspace":"w2","pane":"w2:p2","agent":"w2","state":"idle","exitCode":0}
+{"workspace":"w2","pane":"w2:p2","agent":"w2","state":"idle","exitCode":0,"git":{"branch":"agent/api-owner/t1","base":"main","head":"9f21c0a","ahead":3}}
 ```
 
 `exitCode` is `0` for `idle` and `done`, `1` for `blocked`, the command's own for `exited`, and `2` for `timeout`, `stalled` and `lost`.
