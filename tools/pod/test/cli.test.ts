@@ -160,6 +160,28 @@ test('repo: add from the map\'s localPath, list, fetch, pull-branch into the sou
   assert.ok(!w.calls().length, 'nothing here asked the runtime')
 })
 
+test('diff, log and show: host-git reads from a repo+branch work reference', () => {
+  const w = makeWorld()
+  assert.equal(cli(w, 'repo', 'add', 'app').code, 0)
+  const clone = join(w.state, 'repos', 'app')
+  git(clone, 'checkout', '-q', '-b', 'agent/api-owner/t2')
+  writeFileSync(join(clone, 'feature.txt'), 'feature\n')
+  git(clone, 'add', '.')
+  git(clone, '-c', 'user.name=api-owner', '-c', 'user.email=a@b', 'commit', '-q', '-m', 'add feature')
+  git(clone, 'config', 'branch.agent/api-owner/t2.heai-base', 'main')
+
+  const d = cli(w, 'diff', 'app', 'agent/api-owner/t2', '--name-only')
+  assert.equal(d.code, 0, d.stderr)
+  assert.match(d.stdout, /feature\.txt/)
+  const l = cli(w, 'log', 'app', 'agent/api-owner/t2', '-n', '1')
+  assert.equal(l.code, 0, l.stderr)
+  assert.match(l.stdout, /add feature/)
+  const s = JSON.parse(cli(w, 'show', 'app', 'agent/api-owner/t2', '--json').stdout)
+  assert.equal(typeof s.sha, 'string')
+  assert.equal(s.subject, 'add feature')
+  assert.ok(!w.calls().length, 'reads are host git only')
+})
+
 test('open, list, close: the Herdr commands with the ids they return', () => {
   const w = makeWorld()
   cli(w, 'repo', 'add', 'app')
@@ -169,7 +191,7 @@ test('open, list, close: the Herdr commands with the ids they return', () => {
   assert.equal(opened.stdout.trim(), 'w2', 'the workspace id and nothing else')
   assert.deepEqual(w.herdrCalls(), [
     ['worktree', 'create', '--cwd', '/repos/app', '--branch', 'agent/api-owner/t1', '--base', 'main', '--label', 't1 · api-owner', '--no-focus', '--trust-repository'],
-    ['workspace', 'report-metadata', 'w2', '--source', 'pod', '--token', 'repo=app', '--token', 'branch=agent/api-owner/t1', '--token', 'actor=api-owner']
+    ['workspace', 'report-metadata', 'w2', '--source', 'pod', '--token', 'repo=app', '--token', 'branch=agent/api-owner/t1', '--token', 'actor=api-owner', '--token', 'base=main']
   ])
   assert.equal(cli(w, 'open', 'nope', '--branch', 'x').code, 2, 'no such clone')
   assert.deepEqual(JSON.parse(cli(w, 'open', 'app', '--branch', 'b', '--json').stdout), { workspace: 'w2', pane: 'w2:p1', path: '/worktrees/app/agent-api-owner-t1', branch: 'agent/api-owner/t1' })

@@ -20,10 +20,37 @@ shift 2
 err=$(mktemp)
 trap 'rm -f "$err"' EXIT
 
+# git_json <workspace>: committed git facts for this workspace, else empty
+git_json() {
+  ws_id=$1
+  [ -n "$ws_id" ] || return 0
+  ws=$(herdr workspace get "$ws_id" 2>/dev/null) || return 0
+  repo=$(printf '%s' "$ws" | jq -r '.result.workspace.tokens.repo // empty' 2>/dev/null)
+  branch=$(printf '%s' "$ws" | jq -r '.result.workspace.tokens.branch // empty' 2>/dev/null)
+  [ -n "$repo" ] && [ -n "$branch" ] || return 0
+  base=$(git -C "/repos/$repo" config --get "branch.$branch.heai-base" 2>/dev/null || true)
+  [ -n "$base" ] || base=$(printf '%s' "$ws" | jq -r '.result.workspace.tokens.base // empty' 2>/dev/null)
+  head=$(git -C "/repos/$repo" rev-parse --short "$branch" 2>/dev/null || true)
+  [ -n "$head" ] || return 0
+  ahead=0
+  if [ -n "$base" ]; then
+    n=$(git -C "/repos/$repo" rev-list --count "$base..$branch" 2>/dev/null || printf '0')
+    case $n in ''|*[!0-9]*) n=0 ;; esac
+    ahead=$n
+  fi
+  jq -cn --arg branch "$branch" --arg base "$base" --arg head "$head" --argjson ahead "$ahead" '{branch:$branch, base:(if $base=="" then null else $base end), head:$head, ahead:$ahead}'
+}
+
 # emit <workspace> <pane> <agent> <state> <exitCode>: print the body and exit with the code
 emit() {
-  jq -cn --arg ws "$1" --arg pane "$2" --arg agent "$3" --arg state "$4" --argjson code "$5" \
-    '{workspace: (if $ws == "" then null else $ws end), pane: (if $pane == "" then null else $pane end), agent: (if $agent == "" then null else $agent end), state: $state, exitCode: $code}'
+  git=$(git_json "$1")
+  if [ -n "$git" ]; then
+    jq -cn --arg ws "$1" --arg pane "$2" --arg agent "$3" --arg state "$4" --argjson code "$5" --argjson git "$git" \
+      '{workspace: (if $ws == "" then null else $ws end), pane: (if $pane == "" then null else $pane end), agent: (if $agent == "" then null else $agent end), state: $state, exitCode: $code, git: $git}'
+  else
+    jq -cn --arg ws "$1" --arg pane "$2" --arg agent "$3" --arg state "$4" --argjson code "$5" \
+      '{workspace: (if $ws == "" then null else $ws end), pane: (if $pane == "" then null else $pane end), agent: (if $agent == "" then null else $agent end), state: $state, exitCode: $code}'
+  fi
   exit "$5"
 }
 

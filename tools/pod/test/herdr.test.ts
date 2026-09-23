@@ -3,8 +3,7 @@ import assert from 'node:assert/strict'
 import { asAgent, asPane, asWorkspace, asWorktree, HerdrError, items, isPaneId, object, parseHerdr, paneNumber, workspaceOf, type Herdr, type Json } from '../src/herdr.ts'
 import { listWorkspaces, openWorkspace, rootPane, closeWorkspace } from '../src/workspaces.ts'
 import { commandLine, paneEnv } from '../src/agents.ts'
-import { fixture, makeWorld } from './helpers.ts'
-import { mkdirSync } from 'node:fs'
+import { fixture, git, makeWorld } from './helpers.ts'
 import { join } from 'node:path'
 
 const ok = (stdout: string) => ({ code: 0, stdout, stderr: '' })
@@ -95,12 +94,12 @@ test('open: worktree create in the clone, then the tokens, and the ids Herdr ret
   const w = makeWorld()
   const h = fakeHerdr()
   await assert.rejects(openWorkspace(h, join(w.state, 'repos'), { repo: 'app', branch: 'x' }), /no clone of app/)
-  mkdirSync(join(w.state, 'repos', 'app', '.git'), { recursive: true })
+  git(w.dir, 'clone', '-q', w.source, join(w.state, 'repos', 'app'))
   const o = await openWorkspace(h, join(w.state, 'repos'), { repo: 'app', branch: 'agent/api-owner/t1', base: 'main', actor: 'api-owner', label: 't1 · api-owner' })
   assert.deepEqual(o, { workspace: 'w2', pane: 'w2:p1', path: '/worktrees/app/agent-api-owner-t1', branch: 'agent/api-owner/t1' })
   assert.deepEqual(h.calls, [
     ['worktree', 'create', '--cwd', '/repos/app', '--branch', 'agent/api-owner/t1', '--base', 'main', '--label', 't1 · api-owner', '--no-focus', '--trust-repository'],
-    ['workspace', 'report-metadata', 'w2', '--source', 'pod', '--token', 'repo=app', '--token', 'branch=agent/api-owner/t1', '--token', 'actor=api-owner']
+    ['workspace', 'report-metadata', 'w2', '--source', 'pod', '--token', 'repo=app', '--token', 'branch=agent/api-owner/t1', '--token', 'actor=api-owner', '--token', 'base=main']
   ])
 })
 

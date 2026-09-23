@@ -14,8 +14,9 @@ import { dockerRuntime } from './runtimes/docker.ts'
 import { createHerdr, HerdrError, isPaneId } from './herdr.ts'
 import { buildBase, buildImage, down, parseMount, status, up } from './box.ts'
 import { createRepos } from './repos.ts'
-import { closeWorkspace, listWorkspaces, openWorkspace, type WorkspaceView } from './workspaces.ts'
+import { closeWorkspace, getWorkspace, listWorkspaces, openWorkspace, type WorkspaceView } from './workspaces.ts'
 import { notify, promptAgent, readTarget, runCommand, sendKeys, settle, startAgent, waitArgs, type Box, type Settled } from './agents.ts'
+import { createPodGit, isWorkspaceId, parseSet, type WorkRef } from './git.ts'
 
 const USAGE = `heai-pod - one persistent container running Herdr: a clone per repository, a worktree per piece of work, an agent or a command in it, a fact file when it settles
 
@@ -31,8 +32,11 @@ const USAGE = `heai-pod - one persistent container running Herdr: a clone per re
   heai-pod repo fetch [<name>]
   heai-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into the source checkout
 
-  heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>]   → prints the workspace id
+  heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>] [--set key=value]...   → prints the workspace id
   heai-pod list [--json]
+  heai-pod diff  <workspace | repo branch> [--name-only|--stat|--patch] [--base <ref>] [--json]
+  heai-pod log   <workspace | repo branch> [-n <count>] [--json]
+  heai-pod show  <workspace | repo branch> [--json]
   heai-pod close <workspace> [--keep-worktree] [--force]
   heai-pod attach [<workspace>]                     the Herdr UI in this terminal
 
@@ -56,7 +60,7 @@ Options, on every command:
 
 Exit codes: 0 done, or settled well (idle, done, a command that exited 0); 1 settled badly (blocked, a failing command) or refused; 2 bad usage, a runtime or container that could not be asked, a workspace or pane that does not exist, a timeout.`
 
-const COMMANDS = ['up', 'down', 'status', 'build', 'repo', 'open', 'list', 'close', 'attach', 'start', 'prompt', 'run', 'wait', 'read', 'keys', 'herdr'] as const
+const COMMANDS = ['up', 'down', 'status', 'build', 'repo', 'open', 'list', 'diff', 'log', 'show', 'close', 'attach', 'start', 'prompt', 'run', 'wait', 'read', 'keys', 'herdr'] as const
 
 const TOOL_DIR = resolve(fileURLToPath(import.meta.url), '..', '..')
 
@@ -117,8 +121,10 @@ async function main(argv: string[]): Promise<number> {
       into: { type: 'string' },
       branch: { type: 'string' },
       base: { type: 'string' },
+      n: { type: 'string' },
       actor: { type: 'string' },
       label: { type: 'string' },
+      set: { type: 'string', multiple: true },
       env: { type: 'string', multiple: true },
       agent: { type: 'string' },
       file: { type: 'string' },
@@ -128,6 +134,9 @@ async function main(argv: string[]): Promise<number> {
       timeout: { type: 'string' },
       until: { type: 'string', multiple: true },
       lines: { type: 'string' },
+      'name-only': { type: 'boolean', default: false },
+      stat: { type: 'boolean', default: false },
+      patch: { type: 'boolean', default: false },
       ansi: { type: 'boolean', default: false },
       wait: { type: 'boolean', default: false },
       'keep-worktree': { type: 'boolean', default: false },
@@ -150,10 +159,36 @@ async function main(argv: string[]): Promise<number> {
   const box: Box = { runtime, container, herdr: createHerdr(runtime, container) }
   const json = (v: unknown) => process.stdout.write(JSON.stringify(v, null, 2) + '\n')
   const timeout = duration(values.timeout, '--timeout')
+  const podGit = createPodGit({ reposDir: state.repos })
   const arg = (i: number, what: string): string => {
     const v = positionals[i]
     if (!v) throw new UsageError(`${command} needs ${what}`)
     return v
+  }
+
+  const resolveWork = async (start = 1): Promise<WorkRef> => {
+    const first = arg(start, 'a workspace id, or <repo> <branch>')
+    const second = positionals[start + 1]
+    if (second && !second.startsWith('--')) return { repo: first, branch: second }
+    if (!isWorkspaceId(first)) throw new UsageError('use a workspace id, or <repo> <branch>')
+    const ws = await getWorkspace(box.herdr, first)
+    const repo = ws.tokens['repo']
+    const branch = ws.tokens['branch']
+    if (!repo || !branch) throw new UsageError(`workspace ${first} has no repo/branch metadata`)
+    return { repo, branch, workspace: first }
+  }
+
+  const withGit = async (views: WorkspaceView[]): Promise<WorkspaceView[]> => {
+    return Promise.all(
+      views.map(async (v) => {
+        if (!v.repo || !v.branch) return v
+        try {
+          return { ...v, git: await podGit.summary({ repo: v.repo, branch: v.branch }) }
+        } catch {
+          return v
+        }
+      })
+    )
   }
 
   switch (command) {
@@ -250,16 +285,45 @@ async function main(argv: string[]): Promise<number> {
 
     case 'open': {
       if (!values.branch) throw new UsageError('open needs --branch <name>')
-      const o = await openWorkspace(box.herdr, state.repos, { repo: arg(1, 'a repository'), branch: values.branch, base: values.base, actor: values.actor, label: values.label })
+      const o = await openWorkspace(box.herdr, state.repos, { repo: arg(1, 'a repository'), branch: values.branch, base: values.base, actor: values.actor, label: values.label, set: parseSet(values.set ?? []) })
       if (values.json) json(o)
       else console.log(o.workspace)
       return 0
     }
 
     case 'list': {
-      const views = await listWorkspaces(box.herdr)
+      const views = await withGit(await listWorkspaces(box.herdr))
       if (values.json) json(views)
       else printWorkspaces(views)
+      return 0
+    }
+
+    case 'diff': {
+      const work = await resolveWork()
+      const picks = [values['name-only'], values.stat, values.patch].filter(Boolean).length
+      if (picks > 1) throw new UsageError('diff takes one of --name-only, --stat or --patch')
+      const mode = values.patch ? 'patch' : values.stat ? 'stat' : 'name-only'
+      const out = await podGit.diff(work, { base: values.base, mode })
+      if (values.json) json({ ...work, base: values.base ?? (await podGit.branchFact(work.repo, work.branch, 'base')), mode, output: out })
+      else process.stdout.write(out)
+      return 0
+    }
+
+    case 'log': {
+      const work = await resolveWork()
+      const n = values.n !== undefined ? Number.parseInt(values.n, 10) : 20
+      if (!Number.isFinite(n) || n <= 0) throw new UsageError('-n must be a positive number')
+      const entries = await podGit.log(work, n)
+      if (values.json) json({ ...work, entries })
+      else for (const e of entries) console.log(`${e.sha}  ${e.date}  ${e.author}  ${e.subject}`)
+      return 0
+    }
+
+    case 'show': {
+      const work = await resolveWork()
+      const entry = await podGit.show(work)
+      if (values.json) json({ ...work, ...entry })
+      else if (entry.sha) console.log(`${entry.sha}\n${entry.committedAt ?? ''}\n${entry.author ?? ''}\n${entry.subject ?? ''}`.trim())
       return 0
     }
 

@@ -7,6 +7,7 @@ import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { parse } from 'yaml'
 import { RefusedError, UsageError } from './config.ts'
 import { spawnCollect, RuntimeError, type Spawner } from './runtime.ts'
+import { createPodGit } from './git.ts'
 
 export interface RepoInfo {
   name: string
@@ -46,6 +47,7 @@ const NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
 
 export function createRepos(opts: { reposDir: string; mapPath: string; run?: Spawner }): Repos {
   const run = opts.run ?? spawnCollect
+  const podGit = createPodGit({ reposDir: opts.reposDir, run })
   const git = async (args: string[], cwd?: string) => {
     const r = await run('git', cwd ? ['-C', cwd, ...args] : args)
     if (r.code !== 0) throw new RefusedError(`git ${args[0]} failed: ${(r.stderr || r.stdout).trim()}`)
@@ -76,6 +78,7 @@ export function createRepos(opts: { reposDir: string; mapPath: string; run?: Spa
       if (!src) throw new UsageError(`no source for ${name}: give one, or declare repositories.${name}.localPath or remotePath in ${opts.mapPath}`)
       try {
         await git(['clone', '--quiet', src, path])
+        await podGit.ensureNoWorktreePrune(name)
       } catch (e) {
         if (e instanceof RuntimeError) throw new UsageError(e.message)
         throw e
