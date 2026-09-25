@@ -1,7 +1,7 @@
 // Package web is the screen in a browser: the same four panes the terminal
 // shows - tasks, flows, pod, reactor - one tab each, read on the same clocks
 // from the same tools, and as read-only as the terminal: every route is a GET,
-// and every command it runs is a query. The fifth tab, the map editor, is the
+// and every command it runs is a query. The map editor tab is the
 // exception: it writes the architecture map, and nothing else (mapeditor.go).
 package web
 
@@ -12,6 +12,7 @@ import (
 	"html/template"
 	"io/fs"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -192,6 +193,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /tasks/{slug}", s.task)
 	mux.HandleFunc("GET /flows", s.flowList)
 	mux.HandleFunc("GET /flows/{id}", s.flow)
+	mux.HandleFunc("GET /machines", s.machines)
+	mux.HandleFunc("GET /machines/{name}", s.machines)
 	mux.HandleFunc("GET /pod", s.podList)
 	mux.HandleFunc("GET /pod/{id}", s.workspace)
 	mux.HandleFunc("GET /reactor", s.reactorList)
@@ -326,12 +329,96 @@ func (s *Server) task(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "task", "tasks", t.Slug, st, t)
 }
 
-// flowPage is one flow with where its waits stand and its timeline.
+// flowPage is one flow with where its waits stand, its timeline, and its definition drawn with the way it came.
 type flowPage struct {
 	Flow     flows.Flow
 	Stuck    *flows.Stuck
 	Timeline flows.Timeline
 	TraceErr string
+	Graph    template.HTML
+}
+
+// machinePage is one definition drawn, with the flows of it, narrowed to one state when a state was clicked.
+type machinePage struct {
+	Names []string
+	Def   *flows.Definition
+	Graph template.HTML
+	State string
+	Rows  []flows.Flow
+	Open  int
+}
+
+func definitionByName(defs []flows.Definition, name string) *flows.Definition {
+	for i := range defs {
+		if defs[i].Name == name {
+			return &defs[i]
+		}
+	}
+	return nil
+}
+
+// stateCounts is how many flows of a definition stand in each state: the open ones, and in a terminal state the ones that ended there.
+func stateCounts(list []flows.Flow, def string) map[string]int {
+	c := map[string]int{}
+	for _, f := range list {
+		if f.Definition == def {
+			c[f.State]++
+		}
+	}
+	return c
+}
+
+// machines is the machines tab: every definition flow knows, one drawn at a time.
+func (s *Server) machines(w http.ResponseWriter, r *http.Request) {
+	st := s.snapshot()
+	p := machinePage{State: r.URL.Query().Get("state")}
+	for _, d := range st.Flows.Definitions {
+		p.Names = append(p.Names, d.Name)
+	}
+	name := r.PathValue("name")
+	if name == "" && len(p.Names) > 0 {
+		// The definition with the most open flows is the one worth seeing first.
+		best, most := p.Names[0], -1
+		for _, n := range p.Names {
+			open := 0
+			for _, f := range st.Flows.Flows {
+				if f.Definition == n && !f.Terminal {
+					open++
+				}
+			}
+			if open > most {
+				best, most = n, open
+			}
+		}
+		name = best
+	}
+	if name != "" {
+		p.Def = definitionByName(st.Flows.Definitions, name)
+		if p.Def == nil {
+			s.notFound(w, r, "machines", "no definition "+name+" in flow's last answer")
+			return
+		}
+		counts := stateCounts(st.Flows.Flows, name)
+		base := "/machines/" + url.PathEscape(name)
+		p.Graph = RenderMachine(Machine{Def: *p.Def, Counts: counts, Current: p.State, Href: func(state string) string {
+			if state == p.State {
+				return base + "#flows"
+			}
+			return base + "?state=" + url.QueryEscape(state) + "#flows"
+		}})
+		for _, f := range st.Flows.Flows {
+			if f.Definition != name {
+				continue
+			}
+			if !f.Terminal {
+				p.Open++
+			}
+			if p.State == "" || f.State == p.State {
+				p.Rows = append(p.Rows, f)
+			}
+		}
+	}
+	s.render(w, "machines", "machines", "machines", st, p)
 }
 
 func (s *Server) flowList(w http.ResponseWriter, r *http.Request) {
@@ -359,6 +446,21 @@ func (s *Server) flow(w http.ResponseWriter, r *http.Request) {
 		p.TraceErr = err.Error()
 	}
 	p.Timeline = tl
+	if def := definitionByName(st.Flows.Definitions, f.Definition); def != nil && def.Problem == nil {
+		taken, visited := map[[2]string]bool{}, map[string]bool{}
+		for _, l := range tl.Lines {
+			if l.ID != f.ID {
+				continue
+			}
+			visited[l.To] = true
+			if l.From != nil && *l.From != l.To {
+				taken[[2]string{*l.From, l.To}] = true
+			}
+		}
+		p.Graph = RenderMachine(Machine{Def: *def, Current: f.State, Taken: taken, Visited: visited, Href: func(state string) string {
+			return "/machines/" + url.PathEscape(def.Name) + "?state=" + url.QueryEscape(state) + "#flows"
+		}})
+	}
 	s.render(w, "flow", "flows", f.ID, st, p)
 }
 

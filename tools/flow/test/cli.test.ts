@@ -115,6 +115,25 @@ test('definitions are the files in the flows directory, by the name each declare
   assert.equal(cli(w, 'start', 'request', '--link', 'task=t2').code, 0, 'the first file of that name still serves it')
 })
 
+test('definitions --json is each machine whole: from lists expanded, after in milliseconds', () => {
+  const w = makeWorld()
+  copyFileSync(join(DEFS, 'session.yaml'), join(w.dir, 'flows', 'session.yaml'))
+  const defs = JSON.parse(cli(w, 'definitions', '--json').stdout) as Array<Record<string, unknown>>
+  const session = defs.find((d) => d['name'] === 'session')!
+  assert.equal(session['problem'], null)
+  assert.equal(session['initial'], 'queued')
+  assert.ok((session['terminal'] as string[]).includes('clean'))
+  const transitions = session['transitions'] as Array<Record<string, unknown>>
+  assert.ok(transitions.every((t) => typeof t['from'] === 'string' && typeof t['to'] === 'string' && typeof t['on'] === 'string'))
+  assert.ok(transitions.some((t) => typeof t['after'] === 'number'), 'a clock transition carries after in ms')
+  assert.equal(typeof session['hooks'], 'object')
+
+  writeFileSync(join(w.dir, 'flows', 'bad.yaml'), 'name: bad\nstates: [a]\ninitial: a\ntransitions: []\n')
+  const bad = (JSON.parse(cli(w, 'definitions', '--json').stdout) as Array<Record<string, unknown>>).find((d) => d['name'] === 'bad')!
+  assert.match(String(bad['problem']), /no way out/)
+  assert.equal(bad['transitions'], null)
+})
+
 test('the walkthrough, as trace prints it', () => {
   const w = makeWorld()
   const ids = chain(w)

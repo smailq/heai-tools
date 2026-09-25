@@ -15,7 +15,7 @@ import (
 )
 
 // pages is every template that renders a whole page; each is parsed with the layout.
-var pages = []string{"tasks", "task", "flows", "flow", "pod", "workspace", "reactor", "event", "missing"}
+var pages = []string{"tasks", "task", "flows", "flow", "machines", "pod", "workspace", "reactor", "event", "missing"}
 
 func parseTemplates(s *Server) map[string]*template.Template {
 	funcs := template.FuncMap{

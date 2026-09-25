@@ -220,11 +220,12 @@ heai-flow stuck [--older 1h] [--json]
 heai-flow settle                                the clock, the guards, the views; then the actions
 heai-flow check [--fix]                         definitions, journals, snapshots, indexes; runs no action
 heai-flow reindex [--repin]                     rebuild the views; --repin first rewrites every open flow's pinned definition from the file on disk
-heai-flow definitions                           every definition under flows/, with its states or its problem
+heai-flow definitions [--json]                  every definition under flows/, with its states or its problem
 ```
 
 `start` prints the new id and nothing else; `--definition <path>` takes a file outside `flows/`.
 `advance` and `link` print the line they wrote.
+`definitions --json` prints each definition whole - `name`, `path`, `problem`, and, when it validates, `states`, `initial`, `terminal`, `links`, `transitions` and `hooks` - with every `from` list expanded to one transition per source and `after` in milliseconds, so a reader can draw the machine without reading its YAML; a definition with a problem has those fields `null`.
 `show --json` prints the snapshot plus the pinned `hooks`, the reader's `problems`, the `journal` and the `actions`; `list --json` prints snapshots.
 `reindex --repin` is all or nothing: a flow whose definition is missing from `flows/` or does not validate is exit `2` with nothing written; a definition that no longer has the state a flow is in is exit `1`.
 Terminal flows keep their pinned copy.

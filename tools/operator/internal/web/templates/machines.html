@@ -1,0 +1,38 @@
+{{define "pane"}}{{$st := .State}}{{$p := .Data}}
+<div class="panehead">
+  <h1>machines <span class="faint">── {{len $p.Names}} definitions{{with $p.Def}} · {{.Name}}: {{len .States}} states, {{len .Transitions}} transitions, {{$p.Open}} open{{end}}</span></h1>
+  <div class="controls">
+    <span class="seg">{{range $p.Names}}<a href="/machines/{{.}}"{{if and $p.Def (eq . $p.Def.Name)}} class="on"{{end}}>{{.}}</a>{{end}}</span>
+    {{template "age" (printf "flow %s" (ago .Flows.At))}}
+  </div>
+</div>
+{{with .Flows.Note}}<p class="{{if $st.Flows.Failed}}warn{{else}}faint{{end}}">{{if $st.Flows.Failed}}⚠ {{end}}{{.}}</p>{{end}}
+{{with $p.Def}}
+{{with .Problem}}<p class="red">⚠ {{.}}: flow refuses this definition, so there is no machine to draw</p>{{end}}
+<p class="faint legend">
+  <span class="lg"><svg width="14" height="14" aria-hidden="true"><circle class="entry" cx="7" cy="7" r="5"/></svg> starts here</span>
+  <span class="lg"><span class="box term"></span> terminal</span>
+  <span class="lg"><span class="box occ"></span> flows in it, with how many</span>
+  <span class="lg">← a rule from many states, written on the state it reaches</span>
+  <span class="lg">▸ the hook that runs on entry</span>
+  <span class="lg">an arrow pointing up closes a cycle</span>
+</p>
+<div class="scroll machine-wrap">{{$p.Graph}}</div>
+<p class="faint"><code>{{.Path}}</code>{{with .Links}} · links: {{range $k, $v := .}}<span class="tag">{{$k}}{{if $v.Required}}*{{end}}</span>{{end}}<span class="faint">(* required)</span>{{end}}</p>
+<h2 id="flows">flows of {{.Name}}{{with $p.State}} in <b>{{.}}</b> · <a href="/machines/{{$p.Def.Name}}#flows">all states</a>{{end}}</h2>
+<div class="scroll"><table class="grid">
+<thead><tr><th>id</th><th>state</th><th>age</th><th>started</th><th>duration</th><th class="wide">links</th></tr></thead>
+<tbody>
+{{range $p.Rows}}
+<tr class="{{if .Terminal}}dim{{end}}">
+  <td><a href="/flows/{{.ID}}" title="{{.ID}}">{{.ID}}</a></td><td>{{.State}}</td><td>{{inState .}}</td><td>{{since .StartedAt}}</td><td>{{duration .}}</td>
+  <td class="wide">{{range $k, $v := .Links}}<span class="tag">{{$k}} {{$v}}</span> {{end}}</td>
+</tr>
+{{else}}
+<tr><td colspan="6" class="faint">no flows{{with $p.State}} in {{.}}{{end}}</td></tr>
+{{end}}
+</tbody></table></div>
+{{else}}
+<p class="faint">{{if .Flows.At.IsZero}}asking flow…{{else}}no definitions{{end}}</p>
+{{end}}
+{{end}}

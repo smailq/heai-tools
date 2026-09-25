@@ -14,6 +14,10 @@
 {{range $k, $v := $f.Links}}<tr><th>{{$k}}</th><td>{{if eq $k "task"}}<a href="/tasks/{{$v}}">{{$v}}</a>{{else}}{{$v}}{{end}}</td></tr>{{else}}<tr><td class="faint">none</td></tr>{{end}}
 {{range $f.WaitsOn}}{{$w := flowByID $st .}}<tr><th>waits on</th><td><a href="/flows/{{.}}">{{.}}</a> {{if $w}}<span class="{{if $w.Terminal}}red{{else}}faint{{end}}">({{$w.State}})</span>{{else}}<span class="red">(missing)</span>{{end}}</td></tr>{{end}}
 </table>
+{{with $p.Graph}}
+<h2>where it stands <span class="faint">its definition, <a href="/machines/{{$f.Definition}}">{{$f.Definition}}</a>, with the moves it made</span></h2>
+<div class="scroll machine-wrap">{{.}}</div>
+{{end}}
 <h2>trace <span class="faint">heai-flow trace {{$f.ID}} --json</span></h2>
 {{with $p.TraceErr}}<p class="warn">⚠ {{.}}</p>{{end}}
 <div class="scroll"><table class="grid">

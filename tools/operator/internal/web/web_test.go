@@ -110,7 +110,7 @@ func TestEachPaneIsATab(t *testing.T) {
 			}
 		}
 		// Every page carries all four tabs.
-		for _, tab := range []string{`href="/tasks"`, `href="/flows"`, `href="/pod"`, `href="/reactor"`} {
+		for _, tab := range []string{`href="/tasks"`, `href="/flows"`, `href="/machines"`, `href="/pod"`, `href="/reactor"`, `href="/map/"`} {
 			if !strings.Contains(body, tab) {
 				t.Errorf("%s: missing tab %s", c.path, tab)
 			}

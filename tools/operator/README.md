@@ -192,26 +192,39 @@ The tracker's statuses and pod's job states are fixed vocabularies, so they are 
 
 ## The web page
 
-`heai-operator --serve 127.0.0.1:8080` is the same screen in a browser: one tab per pane - **tasks**, **flows**, **pod**, **reactor** - each carrying its one-line summary in the tab bar, so the three panes that are not open still show their counts and their `⚠` and `●`, as the one-line panes do on the terminal.
+`heai-operator --serve 127.0.0.1:8080` is the same screen in a browser: one tab per pane - **tasks**, **flows**, **pod**, **reactor** - and two the terminal has no room for, **machines** and **map**, each carrying its one-line summary in the tab bar, so the three panes that are not open still show their counts and their `⚠` and `●`, as the one-line panes do on the terminal.
 
 | route | what it shows |
 | --- | --- |
 | `/tasks` | the tasks table with every column and the blocker notes; `?active=1` is `b`, `?sort=age\|slug\|territory` is `S` |
 | `/tasks/<slug>` | the task pane: frontmatter, territories with their owners, the blocker and where it stands, the file, the body |
 | `/flows` | the stuck flows with where their waits stand, every flow flow lists, and the definitions with their states |
-| `/flows/<id>` | the flow pane: its record, its links and waits, and its timeline from `heai-flow trace <id> --json` |
+| `/flows/<id>` | the flow pane: its record, its links and waits, its definition drawn with the moves it made and the state it is in, and its timeline from `heai-flow trace <id> --json` |
+| `/machines`, `/machines/<definition>` | a flow definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
 | `/pod` | the container's line and every workspace, the clone dimmed |
 | `/pod/<id>` | a workspace: its tokens, agents and panes |
 | `/reactor` | the sources, the rules and the last hour's events with what each rule did |
 | `/reactor/<id>` | an event: its fields, every action with its command, result and log, and the payload |
 | `/api/state` | what `--json` prints, from the last reading |
-| `/map/` | the map editor, below: the fifth tab |
+| `/map/` | the map editor, below |
 
 It reads on the same clocks as the screen - the tracker on `--interval`, flow, pod and reactor on `--poll` - into one reading shared by every browser, so ten open tabs cost the tools nothing more than one terminal does. A page reads that reading again on the tracker's interval and swaps itself in place, keeping the filter and the scroll; without JavaScript it reloads.
 The filter box, `/` to reach it and `1` to `4` for the tabs behave as they do on the screen.
 A flow's timeline is the one call made per page view, and only for an id flow listed in its last answer.
 
 The four panes are as read-only as the screen: every route is a `GET`, anything else is `405`, and the pages load no script or style from anywhere but the server itself. There is no login, so bind it to loopback - an address anyone can reach shows them the project's tasks, branches and event payloads, and lets them edit the map.
+
+### The machines
+
+`/machines` draws each flow definition as the state machine it is, one at a time, the one with the most open flows first.
+States are boxes: the initial one entered by a dot, a terminal one double-bordered, the script a state's hook runs on entry under its name, and a count on every state flows stand in - open flows, or for a terminal state the flows that ended there - linking to the table of them below the drawing.
+Transitions are arrows labelled with the event that makes them and, one line each, what else it takes: `when` the event's data must say, `after` the clock, `waits on` what the flows it waits on must reach, and `by` who may make it.
+A transition back to an earlier state closes a cycle and is drawn pointing up, so every other arrow points down and the drawing reads from start to finish.
+One rule from three or more states to the same one - the usual `canceled` from anywhere - is written once, on the state it reaches, instead of drawn as that many arrows.
+A flow's own page draws its definition too, with the moves its trace recorded and the state it stands in highlighted.
+
+The machine is `heai-flow definitions --json`, which carries each definition whole - states, initial, terminal, transitions with every `from` list expanded, hooks and links - so this tool reads no flow YAML. [`testdata/flow/definitions.json`](testdata/flow/definitions.json) records it from the sample project's definitions.
+The drawing is laid out on the server - ranked by longest path from the initial state, a layer between ranks for the labels, waypoints for arrows that cross ranks, barycentre ordering - and sent as SVG, so it needs no script and no library, and follows the page's light and dark colours. States are not coloured by name, as on the screen: a state is whatever its definition calls it.
 
 ### The map editor
 
@@ -300,6 +313,7 @@ internal/pod/             heai-pod status --json and heai-pod list --json; the f
 internal/reactor/         heai-reactor status --json and heai-reactor events --json; the fixtures are testdata/reactor/ at the root
 internal/ui/              the Bubble Tea model, the screen, and golden renderings in testdata/golden/
 internal/web/             --serve: the poller, the routes, and the embedded templates and static files
+internal/web/machine.go   the flow definitions' state-machine layout and SVG
 internal/web/map/         the map editor's page, app and vendored graph library, embedded; mapeditor.go is its server side
 testdata/                 the sibling tools' recorded output, the format contracts this tool reads; record.sh makes the pod and reactor ones
 ```

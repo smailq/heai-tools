@@ -183,12 +183,54 @@ func Count(flows []Flow) []DefinitionCount {
 	return out
 }
 
-// Definition is one entry of `flow definitions --json`: a file under flows/, by the name it declares.
+// Definition is one entry of `flow definitions --json`: a file under flows/, by the name it
+// declares, with its whole machine when it validates. The machine fields are nil when it does not.
 type Definition struct {
-	Name    string   `json:"name"`
-	Path    string   `json:"path"`
-	Problem *string  `json:"problem"`
-	States  []string `json:"states"`
+	Name        string              `json:"name"`
+	Path        string              `json:"path"`
+	Problem     *string             `json:"problem"`
+	States      []string            `json:"states"`
+	Initial     string              `json:"initial,omitempty"`
+	Terminal    []string            `json:"terminal,omitempty"`
+	Links       map[string]LinkSpec `json:"links,omitempty"`
+	Transitions []Transition        `json:"transitions,omitempty"`
+	Hooks       map[string]Hook     `json:"hooks,omitempty"`
+}
+
+// Transition is one move a definition allows, as flow normalizes it: one source per
+// transition, `after` in milliseconds, and nil for every condition it does not set.
+type Transition struct {
+	From     string         `json:"from"`
+	To       string         `json:"to"`
+	On       string         `json:"on"`
+	When     map[string]any `json:"when"`
+	After    *int64         `json:"after"`
+	Requires *struct {
+		WaitsOn struct {
+			All []string `json:"all"`
+		} `json:"waitsOn"`
+	} `json:"requires"`
+	By []string `json:"by"`
+}
+
+// LinkSpec is one link a definition names, and whether a flow must carry it.
+type LinkSpec struct {
+	Required bool `json:"required"`
+}
+
+// Hook is the script flow starts when a flow enters a state.
+type Hook struct {
+	Run string `json:"run"`
+}
+
+// IsTerminal reports whether the definition calls a state terminal.
+func (d Definition) IsTerminal(state string) bool {
+	for _, t := range d.Terminal {
+		if t == state {
+			return true
+		}
+	}
+	return false
 }
 
 // Result is one poll of flow: the definitions, everything open or closed, and what is stuck.

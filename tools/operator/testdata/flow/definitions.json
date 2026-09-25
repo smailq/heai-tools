@@ -8,7 +8,82 @@
       "landed",
       "refused",
       "withdrawn"
-    ]
+    ],
+    "initial": "proposed",
+    "terminal": [
+      "landed",
+      "refused",
+      "withdrawn"
+    ],
+    "links": {
+      "branch": {
+        "required": true
+      },
+      "actor": {
+        "required": true
+      },
+      "territory": {
+        "required": true
+      },
+      "session": {
+        "required": false
+      },
+      "task": {
+        "required": false
+      },
+      "pr": {
+        "required": false
+      }
+    },
+    "transitions": [
+      {
+        "from": "proposed",
+        "to": "landed",
+        "on": "merged",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": [
+          "human",
+          "land.sh",
+          "merged.sh"
+        ]
+      },
+      {
+        "from": "proposed",
+        "to": "refused",
+        "on": "refused",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": [
+          "human"
+        ]
+      },
+      {
+        "from": "proposed",
+        "to": "withdrawn",
+        "on": "withdrawn",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": [
+          "human",
+          "cancel.sh"
+        ]
+      }
+    ],
+    "hooks": {
+      "proposed": {
+        "run": "scripts/landing/announce.sh"
+      },
+      "landed": {
+        "run": "scripts/checkpoint/start.sh"
+      },
+      "refused": {
+        "run": "scripts/session/requeue.sh 0"
+      }
+    }
   },
   {
     "name": "request",
@@ -19,7 +94,62 @@
       "in-progress",
       "done",
       "canceled"
-    ]
+    ],
+    "initial": "todo",
+    "terminal": [
+      "done",
+      "canceled"
+    ],
+    "links": {
+      "task": {
+        "required": true
+      },
+      "from": {
+        "required": false
+      },
+      "to": {
+        "required": false
+      }
+    },
+    "transitions": [
+      {
+        "from": "todo",
+        "to": "in-progress",
+        "on": "started",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "in-progress",
+        "to": "done",
+        "on": "done",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "todo",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "in-progress",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      }
+    ],
+    "hooks": {}
   },
   {
     "name": "session",
@@ -37,6 +167,233 @@
       "failed",
       "canceled",
       "lost"
-    ]
+    ],
+    "initial": "queued",
+    "terminal": [
+      "clean",
+      "violation",
+      "failed",
+      "canceled",
+      "lost"
+    ],
+    "links": {
+      "actor": {
+        "required": true
+      },
+      "task": {
+        "required": true
+      },
+      "repo": {
+        "required": true
+      },
+      "workspace": {
+        "required": false
+      },
+      "branch": {
+        "required": false
+      }
+    },
+    "transitions": [
+      {
+        "from": "queued",
+        "to": "running",
+        "on": "started",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "running",
+        "to": "waiting",
+        "on": "exited",
+        "when": {
+          "state": "blocked"
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "running",
+        "to": "exited",
+        "on": "exited",
+        "when": {
+          "exitCode": 0
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "running",
+        "to": "failed",
+        "on": "exited",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "running",
+        "to": "lost",
+        "on": "stale",
+        "when": null,
+        "after": 43200000,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "waiting",
+        "to": "running",
+        "on": "answered",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "waiting",
+        "to": "exited",
+        "on": "exited",
+        "when": {
+          "exitCode": 0
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "waiting",
+        "to": "failed",
+        "on": "exited",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "exited",
+        "to": "failed",
+        "on": "gated",
+        "when": {
+          "verdict": "error"
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "exited",
+        "to": "blocked",
+        "on": "gated",
+        "when": {
+          "requested": true
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "exited",
+        "to": "clean",
+        "on": "gated",
+        "when": {
+          "verdict": "clean"
+        },
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "exited",
+        "to": "violation",
+        "on": "gated",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "blocked",
+        "to": "resumable",
+        "on": "unblocked",
+        "when": null,
+        "after": null,
+        "requires": {
+          "waitsOn": {
+            "all": [
+              "done"
+            ]
+          }
+        },
+        "by": null
+      },
+      {
+        "from": "resumable",
+        "to": "running",
+        "on": "started",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "queued",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "running",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "waiting",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "blocked",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      },
+      {
+        "from": "resumable",
+        "to": "canceled",
+        "on": "canceled",
+        "when": null,
+        "after": null,
+        "requires": null,
+        "by": null
+      }
+    ],
+    "hooks": {
+      "queued": {
+        "run": "scripts/session/start.sh"
+      },
+      "exited": {
+        "run": "scripts/session/finish.sh"
+      },
+      "resumable": {
+        "run": "scripts/session/start.sh"
+      }
+    }
   }
 ]

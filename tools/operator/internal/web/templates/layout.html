@@ -23,6 +23,8 @@
     <small>{{with .Snap.Tracker}}{{len .Tasks}} · changed {{ago .Changed}}{{else}}{{with .Snap.Err}}<span class="red">⚠ {{.}}</span>{{end}}{{end}}</small></a>
   <a href="/flows" class="tab{{if eq .Tab "flows"}} on{{end}}"><b>flows</b>
     <small>{{if .Flows.Flows}}{{open .Flows.Flows}} open{{if .Flows.Stuck}} · <span class="warn">⚠ {{len .Flows.Stuck}} stuck</span>{{end}}{{else}}{{orDash .Flows.Note}}{{end}}{{if .Flows.Red}} <span class="red">●</span>{{end}}</small></a>
+  <a href="/machines" class="tab{{if eq .Tab "machines"}} on{{end}}"><b>machines</b>
+    <small>{{with .Flows.Definitions}}{{len .}} definitions{{else}}{{orDash $.Flows.Note}}{{end}}</small></a>
   <a href="/pod" class="tab{{if eq .Tab "pod"}} on{{end}}"><b>pod</b>
     <small>{{with .Pod.Status}}{{if .Up}}<span class="ok">●</span>{{else}}<span class="warn">○</span>{{end}} {{.Summary}}{{else}}{{orDash .Pod.Note}}{{end}}</small></a>
   <a href="/reactor" class="tab{{if eq .Tab "reactor"}} on{{end}}"><b>reactor</b>

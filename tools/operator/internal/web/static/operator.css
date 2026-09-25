@@ -65,6 +65,36 @@ footer { padding: 12px 16px 20px; border-top: 1px solid var(--line); font-size: 
 .ag-failed, .ag-lost { color: var(--red); }
 .ag-idle, .ag-unknown, .ag-- { color: var(--faint); }
 .meter .st { margin-left: 4px; }
+/* The state-machine drawing: states neutral, as a flow's state names are the project's own. */
+.machine-wrap { margin: 6px 0 10px; padding: 4px 0; }
+svg.machine { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+svg.machine .state rect { fill: var(--bg); stroke: var(--faint); stroke-width: 1.2; }
+svg.machine .state rect.inner { fill: none; stroke-width: 1; }
+svg.machine .state.occupied > rect:first-of-type { stroke: var(--accent); stroke-width: 2; }
+svg.machine .state.visited > rect:first-of-type { fill: var(--head); }
+svg.machine .state.current > rect:first-of-type { stroke: var(--accent); stroke-width: 3; fill: var(--hover); }
+svg.machine .state .name { fill: var(--fg); font-weight: 700; }
+svg.machine .state.terminal .name { font-weight: 400; }
+svg.machine .state .sub { fill: var(--faint); font-size: 11px; }
+svg.machine a:hover .state > rect:first-of-type { stroke: var(--accent); }
+svg.machine .count rect { fill: var(--accent); stroke: none; }
+svg.machine .count text { fill: var(--bg); font-size: 11px; font-weight: 700; text-anchor: middle; }
+svg.machine .entry { fill: var(--fg); }
+svg.machine .edge path, svg.machine path.edge { fill: none; stroke: var(--faint); stroke-width: 1.3; }
+svg.machine .edge.taken path { stroke: var(--accent); stroke-width: 2.2; }
+svg.machine .arrow { fill: var(--faint); }
+svg.machine .arrow-taken { fill: var(--accent); }
+svg.machine .label { fill: var(--faint); font-size: 11px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+svg.machine .label.on { fill: var(--fg); }
+svg.machine .edge.taken .label.on { fill: var(--accent); font-weight: 700; }
+svg.machine .edge:hover path { stroke: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin: 4px 0; }
+.legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.legend .entry { fill: var(--fg); }
+.legend .box { display: inline-block; width: 16px; height: 11px; border: 1.2px solid var(--faint); border-radius: 3px; }
+.legend .box.term { outline: 1px solid var(--faint); outline-offset: 2px; }
+.legend .box.occ { border: 2px solid var(--accent); }
+
 @media (max-width: 760px) {
   .wide { display: none; }
   .grid td, .grid td.wide, .grid td:last-child { white-space: normal; overflow-wrap: break-word; }
