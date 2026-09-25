@@ -16,7 +16,7 @@
   {{with .Snap.Tracker}}<span class="meter">tasks {{len .Tasks}}:{{range counts .}}{{if or (eq .Status "in-progress") (eq .Status "in-review") (eq .Status "blocked") (eq .Status "todo")}} <span class="st st-{{.Status}}">{{.Status}} {{.Count}}</span>{{end}}{{end}}</span>{{end}}
   {{if .Red}}<span class="meter red">● something is red</span>{{end}}
   <span class="spacer"></span>
-  <span class="faint">read only · every {{.Refresh}}s · {{.Now.Format "15:04:05"}}</span>
+  <span class="faint">panes read only · every {{.Refresh}}s · {{.Now.Format "15:04:05"}}</span>
 </header>
 <nav class="tabs" aria-label="panes">
   <a href="/tasks" class="tab{{if eq .Tab "tasks"}} on{{end}}"><b>tasks</b>
@@ -27,12 +27,14 @@
     <small>{{with .Pod.Status}}{{if .Up}}<span class="ok">●</span>{{else}}<span class="warn">○</span>{{end}} {{.Summary}}{{else}}{{orDash .Pod.Note}}{{end}}</small></a>
   <a href="/reactor" class="tab{{if eq .Tab "reactor"}} on{{end}}"><b>reactor</b>
     <small>{{with .Reactor.Status}}{{len $.Reactor.Events}} events/1h · {{len .Rules}} rules{{if .Problems}} · <span class="warn">⚠ {{.Problems}}</span>{{end}}{{else}}{{orDash .Reactor.Note}}{{end}}{{with failedN .Reactor}} · <span class="red">✗ {{.}} failed</span>{{end}}</small></a>
+  <a href="/map/" class="tab"><b>map</b>
+    <small>{{with .Snap.MapPath}}edit {{base .}}{{else}}no map{{end}}{{with .Snap.Owners.Note}} · <span class="warn">⚠ {{.}}</span>{{end}}</small></a>
 </nav>
 <main>
 {{template "pane" .}}
 </main>
 </div>
-<footer class="faint">Nothing here writes: every change to a task, a flow, the pod or the reactor is made at the shell with that tool's own command. <a href="/api/state">/api/state</a> is this reading as JSON.</footer>
+<footer class="faint">The panes write nothing: every change to a task, a flow, the pod or the reactor is made at the shell with that tool's own command; the map editor writes the map. <a href="/api/state">/api/state</a> is this reading as JSON.</footer>
 </body>
 </html>{{end}}
 

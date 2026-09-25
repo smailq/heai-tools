@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -33,7 +34,8 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
   heai-operator                  the screen
   heai-operator --once           the screen, once, to stdout, then exit (every task; --active for the working set)
   heai-operator --json           the tracker, the flows, the pod and the reactor as the screen read them, then exit
-  heai-operator --serve <addr>   the screen as a read-only web page, one tab per pane, e.g. --serve 127.0.0.1:8080
+  heai-operator --serve <addr>   the screen as a web page, one tab per pane, and the map editor at /map/;
+                                 e.g. --serve 127.0.0.1:8080
 
   --dir <dir>         the project directory: the map at its root, tasks/ and flow/ under it; or HEAI_DIR
   --tasks <dir>       the tracker; default $HEAI_DIR/tasks, else .heai/tasks, else tasks, or HEAI_TASKS
@@ -43,6 +45,8 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
   --poll <dur>        the clock for the panes that ask flow, pod and reactor (default 5s)
   --active            --once: only the active tasks - in-progress, in-review, blocked, todo
   --width <n>         --once: columns to render (default $COLUMNS, else 120)
+  --serve-host <name> --serve: a host name the map editor may be reached under, besides an address
+                      or localhost - the name a proxy or tailnet serves it as; comma-separated
 
 exit codes: 0 shown, and under --once/--json nothing red; 1 something is red - an invalid task file,
 a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that ended
@@ -68,6 +72,7 @@ func run(args []string) int {
 	active := fs.Bool("active", false, "")
 	width := fs.Int("width", 0, "")
 	serve := fs.String("serve", "", "")
+	serveHost := fs.String("serve-host", "", "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			// --help and -h are a request, not a mistake: the usage on stdout, exit 0.
@@ -122,7 +127,7 @@ func run(args []string) int {
 	}
 
 	if *serve != "" {
-		return runServer(opts, *serve)
+		return runServer(opts, *serve, strings.Split(*serveHost, ","))
 	}
 
 	m := ui.New(opts)
@@ -133,13 +138,15 @@ func run(args []string) int {
 	return 0
 }
 
-// runServer serves the panes over HTTP until interrupted. Every route is a read,
-// and it binds where it is told: there is no login, so an address other than
-// loopback shows the project to anyone who can reach it.
-func runServer(opts ui.Options, addr string) int {
+// runServer serves the panes and the map editor over HTTP until interrupted. Every
+// route but the editor's is a read, and the editor writes only the map. It binds
+// where it is told: there is no login, so an address other than loopback shows the
+// project, and lets anyone who can reach it edit the map.
+func runServer(opts ui.Options, addr string, hosts []string) int {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	srv := web.New(opts)
+	srv.AllowHosts(hosts...)
 	if err := srv.Run(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "heai-operator:", err)
 		return 2
@@ -150,7 +157,7 @@ func runServer(opts ui.Options, addr string) int {
 		return 2
 	}
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	fmt.Fprintf(os.Stderr, "heai-operator: serving http://%s (read only; ctrl-c to stop)\n", ln.Addr())
+	fmt.Fprintf(os.Stderr, "heai-operator: serving http://%s - the panes read only, the map editable at /map/ (ctrl-c to stop)\n", ln.Addr())
 	go func() {
 		<-ctx.Done()
 		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)

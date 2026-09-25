@@ -1,7 +1,8 @@
 // Package web is the screen in a browser: the same four panes the terminal
 // shows - tasks, flows, pod, reactor - one tab each, read on the same clocks
 // from the same tools, and as read-only as the terminal: every route is a GET,
-// and every command it runs is a query.
+// and every command it runs is a query. The fifth tab, the map editor, is the
+// exception: it writes the architecture map, and nothing else (mapeditor.go).
 package web
 
 import (
@@ -30,6 +31,9 @@ var templateFS embed.FS
 //go:embed static
 var staticFS embed.FS
 
+//go:embed map
+var mapFS embed.FS
+
 // State is one reading of every pane: the tracker with its owners, and the three sibling polls.
 type State struct {
 	Snap    ui.Snapshot
@@ -50,6 +54,10 @@ type Server struct {
 
 	mu    sync.RWMutex
 	state State
+	// saveMu makes the map editor's check-then-write one step.
+	saveMu sync.Mutex
+	// hosts are the names, beyond an address or localhost, a writing request may arrive under.
+	hosts map[string]bool
 	// trace is how a flow's timeline is read for its page; tests replace it.
 	trace func(mapPath, id string) (flows.Timeline, error)
 }
@@ -68,6 +76,19 @@ func New(opts ui.Options) *Server {
 	s := &Server{opts: opts, trace: flows.TraceJSON}
 	s.tmpl = parseTemplates(s)
 	return s
+}
+
+// AllowHosts names hosts the map editor may be reached under besides an IP address or
+// localhost - the name a proxy or a tailnet serves it as.
+func (s *Server) AllowHosts(names ...string) {
+	if s.hosts == nil {
+		s.hosts = map[string]bool{}
+	}
+	for _, n := range names {
+		if n = strings.ToLower(strings.TrimSpace(n)); n != "" {
+			s.hosts[n] = true
+		}
+	}
 }
 
 // Seed replaces the reading, for tests.
@@ -176,21 +197,36 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /reactor", s.reactorList)
 	mux.HandleFunc("GET /reactor/{id}", s.event)
 	mux.HandleFunc("GET /api/state", s.api)
+	s.mapAPI(mux)
 	static, _ := fs.Sub(staticFS, "static")
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServerFS(static)))
-	return readOnly(mux)
+	return s.guard(mux)
 }
 
-// readOnly refuses anything but a read, and keeps the page's scripts and styles to its own origin.
-func readOnly(next http.Handler) http.Handler {
+// guard refuses anything but a read outside the map editor's API, admits the editor's
+// own requests only from its own page, and keeps every page's scripts and styles to
+// its own origin.
+func (s *Server) guard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		read := r.Method == http.MethodGet || r.Method == http.MethodHead
+		if !read && !strings.HasPrefix(r.URL.Path, "/map/api/") {
 			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "read only: every change is made at the shell with the tool's own command", http.StatusMethodNotAllowed)
 			return
 		}
+		if strings.HasPrefix(r.URL.Path, "/map/api/") {
+			if err := apiGuard(r, s.hosts); err != nil {
+				sendError(w, http.StatusForbidden, err.Error())
+				return
+			}
+		}
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'self'; frame-ancestors 'none'")
+		csp := "default-src 'self'; frame-ancestors 'none'"
+		if strings.HasPrefix(r.URL.Path, "/map/") {
+			// The graph library injects one stylesheet for its container; scripts stay our own.
+			csp += "; style-src 'self' 'unsafe-inline'"
+		}
+		h.Set("Content-Security-Policy", csp)
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")

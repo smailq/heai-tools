@@ -12,7 +12,7 @@ Each tool does one job:
 - [**`flow`**](tools/flow) runs a multi-stage process as a state machine that refuses illegal moves and journals every move.
 - [**`reactor`**](tools/reactor) reacts to events such as webhooks, file changes, git commits and more.
 - [**`pod`**](tools/pod) runs jobs dropped into a work queue, in a container, and leaves each job's output and result beside it.
-- [**`operator`**](tools/operator) displays the status and state of heai-tools in an `htop`-like text UI, or as a read-only web page with `--serve`.
+- [**`operator`**](tools/operator) displays the status and state of heai-tools in an `htop`-like text UI, or as a web page with `--serve` that also edits the architecture map.
 
 ## How the tools work together
 

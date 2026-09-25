@@ -48,6 +48,16 @@ jobs:
         with:
           go-version-file: tools/operator/go.mod
           cache-dependency-path: tools/operator/go.sum
+      # The map editor's tests validate through architect: run it from its sources,
+      # as the sample project does, so they run here rather than skip.
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: tools/architect/package-lock.json
+      - run: npm ci --ignore-scripts
+        working-directory: tools/architect
+      - run: echo "$GITHUB_WORKSPACE/sample_project/bin" >> "$GITHUB_PATH"
       - run: go vet ./...
       - run: go test ./...
       - run: go build -trimpath -o heai-operator ./cmd/heai-operator

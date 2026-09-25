@@ -8,7 +8,7 @@ The tool's directory name is the tool's name; the command it installs is `heai-<
 | `architect`, `flow`, `pod`, `reactor`, `tasks` | `tasks-v0.2.0` | the npm tarball on the release | `@heai-tools/<tool>` on npm, once enabled |
 | `operator` | `operator-v0.1.0` | `heai-operator` for linux and darwin, amd64 and arm64, with checksums | none; `go install` also works |
 
-`map-editor` is not released.
+`map-editor` is not released on its own; its page ships inside `heai-operator`, served at `/map/` by `--serve`.
 
 ## Cutting a release
 
