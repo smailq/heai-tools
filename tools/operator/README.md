@@ -189,6 +189,28 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 Colour is the sixteen ANSI colours only, so the screen follows the terminal's theme: moving green, waiting yellow, gone wrong red, over dim, ready to move bold, and red for what is wrong.
 The tracker's statuses and pod's job states are fixed vocabularies, so they are coloured; a flow's state is whatever its definition names, so it is not - colouring a project's own states is a later question.
 
+## The web page
+
+`heai-operator --serve 127.0.0.1:8080` is the same screen in a browser: one tab per pane - **tasks**, **flows**, **pod**, **reactor** - each carrying its one-line summary in the tab bar, so the three panes that are not open still show their counts and their `⚠` and `●`, as the one-line panes do on the terminal.
+
+| route | what it shows |
+| --- | --- |
+| `/tasks` | the tasks table with every column and the blocker notes; `?active=1` is `b`, `?sort=age\|slug\|territory` is `S` |
+| `/tasks/<slug>` | the task pane: frontmatter, territories with their owners, the blocker and where it stands, the file, the body |
+| `/flows` | the stuck flows with where their waits stand, every flow flow lists, and the definitions with their states |
+| `/flows/<id>` | the flow pane: its record, its links and waits, and its timeline from `heai-flow trace <id> --json` |
+| `/pod` | the container's line and every workspace, the clone dimmed |
+| `/pod/<id>` | a workspace: its tokens, agents and panes |
+| `/reactor` | the sources, the rules and the last hour's events with what each rule did |
+| `/reactor/<id>` | an event: its fields, every action with its command, result and log, and the payload |
+| `/api/state` | what `--json` prints, from the last reading |
+
+It reads on the same clocks as the screen - the tracker on `--interval`, flow, pod and reactor on `--poll` - into one reading shared by every browser, so ten open tabs cost the tools nothing more than one terminal does. A page reads that reading again on the tracker's interval and swaps itself in place, keeping the filter and the scroll; without JavaScript it reloads.
+The filter box, `/` to reach it and `1` to `4` for the tabs behave as they do on the screen.
+A flow's timeline is the one call made per page view, and only for an id flow listed in its last answer.
+
+It is as read-only as the screen: every route is a `GET`, anything else is `405`, and the page loads no script or style from anywhere but itself. There is no login, so bind it to loopback - an address anyone can reach shows them the project's tasks, branches and event payloads.
+
 ## Where the numbers come from
 
 Everything on the screen is read fresh on its pane's clock; the process keeps only the last reading.
@@ -227,6 +249,7 @@ heai-operator                  the screen
 heai-operator --once                the screen, once, to stdout, then exit
 heai-operator --once --active       only the active tasks, not the backlog and the closed
 heai-operator --json                the tracker, the flows, the pod and the reactor as the screen read them, with owners, counts and whether anything is red
+heai-operator --serve 127.0.0.1:8080  the screen as a read-only web page, one tab per pane, until ctrl-c
 heai-operator --interval 5s         the tracker's refresh interval (default 2s)
 heai-operator --poll 10s            the clock for the panes that ask flow, pod and reactor (default 5s)
 heai-operator --width 100           --once: columns to render (default $COLUMNS, else 120)
@@ -241,7 +264,7 @@ heai-operator --width 100           --once: columns to render (default $COLUMNS,
 | --- | --- |
 | `0` | shown; under `--once` or `--json`, nothing on the screen is red |
 | `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or has ended, or a reactor rule that ran and failed on an event in the last hour |
-| `2` | no tracker at the resolved directory, or bad usage |
+| `2` | no tracker at the resolved directory, bad usage, or `--serve` could not listen |
 
 The interactive screen exits `0` on `q` whatever it shows; the split is for the batch modes, and it is the same `0` yes, `1` no, `2` could not ask as every other tool here.
 
@@ -256,6 +279,7 @@ internal/flows/           heai-flow definitions --json, list --json, stuck --jso
 internal/pod/             heai-pod status --json and heai-pod list --json; the fixtures are testdata/pod/ at the root
 internal/reactor/         heai-reactor status --json and heai-reactor events --json; the fixtures are testdata/reactor/ at the root
 internal/ui/              the Bubble Tea model, the screen, and golden renderings in testdata/golden/
+internal/web/             --serve: the poller, the routes, and the embedded templates and static files
 testdata/                 the sibling tools' recorded output, the format contracts this tool reads; record.sh makes the pod and reactor ones
 ```
 
@@ -265,7 +289,7 @@ go test ./internal/ui -update      # rewrite the goldens after a deliberate chan
 go vet ./...                       # the typecheck
 ```
 
-Built on [Bubble Tea v2](https://github.com/charmbracelet/bubbletea) and [Lip Gloss v2](https://github.com/charmbracelet/lipgloss), with `yaml.v3` for the tracker's `tasks.yaml`; nothing else.
+Built on [Bubble Tea v2](https://github.com/charmbracelet/bubbletea) and [Lip Gloss v2](https://github.com/charmbracelet/lipgloss), with `yaml.v3` for the tracker's `tasks.yaml`; the web page is the standard library's `net/http` and `html/template`; nothing else.
 
 ## What is not here yet
 

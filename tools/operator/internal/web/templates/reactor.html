@@ -1,0 +1,39 @@
+{{define "pane"}}{{$st := .State}}
+<div class="panehead">
+  <h1>reactor <span class="faint">── {{with .Reactor.Status}}{{len .Sources}} sources{{if .Problems}} <span class="warn">⚠ {{.Problems}}</span>{{end}} · {{len .Rules}} rules · {{end}}{{len .Reactor.Events}} events in the last hour{{with failedN .Reactor}} · <span class="red">{{.}} failed</span>{{end}}</span></h1>
+  <div class="controls"><input type="search" class="filter" placeholder="filter" aria-label="filter rows"> {{template "age" (printf "reactor %s" (ago .Reactor.At))}}</div>
+</div>
+{{with .Reactor.Note}}<p class="{{if $st.Reactor.Failed}}warn{{else}}faint{{end}}">{{if $st.Reactor.Failed}}⚠ {{end}}{{.}}</p>{{end}}
+{{with .Reactor.Status}}
+<h2>sources</h2>
+<div class="scroll"><table class="grid">
+<thead><tr><th>source</th><th>type</th><th>cadence</th><th>last</th><th>/1h</th><th class="wide">cursor</th></tr></thead>
+<tbody>{{range .Sources}}
+<tr><td>{{if .Problem}}<span class="warn">○</span>{{else}}<span class="ok">●</span>{{end}} {{.Name}}</td><td>{{.Type}}</td><td>{{.Cadence}}</td>
+<td>{{with .LastEvent}}{{clock .}}{{else}}-{{end}}</td><td>{{.LastHour}}</td>
+<td class="wide">{{with .Problem}}<span class="warn">⚠ {{.}}</span>{{else}}{{.Cursor}}{{end}}</td></tr>
+{{end}}</tbody>
+</table></div>
+<h2>rules</h2>
+<div class="scroll"><table class="grid">
+<thead><tr><th>rule</th><th class="wide">on</th><th>run</th><th>last</th><th>result</th></tr></thead>
+<tbody>{{range .Rules}}
+<tr><td>{{.Name}}</td><td class="wide">{{.On}}</td><td><code>{{.Run}}</code></td>
+<td>{{with .LastAction}}{{clock .At}}{{else}}-{{end}}</td>
+<td class="{{with .LastAction}}{{if .Failed}}red{{end}}{{else}}faint{{end}}">{{ruleResult .}}{{with .Pending}} <span class="faint">· debounce until {{clock .Until}}</span>{{end}}</td></tr>
+{{end}}</tbody>
+</table></div>
+{{end}}
+<h2>events <span class="faint">newest first · heai-reactor events --since 1h</span></h2>
+<div class="scroll"><table class="grid">
+<thead><tr><th>at</th><th>source</th><th>kind</th><th class="wide">key</th><th>rule → result</th></tr></thead>
+<tbody>
+{{range .Reactor.Events}}
+<tr><td><a href="/reactor/{{.ID}}">{{clock .At}}</a></td><td>{{.Source}}</td><td>{{.Kind}}</td><td class="wide">{{.Key}}</td>
+<td>{{range $i, $a := .Actions}}{{if $i}}, {{end}}{{$a.Rule}} → <span class="{{if $a.Failed}}red{{else if $a.Limited}}warn{{else}}ok{{end}}">{{$a.Result}}</span>{{else}}<span class="faint">-</span>{{end}}</td></tr>
+{{else}}
+<tr><td colspan="5" class="faint">{{if .Reactor.At.IsZero}}asking reactor…{{else}}no events in the last hour{{end}}</td></tr>
+{{end}}
+</tbody>
+</table></div>
+{{end}}

@@ -1,0 +1,17 @@
+{{define "pane"}}{{$st := .State}}{{$t := .Data}}{{$b := blocker $st $t}}
+<p class="crumbs"><a href="/tasks">← tasks</a></p>
+<h1>{{$t.Slug}} {{if $t.Valid}}<span class="st st-{{$t.Status}}">{{$t.Status}}</span>{{else}}<span class="red">invalid</span>{{end}}</h1>
+{{with $t.Problems}}<ul class="red">{{range .}}<li>{{.}}</li>{{end}}</ul>{{end}}
+<table class="kv">
+<tr><th>title</th><td>{{$t.Title}}</td></tr>
+<tr><th>status</th><td>{{$t.Status}}</td></tr>
+<tr><th>priority</th><td>{{orDash $t.Priority}}</td></tr>
+<tr><th>territory</th><td>{{range $t.Territories}}<div>{{.}} → {{owner $st .}}</div>{{else}}(untriaged){{end}}</td></tr>
+{{if $t.Blocker}}<tr><th>blocked by</th><td><a href="/tasks/{{$t.Blocker}}">{{$t.Blocker}}</a> <span class="{{if deadBlocker $b}}red{{else}}faint{{end}}">({{$b}})</span></td></tr>{{end}}
+<tr><th>created</th><td>{{orDash $t.CreatedAt}}</td></tr>
+<tr><th>modified</th><td>{{orDash $t.ModifiedAt}} <span class="faint">{{days $t.ModifiedAt}}</span></td></tr>
+<tr><th>file</th><td><code>{{with $st.Snap.Tracker}}{{.Dir}}{{end}}/items/{{$t.Slug}}.md</code></td></tr>
+</table>
+<h2>body</h2>
+<pre class="body">{{$t.Body}}</pre>
+{{end}}

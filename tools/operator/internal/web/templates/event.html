@@ -1,0 +1,17 @@
+{{define "pane"}}{{$e := .Data}}
+<p class="crumbs"><a href="/reactor">← reactor</a></p>
+<h1>{{$e.Source}} · {{$e.Kind}} <span class="faint">{{clock $e.At}}</span></h1>
+<table class="kv">
+<tr><th>id</th><td><code>{{$e.ID}}</code></td></tr>
+<tr><th>source</th><td>{{$e.Source}}</td></tr>
+<tr><th>kind</th><td>{{$e.Kind}}</td></tr>
+<tr><th>key</th><td><code>{{$e.Key}}</code></td></tr>
+<tr><th>at</th><td>{{$e.At}}</td></tr>
+</table>
+<h2>actions</h2>
+<div class="scroll"><table class="grid"><thead><tr><th>at</th><th>rule</th><th>action</th><th>result</th><th class="wide">command</th><th class="wide">log</th></tr></thead><tbody>
+{{range $e.Actions}}<tr><td>{{clock .At}}</td><td>{{.Rule}}</td><td>{{.Action}}</td><td class="{{if .Failed}}red{{else if .Limited}}warn{{else}}ok{{end}}">{{.Result}}</td><td class="wide"><code>{{orDash .Command}}</code></td><td class="wide"><code>{{orDash .Log}}</code></td></tr>{{else}}<tr><td colspan="6" class="faint">no rule acted on it</td></tr>{{end}}
+</tbody></table></div>
+<h2>payload</h2>
+<pre class="body">{{pretty $e.Payload}}</pre>
+{{end}}

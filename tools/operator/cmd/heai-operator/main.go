@@ -4,12 +4,17 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -20,6 +25,7 @@ import (
 	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
 	"github.com/smailq/heai-tools/tools/operator/internal/tracker"
 	"github.com/smailq/heai-tools/tools/operator/internal/ui"
+	"github.com/smailq/heai-tools/tools/operator/internal/web"
 )
 
 const usage = `heai-operator - what the heai tools are doing, on one screen
@@ -27,6 +33,7 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
   heai-operator                  the screen
   heai-operator --once           the screen, once, to stdout, then exit (every task; --active for the working set)
   heai-operator --json           the tracker, the flows, the pod and the reactor as the screen read them, then exit
+  heai-operator --serve <addr>   the screen as a read-only web page, one tab per pane, e.g. --serve 127.0.0.1:8080
 
   --dir <dir>         the project directory: the map at its root, tasks/ and flow/ under it; or HEAI_DIR
   --tasks <dir>       the tracker; default $HEAI_DIR/tasks, else .heai/tasks, else tasks, or HEAI_TASKS
@@ -60,6 +67,7 @@ func run(args []string) int {
 	asJSON := fs.Bool("json", false, "")
 	active := fs.Bool("active", false, "")
 	width := fs.Int("width", 0, "")
+	serve := fs.String("serve", "", "")
 	if err := fs.Parse(args); err != nil {
 		if errors.Is(err, flag.ErrHelp) {
 			// --help and -h are a request, not a mistake: the usage on stdout, exit 0.
@@ -113,8 +121,43 @@ func run(args []string) int {
 		return printOnce(opts, snap, fl, po, re, *active, *width)
 	}
 
+	if *serve != "" {
+		return runServer(opts, *serve)
+	}
+
 	m := ui.New(opts)
 	if _, err := tea.NewProgram(m).Run(); err != nil {
+		fmt.Fprintln(os.Stderr, "heai-operator:", err)
+		return 2
+	}
+	return 0
+}
+
+// runServer serves the panes over HTTP until interrupted. Every route is a read,
+// and it binds where it is told: there is no login, so an address other than
+// loopback shows the project to anyone who can reach it.
+func runServer(opts ui.Options, addr string) int {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	srv := web.New(opts)
+	if err := srv.Run(ctx); err != nil {
+		fmt.Fprintln(os.Stderr, "heai-operator:", err)
+		return 2
+	}
+	ln, err := net.Listen("tcp", addr)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "heai-operator:", err)
+		return 2
+	}
+	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	fmt.Fprintf(os.Stderr, "heai-operator: serving http://%s (read only; ctrl-c to stop)\n", ln.Addr())
+	go func() {
+		<-ctx.Done()
+		shut, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = hs.Shutdown(shut)
+	}()
+	if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		fmt.Fprintln(os.Stderr, "heai-operator:", err)
 		return 2
 	}
