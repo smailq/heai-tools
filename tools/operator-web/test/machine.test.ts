@@ -53,10 +53,10 @@ before(async () => {
 })
 after(() => s.close())
 
-test('the machines tab: the busiest definition first, a state narrows the flows, a flow page shows its way', async () => {
-  const first = await get(s.url + '/machines')
-  assert.ok(first.body.includes('href="/machines/session" class="on"'))
-  const blocked = await get(s.url + '/machines/session?state=blocked')
+test('the machines, under the flows tab: the busiest definition first, a state narrows the flows, a flow page shows its way', async () => {
+  const first = await get(s.url + '/flows/machines')
+  assert.ok(first.body.includes('href="/flows/machines/session" class="on"'))
+  const blocked = await get(s.url + '/flows/machines/session?state=blocked')
   assert.ok(blocked.body.includes('20260906-024801-session-77f0'))
   assert.ok(!blocked.body.includes('20260906-031244-session-9a1c'), 'a running flow is not blocked')
   const flow = await get(s.url + '/flows/20260906-024801-session-77f0')

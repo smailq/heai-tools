@@ -1,10 +1,4 @@
-/* The terminal's palette, for a browser: moving green, waiting yellow, gone wrong red, over dim, ready to move bold. */
-:root {
-  /* One theme, dark: the page is watched all day beside a terminal. */
-  --bg: #15171a; --fg: #d8dadc; --faint: #7f8489; --line: #2b2f34; --head: #1d2024; --hover: #1f2730;
-  --accent: #6cb2ff; --green: #5cc27a; --yellow: #e0b341; --red: #ff6b6b; --cyan: #4fc3d9;
-  color-scheme: dark;
-}
+/* The pages below the tabs; the tokens and the tabs themselves are nav.css. */
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 a { color: var(--accent); text-decoration: none; }
@@ -12,15 +6,11 @@ a:hover { text-decoration: underline; }
 code { font: inherit; }
 h1 { font-size: 16px; margin: 0; font-weight: 700; }
 h2 { font-size: 13px; margin: 20px 0 6px; font-weight: 700; text-transform: lowercase; }
-.top { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 8px 16px; background: var(--head); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 700; }
-.project { color: var(--accent); }
-.spacer { flex: 1; }
-.tabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); padding: 0 8px; }
-.tab { display: flex; flex-direction: column; min-width: 0; padding: 8px 14px 6px; border-bottom: 2px solid transparent; color: var(--fg); white-space: nowrap; }
-.tab:hover { text-decoration: none; background: var(--hover); }
-.tab small { color: var(--faint); font-size: 12px; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
-.tab.on { border-bottom-color: var(--accent); }
+/* A tab's own tabs: the flows, and the machines they run on. */
+.subtabs { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+.subtabs a { padding: 4px 12px 6px; color: var(--faint); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subtabs a:hover { color: var(--fg); text-decoration: none; }
+.subtabs a.on { color: var(--fg); font-weight: 700; border-bottom-color: var(--accent); }
 main { padding: 12px 16px 24px; }
 .panehead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
@@ -58,7 +48,6 @@ footer { padding: 12px 16px 20px; border-top: 1px solid var(--line); font-size: 
 .ag-blocked, .ag-waiting { color: var(--yellow); }
 .ag-failed, .ag-lost { color: var(--red); }
 .ag-idle, .ag-unknown, .ag-- { color: var(--faint); }
-.meter .st { margin-left: 4px; }
 /* The state-machine drawing: states neutral, as a flow's state names are the project's own. */
 .machine-wrap { margin: 6px 0 10px; padding: 4px 0; }
 svg.machine { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -92,5 +81,4 @@ svg.machine .edge:hover path { stroke: var(--fg); }
 @media (max-width: 760px) {
   .wide { display: none; }
   .grid td, .grid td.wide, .grid td:last-child { white-space: normal; overflow-wrap: break-word; }
-  .tab small { display: none; }
 }

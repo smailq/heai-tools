@@ -42,9 +42,9 @@ async function editor(): Promise<{ url: string; path: string; close: () => Promi
 test('the editor page and the file', async () => {
   const e = await editor()
   try {
-    assert.equal((await get(e.url + '/map')).status, 301)
-    assert.equal((await get(e.url + '/map/')).status, 200)
-    const f = await send('GET', e.url + '/map/api/file', undefined)
+    assert.equal((await get(e.url + '/architect')).status, 301)
+    assert.equal((await get(e.url + '/architect/')).status, 200)
+    const f = await send('GET', e.url + '/architect/api/file', undefined)
     assert.equal(f.status, 200)
     assert.equal(f.json['path'], e.path)
     assert.equal(f.json['exists'], true)
@@ -58,21 +58,21 @@ test("the editor's API answers only its own page", async () => {
   const e = await editor()
   try {
     // A rebound DNS name reaching this server is refused, even for a read.
-    assert.equal(await underHost(e.url + '/map/api/file', 'evil.example'), 403)
-    assert.equal(await underHost(e.url + '/map/api/file', 'evil.example:8790'), 403)
-    assert.equal(await underHost(e.url + '/map/api/file', '127.0.0.1:8790'), 200)
-    assert.equal((await send('PUT', e.url + '/map/api/file', { yaml: 'x' }, { origin: 'http://evil.example' })).status, 403)
-    const form = await fetch(e.url + '/map/api/file', { method: 'PUT', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'yaml=x' })
+    assert.equal(await underHost(e.url + '/architect/api/file', 'evil.example'), 403)
+    assert.equal(await underHost(e.url + '/architect/api/file', 'evil.example:8790'), 403)
+    assert.equal(await underHost(e.url + '/architect/api/file', '127.0.0.1:8790'), 200)
+    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: 'x' }, { origin: 'http://evil.example' })).status, 403)
+    const form = await fetch(e.url + '/architect/api/file', { method: 'PUT', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: 'yaml=x' })
     assert.equal(form.status, 403)
-    assert.equal((await send('POST', e.url + '/map/', {})).status, 405, 'the page itself is read only')
+    assert.equal((await send('POST', e.url + '/architect/', {})).status, 405, 'the page itself is read only')
   } finally {
     await e.close()
   }
   // A name given with --allow-host is this machine too.
   const s = await serve(emptyReading(), { allowHosts: ['box.tailnet'] })
   try {
-    assert.notEqual(await underHost(s.url + '/map/api/file', 'box.tailnet'), 403)
-    assert.equal(await underHost(s.url + '/map/api/file', 'other.tailnet'), 403)
+    assert.notEqual(await underHost(s.url + '/architect/api/file', 'box.tailnet'), 403)
+    assert.equal(await underHost(s.url + '/architect/api/file', 'other.tailnet'), 403)
   } finally {
     await s.close()
   }
@@ -82,7 +82,7 @@ test("serialize takes its comments from the page's base, not the file on disk", 
   const e = await editor()
   try {
     writeFileSync(e.path, YAML + '# edited elsewhere\n')
-    const r = await send('POST', e.url + '/map/api/serialize', { map: MAP, base: YAML })
+    const r = await send('POST', e.url + '/architect/api/serialize', { map: MAP, base: YAML })
     assert.equal(r.json['yaml'], YAML)
   } finally {
     await e.close()
@@ -94,16 +94,16 @@ const architect = architectOnPath()
 test('save: only a valid map, only over the version loaded unless forced, keeping the mode', { skip: !architect && 'architect has no dependencies installed' }, async () => {
   const e = await editor()
   try {
-    const base = (await send('GET', e.url + '/map/api/file', undefined)).json['version'] as string
+    const base = (await send('GET', e.url + '/architect/api/file', undefined)).json['version'] as string
     const edited = YAML.replace('owner: api-owner', 'owner: core-owner')
-    assert.equal((await send('PUT', e.url + '/map/api/file', { yaml: 'version: 1\nactors: 3\n', base })).status, 422)
-    const saved = await send('PUT', e.url + '/map/api/file', { yaml: edited, base })
+    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: 'version: 1\nactors: 3\n', base })).status, 422)
+    const saved = await send('PUT', e.url + '/architect/api/file', { yaml: edited, base })
     assert.equal(saved.status, 200)
     assert.notEqual(saved.json['version'], base)
     assert.equal(readFileSync(e.path, 'utf8'), edited)
     assert.equal(statSync(e.path).mode & 0o777, 0o640)
-    assert.equal((await send('PUT', e.url + '/map/api/file', { yaml: YAML, base })).status, 409, 'a stale save is a conflict')
-    assert.equal((await send('PUT', e.url + '/map/api/file', { yaml: YAML, base, force: true })).status, 200)
+    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: YAML, base })).status, 409, 'a stale save is a conflict')
+    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: YAML, base, force: true })).status, 200)
     assert.equal(readFileSync(e.path, 'utf8'), YAML)
   } finally {
     await e.close()
@@ -113,10 +113,10 @@ test('save: only a valid map, only over the version loaded unless forced, keepin
 test('validate: a map object or its text, answered by architect', { skip: !architect && 'architect has no dependencies installed' }, async () => {
   const e = await editor()
   try {
-    const ok = await send('POST', e.url + '/map/api/validate', { map: MAP })
+    const ok = await send('POST', e.url + '/architect/api/validate', { map: MAP })
     assert.equal(ok.json['valid'], true)
     assert.ok(ok.json['map'])
-    const bad = await send('POST', e.url + '/map/api/validate', { yaml: 'version: 1\nterritories: {x: {owner: nobody}}\n' })
+    const bad = await send('POST', e.url + '/architect/api/validate', { yaml: 'version: 1\nterritories: {x: {owner: nobody}}\n' })
     assert.equal(bad.json['valid'], false)
     assert.ok((bad.json['errors'] as string[]).length > 0)
   } finally {
@@ -128,8 +128,8 @@ test('a project without a map gets one: a save over nothing creates the file', {
   const e = await editor()
   try {
     unlinkSync(e.path)
-    assert.equal((await send('GET', e.url + '/map/api/file', undefined)).json['exists'], false)
-    const r = await send('PUT', e.url + '/map/api/file', { yaml: YAML, base: '' })
+    assert.equal((await send('GET', e.url + '/architect/api/file', undefined)).json['exists'], false)
+    const r = await send('PUT', e.url + '/architect/api/file', { yaml: YAML, base: '' })
     assert.equal(r.status, 200)
     assert.equal(readFileSync(e.path, 'utf8'), YAML)
   } finally {

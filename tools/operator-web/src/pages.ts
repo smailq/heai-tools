@@ -12,7 +12,7 @@ import { actionFailed, actionResult, cadence, command, failedActions, limited, l
 import type { Reading } from './reader.ts'
 import { blockerState, counts, STATUSES, trackerRed, valid, WORKING_SET, type Task } from './tracker.ts'
 
-export type Tab = 'tasks' | 'flows' | 'machines' | 'pod' | 'reactor'
+export type Tab = 'architect' | 'tasks' | 'flows' | 'pod' | 'reactor'
 
 export interface Ctx {
   r: Reading
@@ -32,16 +32,52 @@ const noteLine = (note: string, failed: boolean, at?: number): Html | null =>
 const links = (l: Record<string, string>): Html[] => Object.entries(l).map(([k, v]) => html`<span class="tag">${k} ${v}</span> `)
 const enc = encodeURIComponent
 
-export function layout(ctx: Ctx, tab: Tab, title: string, pane: Html): string {
+/** The primary tabs, in order; the number key for each is its place in this list. */
+export const TABS: Tab[] = ['architect', 'tasks', 'flows', 'pod', 'reactor']
+
+/**
+ * The header and the primary tabs, shared by every page - the map editor's too, which is why
+ * its classes are its own (opnav, optab…) and not the page's: the editor styles header, .tab
+ * and .st-* for its own controls. Each tab carries its pane's one-line summary.
+ */
+export function nav(ctx: Ctx, tab: Tab): Html {
   const { r, now } = ctx
   const project = basename(r.project || '.')
   const t = r.tracker
   const active = t ? Object.entries(counts(t)).filter(([s]) => WORKING_SET.has(s)).sort((a, b) => STATUSES.indexOf(a[0]) - STATUSES.indexOf(b[0])) : []
-  const tabLink = (name: Tab | 'map', href: string, sub: Html | string): Html =>
-    html`<a href="${href}" class="tab${name === tab ? ' on' : ''}"><b>${name}</b><small>${sub}</small></a>`
   const fl = r.flows
   const st = r.reactor.status
   const failedN = failedActions(r.reactor).length
+  const territories = Object.keys(r.owners.owners).length
+  const sub: Record<Tab, Html | string> = {
+    architect: html`${r.map ? basename(r.map) : 'no map'}${territories ? ` · ${territories} territories` : ''}${r.owners.note ? html` · <span class="warn">⚠ ${r.owners.note}</span>` : null}`,
+    tasks: t ? `${t.tasks.length} · changed ${ago(t.changed, now)}` : html`<span class="red">⚠ ${r.trackerError}</span>`,
+    flows: fl.flows.length || fl.definitions.length
+      ? html`${openCount(fl.flows)} open${fl.stuck.length ? html` · <span class="warn">⚠ ${fl.stuck.length} stuck</span>` : null}${flowsRed(fl) ? html` <span class="red">●</span>` : null} · ${fl.definitions.length} machines`
+      : orDash(fl.note),
+    pod: r.pod.status ? html`${podUp(r.pod.status) ? html`<span class="ok">●</span>` : html`<span class="warn">○</span>`} ${podSummary(r.pod.status)}` : orDash(r.pod.note),
+    reactor: st
+      ? html`${r.reactor.events.length} events/1h · ${st.rules.length} rules${problems(st) ? html` · <span class="warn">⚠ ${problems(st)}</span>` : null}${failedN ? html` · <span class="red">✗ ${failedN} failed</span>` : null}`
+      : orDash(r.reactor.note)
+  }
+  const href: Record<Tab, string> = { architect: '/architect/', tasks: '/tasks', flows: '/flows', pod: '/pod', reactor: '/reactor' }
+  return html`<div class="opnav">
+<div class="optop">
+  <span class="brand">operator</span>
+  <span class="project">${project}</span>
+  ${t ? html`<span class="meter">tasks ${t.tasks.length}:${active.map(([s, n]) => html` <span class="st st-${s}">${s} ${n}</span>`)}</span>` : null}
+  ${isRed(r) ? html`<span class="meter red">● something is red</span>` : null}
+  <span class="spacer"></span>
+  <span class="faint">every ${ctx.refresh}s · ${hms(now)} UTC</span>
+</div>
+<nav class="optabs" aria-label="tabs">
+${TABS.map((name) => html`<a href="${href[name]}" class="optab${name === tab ? ' on' : ''}"><b>${name}</b><small>${sub[name]}</small></a>`)}
+</nav>
+</div>`
+}
+
+export function layout(ctx: Ctx, tab: Tab, title: string, pane: Html): string {
+  const project = basename(ctx.r.project || '.')
   return html`<!doctype html>
 <html lang="en">
 <head>
@@ -49,47 +85,36 @@ export function layout(ctx: Ctx, tab: Tab, title: string, pane: Html): string {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark">
 <title>${title} · ${project} · operator</title>
+<link rel="stylesheet" href="/static/nav.css">
 <link rel="stylesheet" href="/static/operator.css">
 <script src="/static/operator.js" defer></script>
 <noscript><meta http-equiv="refresh" content="${ctx.refresh}"></noscript>
 </head>
 <body data-refresh="${ctx.refresh}">
 <div id="live">
-<header class="top">
-  <span class="brand">operator</span>
-  <span class="project">${project}</span>
-  ${t ? html`<span class="meter">tasks ${t.tasks.length}:${active.map(([s, n]) => html` <span class="st st-${s}">${s} ${n}</span>`)}</span>` : null}
-  ${isRed(r) ? html`<span class="meter red">● something is red</span>` : null}
-  <span class="spacer"></span>
-  <span class="faint">panes read only · every ${ctx.refresh}s · ${hms(now)} UTC</span>
-</header>
-<nav class="tabs" aria-label="panes">
-  ${tabLink('tasks', '/tasks', t ? `${t.tasks.length} · changed ${ago(t.changed, now)}` : html`<span class="red">⚠ ${r.trackerError}</span>`)}
-  ${tabLink(
-    'flows',
-    '/flows',
-    fl.flows.length
-      ? html`${openCount(fl.flows)} open${fl.stuck.length ? html` · <span class="warn">⚠ ${fl.stuck.length} stuck</span>` : null}${flowsRed(fl) ? html` <span class="red">●</span>` : null}`
-      : orDash(fl.note)
-  )}
-  ${tabLink('machines', '/machines', fl.definitions.length ? `${fl.definitions.length} definitions` : orDash(fl.note))}
-  ${tabLink('pod', '/pod', r.pod.status ? html`${podUp(r.pod.status) ? html`<span class="ok">●</span>` : html`<span class="warn">○</span>`} ${podSummary(r.pod.status)}` : orDash(r.pod.note))}
-  ${tabLink(
-    'reactor',
-    '/reactor',
-    st
-      ? html`${r.reactor.events.length} events/1h · ${st.rules.length} rules${problems(st) ? html` · <span class="warn">⚠ ${problems(st)}</span>` : null}${failedN ? html` · <span class="red">✗ ${failedN} failed</span>` : null}`
-      : orDash(r.reactor.note)
-  )}
-  ${tabLink('map', '/map/', html`${r.map ? `edit ${basename(r.map)}` : 'no map'}${r.owners.note ? html` · <span class="warn">⚠ ${r.owners.note}</span>` : null}`)}
-</nav>
+${nav(ctx, tab)}
 <main>
 ${pane}
 </main>
 </div>
-<footer class="faint">The panes write nothing: every change to a task, a flow, the pod or the reactor is made at the shell with that tool's own command; the map editor writes the map. <a href="/api/state">/api/state</a> is this reading as JSON.</footer>
+<footer class="faint">The panes write nothing: every change to a task, a flow, the pod or the reactor is made at the shell with that tool's own command; only the architect tab writes, and only the map. <a href="/api/state">/api/state</a> is this reading as JSON.</footer>
 </body>
 </html>`.value
+}
+
+/**
+ * The map editor's page with the primary tabs above it. The editor's own markup is a
+ * file; the tabs are this reading, put where it says <!-- operator-nav -->.
+ */
+export function architectPage(ctx: Ctx, page: string): string {
+  return page
+    .replace('<!-- operator-nav -->', nav(ctx, 'architect').value)
+    .replace('<body>', `<body data-refresh="${ctx.refresh}">`)
+}
+
+/** The flows tab's own tabs: the flows themselves, and the machines they run on. */
+function flowsSubnav(on: 'list' | 'machines'): Html {
+  return html`<nav class="subtabs" aria-label="flows"><a href="/flows"${on === 'list' ? raw(' class="on"') : ''}>flows</a><a href="/flows/machines"${on === 'machines' ? raw(' class="on"') : ''}>machines</a></nav>`
 }
 
 // ── tasks ──
@@ -198,7 +223,7 @@ export function flowsPane(ctx: Ctx): Html {
 <td><a href="/flows/${enc(f.id)}" title="${f.id}">${shortId(f.id)}</a></td>
 <td>${f.definition}</td><td>${f.state}</td><td>${inState(f, now)}</td><td>${since(f.startedAt, now)}</td><td>${flowDuration(f)}</td>
 <td>${f.waitsOn.length || '-'}</td><td class="wide">${links(f.links)}</td></tr>`
-  return html`<div class="panehead">
+  return html`${flowsSubnav('list')}<div class="panehead">
   <h1>flows <span class="faint">── ${openCount(fl.flows)} open of ${fl.flows.length} · ${fl.stuck.length} stuck older than 1h</span></h1>
   <div class="controls">${filterBox} ${age(`flow ${ago(fl.at, now)}`)}</div>
 </div>
@@ -212,7 +237,7 @@ ${table(
 ${fl.definitions.length
   ? html`<h2>definitions</h2>${table(
       html`<th>name</th><th>states</th><th class="wide">path</th>`,
-      fl.definitions.map((d) => html`<tr><td><a href="/machines/${enc(d.name)}">${d.name}</a></td><td>${(d.states ?? []).join(' · ')}${d.problem ? html` <span class="red">⚠ ${d.problem}</span>` : null}</td><td class="wide"><code>${d.path}</code></td></tr>`)
+      fl.definitions.map((d) => html`<tr><td><a href="/flows/machines/${enc(d.name)}">${d.name}</a></td><td>${(d.states ?? []).join(' · ')}${d.problem ? html` <span class="red">⚠ ${d.problem}</span>` : null}</td><td class="wide"><code>${d.path}</code></td></tr>`)
     )}`
   : null}`
 }
@@ -232,7 +257,7 @@ export function flowPane(ctx: Ctx, f: Flow, tl: Timeline | null, traceErr: strin
       visited.add(l.to)
       if (l.from !== null && l.from !== l.to) taken.add(moveKey(l.from, l.to))
     }
-    graph = renderMachine({ def, current: f.state, taken, visited, href: (s) => `/machines/${enc(def.name)}?state=${enc(s)}#flows` })
+    graph = renderMachine({ def, current: f.state, taken, visited, href: (s) => `/flows/machines/${enc(def.name)}?state=${enc(s)}#flows` })
   }
   return html`<p class="crumbs"><a href="/flows">← flows</a></p>
 <h1>${f.definition} · ${f.state} <span class="faint">in state ${inState(f, now)}</span></h1>
@@ -254,7 +279,7 @@ ${f.waitsOn.map((id) => {
   return html`<tr><th>waits on</th><td><a href="/flows/${enc(id)}">${id}</a> ${w ? html`<span class="${w.terminal ? 'red' : 'faint'}">(${w.state})</span>` : html`<span class="red">(missing)</span>`}</td></tr>`
 })}
 </table>
-${graph ? html`<h2>where it stands <span class="faint">its definition, <a href="/machines/${enc(f.definition)}">${f.definition}</a>, with the moves it made</span></h2><div class="scroll machine-wrap">${raw(graph)}</div>` : null}
+${graph ? html`<h2>where it stands <span class="faint">its definition, <a href="/flows/machines/${enc(f.definition)}">${f.definition}</a>, with the moves it made</span></h2><div class="scroll machine-wrap">${raw(graph)}</div>` : null}
 <h2>trace <span class="faint">heai-flow trace ${f.id} --json</span></h2>
 ${traceErr ? html`<p class="warn">⚠ ${traceErr}</p>` : null}
 ${table(
@@ -286,18 +311,18 @@ export function machinesPane(ctx: Ctx, def: Definition | null, state: string): H
   const fl = r.flows
   const names = fl.definitions.map((d) => d.name)
   if (!def) {
-    return html`<div class="panehead"><h1>machines <span class="faint">── no definitions</span></h1></div>${noteLine(fl.note, fl.failed, fl.at)}<p class="faint">${fl.at ? 'no definitions' : 'asking flow…'}</p>`
+    return html`${flowsSubnav('machines')}<div class="panehead"><h1>machines <span class="faint">── no definitions</span></h1></div>${noteLine(fl.note, fl.failed, fl.at)}<p class="faint">${fl.at ? 'no definitions' : 'asking flow…'}</p>`
   }
   const mine = fl.flows.filter((f) => f.definition === def.name)
   const countsBy: Record<string, number> = {}
   for (const f of mine) countsBy[f.state] = (countsBy[f.state] ?? 0) + 1
-  const base = `/machines/${enc(def.name)}`
+  const base = `/flows/machines/${enc(def.name)}`
   const graph = renderMachine({ def, counts: countsBy, current: state || undefined, href: (s) => (s === state ? `${base}#flows` : `${base}?state=${enc(s)}#flows`) })
   const rows = mine.filter((f) => !state || f.state === state)
-  return html`<div class="panehead">
+  return html`${flowsSubnav('machines')}<div class="panehead">
   <h1>machines <span class="faint">── ${names.length} definitions · ${def.name}: ${(def.states ?? []).length} states, ${(def.transitions ?? []).length} transitions, ${openCount(mine)} open</span></h1>
   <div class="controls">
-    <span class="seg">${names.map((n) => html`<a href="/machines/${enc(n)}"${n === def.name ? raw(' class="on"') : ''}>${n}</a>`)}</span>
+    <span class="seg">${names.map((n) => html`<a href="/flows/machines/${enc(n)}"${n === def.name ? raw(' class="on"') : ''}>${n}</a>`)}</span>
     ${age(`flow ${ago(fl.at, now)}`)}
   </div>
 </div>

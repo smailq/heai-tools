@@ -1,4 +1,4 @@
-// The map editor's server side. The page (public/map/) draws the architecture
+// The map editor's server side. The page (public/architect/, the architect tab) draws the architecture
 // map and edits one field at a time; these endpoints validate through architect,
 // serialize an edited map back to YAML without losing the file's comments, list
 // the files each repository's localPath holds, and save the map - the one write

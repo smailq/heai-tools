@@ -1,5 +1,6 @@
 // Keeps the page current and filterable without leaving it: every few seconds the
-// same URL is read again and the live region swapped, and the filter box hides the
+// same URL is read again and the live region swapped - on the architect tab, whose
+// editor holds unsaved work, only the tabs above it - and the filter box hides the
 // rows that do not contain its text. Nothing here sends anything but a GET.
 (function () {
   "use strict";
@@ -32,13 +33,15 @@
       .then(function (r) { return r.ok ? r.text() : Promise.reject(r.status); })
       .then(function (html) {
         var next = new DOMParser().parseFromString(html, "text/html");
-        var live = next.getElementById("live");
-        var cur = document.getElementById("live");
+        // The live region, or on a page that has none - the map editor - the tabs alone.
+        var pick = document.getElementById("live") ? "#live" : ".opnav";
+        var live = next.querySelector(pick);
+        var cur = document.querySelector(pick);
         if (!live || !cur) return;
         var focused = document.activeElement && document.activeElement.classList.contains("filter");
         var y = window.scrollY;
         cur.replaceWith(live);
-        document.title = next.title;
+        if (pick === "#live") document.title = next.title;
         wire();
         if (focused) {
           var box = document.querySelector(".filter");
@@ -50,14 +53,15 @@
       .then(function () { setTimeout(refresh, every); });
   }
 
-  // "/" focuses the filter, as it does on the terminal screen; 1-4 switch tabs.
+  // "/" focuses the filter, as it does on the terminal screen; 1-5 are the tabs in order.
   document.addEventListener("keydown", function (e) {
-    if (e.target.tagName === "INPUT" || e.metaKey || e.ctrlKey || e.altKey) return;
-    var tabs = ["/tasks", "/flows", "/pod", "/reactor"];
+    var t = e.target;
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || e.metaKey || e.ctrlKey || e.altKey) return;
+    var tabs = ["/architect/", "/tasks", "/flows", "/pod", "/reactor"];
     if (e.key === "/") {
       var box = document.querySelector(".filter");
       if (box) { e.preventDefault(); box.focus(); }
-    } else if (e.key >= "1" && e.key <= "4") {
+    } else if (e.key >= "1" && e.key <= "5") {
       location.href = tabs[+e.key - 1];
     }
   });

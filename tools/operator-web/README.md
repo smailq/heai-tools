@@ -1,6 +1,7 @@
 # operator-web
 
-[`operator`](../operator)'s panes as a web page - the tasks, the flows, the pod and the reactor, one tab each - plus two the terminal has no room for: every flow definition drawn as its **state machine**, and an **editor for the architecture map**.
+[`operator`](../operator)'s panes as a web page, with what the terminal has no room for: an **editor for the architecture map**, and every flow definition drawn as its **state machine**.
+The tabs, in order: **architect** (the map editor), **tasks**, **flows** (with its **machines**), **pod**, **reactor**.
 It reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing but the map, and that only when you press Save.
 
 ```sh
@@ -15,24 +16,26 @@ There is no login. It binds to loopback by default, and it should stay there: an
 
 ## The tabs
 
-Each tab carries its pane's one-line summary in the tab bar - counts, `⚠` and `●` - so the tabs that are not open still say how things stand, as the terminal's one-line panes do.
-Pages refresh themselves in place every `--interval`, keeping the filter and the scroll; without JavaScript they reload. `/` reaches the filter; `1` to `4` are tasks, flows, pod and reactor, as on the terminal.
+The same header and tab bar sit on every page, the map editor's included. Each tab carries its one-line summary - counts, `⚠` and `●` - so the tabs that are not open still say how things stand, as the terminal's one-line panes do.
+Pages refresh themselves in place every `--interval`, keeping the filter and the scroll; without JavaScript they reload. On the architect tab only the tab bar refreshes, so the editor keeps what you are doing.
+`/` reaches the filter; `1` to `5` are the tabs in order - architect, tasks, flows, pod, reactor - except while typing in a field. `/` itself opens the first tab, the architect.
 
 | route | what it shows |
 | --- | --- |
+| `/architect/` | the map editor, below |
 | `/tasks` | every task, in pick-up order, with the actor its territories route to and where its blocker stands; `?active=1` narrows to the working set, `?sort=age\|slug\|territory` reorders |
 | `/tasks/<slug>` | the task: frontmatter, territories with their owners, the blocker, the file, the body |
 | `/flows` | the stuck flows and where their waits stand, every flow flow lists, and the definitions |
 | `/flows/<id>` | the flow: its record, links and waits, its definition drawn with the moves it made, and its timeline from `heai-flow trace <id> --json` |
-| `/machines`, `/machines/<definition>` | a definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
+| `/flows/machines`, `/flows/machines/<definition>` | the flows tab's second tab: a definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
 | `/pod`, `/pod/<id>` | the container and every workspace; a workspace's tokens, agents and panes |
 | `/reactor`, `/reactor/<id>` | the sources, the rules and the last hour's events; an event with every action a rule took and its payload |
-| `/map/` | the map editor |
 | `/api/state` | the whole reading as JSON, with `red` true when anything shown is red |
 
 ### The machines
 
-`/machines` draws each flow definition as the state machine it is, one at a time, the one with the most open flows first.
+The flows tab has two tabs of its own: **flows**, the flows themselves, and **machines**, the definitions they run on.
+`/flows/machines` draws each flow definition as the state machine it is, one at a time, the one with the most open flows first.
 States are boxes: the initial one entered by a dot, a terminal one double-bordered, the script a state's hook runs on entry under its name, and a count on every state flows stand in - open flows, or for a terminal state the flows that ended there - linking to the table of them below.
 Transitions are arrows labelled with the event that makes them and, a line each, what else it takes: `when` the event's data must say, `after` the clock, `waits on` what the flows it waits on must reach, and `by` who may make it.
 A transition back to an earlier state closes a cycle and is drawn pointing up, so every other arrow points down and the drawing reads from start to finish.
@@ -43,8 +46,8 @@ The drawing is laid out on the server - ranked by longest path from the initial 
 
 ### The map editor
 
-`/map/` views and edits the architecture map - the file the tasks tab asks architect about for `routes to` - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, the actors with what each owns and watches and the open tasks in each territory, and the map-wide postures, each field edited on its own with live validation.
-It is the browser app that began as the standalone `map-editor`, with the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`public/map/vendor/LICENSES.txt`](public/map/vendor/LICENSES.txt)) shipped in the package, so nothing is fetched from elsewhere.
+The architect tab, `/architect/`, views and edits the architecture map - the file the tasks tab asks architect about for `routes to` - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, the actors with what each owns and watches and the open tasks in each territory, and the map-wide postures, each field edited on its own with live validation.
+It is the browser app that began as the standalone `map-editor`, with the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`public/architect/vendor/LICENSES.txt`](public/architect/vendor/LICENSES.txt)) shipped in the package, so nothing is fetched from elsewhere.
 
 It opens the map file and edits a copy in the page; **Save** writes it back. That is the one write this tool makes, and it is guarded:
 
@@ -56,7 +59,7 @@ It opens the map file and edits a copy in the page; **Save** writes it back. Tha
 
 A repository's `localPath`, which the file tree lists files from, resolves against the map file's directory.
 
-The editor's endpoints are under `/map/api/`: `GET file`, `PUT file` (the save), `POST validate`, `serialize`, `tree` and `tasks`, and `GET template`.
+The editor's endpoints are under `/architect/api/`: `GET file`, `PUT file` (the save), `POST validate`, `serialize`, `tree` and `tasks`, and `GET template`.
 They answer only the page this server serves: every request must arrive under a `Host` that is an address, `localhost`, or a name given with `--allow-host`, so a page on a DNS name rebound to this machine cannot read the map or list directories through a visitor's browser; and a write must be JSON from the same origin, which a cross-site form cannot send.
 
 ## Where the numbers come from
@@ -111,8 +114,8 @@ src/server.ts      the routes and the guards
 src/pages.ts       the pages, through html`` (src/html.ts), which escapes everything it is given
 src/machine.ts     a flow definition's state-machine layout, as SVG
 src/mapeditor.ts   the map editor's endpoints: validate, serialize keeping comments, tree, save
-public/static/     the pages' stylesheet and the script that refreshes them in place
-public/map/        the map editor's page and app, and the vendored graph library
+public/static/     nav.css, the tokens and the tab bar every page shares; operator.css, the panes; the script that refreshes them
+public/architect/  the map editor's page and app, and the vendored graph library; the tab bar is put in its page
 test/fixtures/     the sibling tools' recorded output, and a map with comments to round-trip
 ```
 

@@ -22,7 +22,7 @@ const USAGE = `heai-operator-web - what the heai tools are doing, as a web page,
   --poll <s>           the clock for flow, pod and reactor in seconds (default 5)
 
 It asks the other tools by their released names: heai-architect, heai-flow, heai-pod and heai-reactor on PATH.
-The panes only read; the map editor at /map/ writes the architecture map, and nothing else.
+The panes only read; the architect tab, the map editor at /architect/, writes the architecture map and nothing else.
 
 exit codes: 0 stopped; 2 no tracker at the resolved directory, bad usage, or the port could not be bound.
 `
@@ -96,7 +96,7 @@ async function main(argv: string[]): Promise<number> {
   }
   const addr = server.address()
   const where = typeof addr === 'object' && addr ? `${addr.address.includes(':') ? `[${addr.address}]` : addr.address}:${addr.port}` : String(addr)
-  process.stderr.write(`heai-operator-web: http://${where} - the panes read only, the map editable at /map/ (ctrl-c to stop)\n`)
+  process.stderr.write(`heai-operator-web: http://${where} - the panes read only, the map editable in the architect tab (ctrl-c to stop)\n`)
   if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
     process.stderr.write('heai-operator-web: WARNING - listening beyond loopback with no login: whoever reaches it sees the project and can edit the map\n')
   }

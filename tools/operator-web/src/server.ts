@@ -10,7 +10,7 @@ import { fileURLToPath } from 'node:url'
 import { traceJSON, type Timeline } from './flows.ts'
 import type { Html } from './html.ts'
 import * as mapeditor from './mapeditor.ts'
-import { eventPane, firstDefinition, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, workspacePane, type Ctx, type Tab } from './pages.ts'
+import { architectPage, eventPane, firstDefinition, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, workspacePane, type Ctx, type Tab } from './pages.ts'
 import type { Reader } from './reader.ts'
 import { message } from './run.ts'
 import { bySlug, counts } from './tracker.ts'
@@ -124,7 +124,7 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
   async function route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
     const path = url.pathname
     const read = req.method === 'GET' || req.method === 'HEAD'
-    const api = path.startsWith('/map/api/')
+    const api = path.startsWith('/architect/api/')
     if (!read && !api) {
       res.setHeader('allow', 'GET, HEAD')
       throw new HttpError(405, "read only: every change is made at the shell with the tool's own command")
@@ -132,12 +132,12 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
     if (api) {
       const why = apiGuard(req, allowed)
       if (why) return sendJSON(res, 403, { error: why })
-      return mapApi(req, res, path.slice('/map/api/'.length))
+      return mapApi(req, res, path.slice('/architect/api/'.length))
     }
     const r = reader.reading
     let m: RegExpExecArray | null
     if (path === '/') {
-      res.writeHead(302, { location: '/tasks' })
+      res.writeHead(302, { location: '/architect/' })
       return void res.end()
     }
     if (path === '/tasks') return page(res, 'tasks', 'tasks', tasksPane(ctx(), url.searchParams.get('active') === '1', url.searchParams.get('sort') ?? ''))
@@ -147,6 +147,13 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
       return t ? page(res, 'tasks', t.slug, taskPane(ctx(), t)) : missing(res, 'tasks', `no task ${slug} in the tracker`)
     }
     if (path === '/flows') return page(res, 'flows', 'flows', flowsPane(ctx()))
+    // The machines are the flows' own tab, before a flow's page so the word is never read as an id.
+    if (path === '/flows/machines' || (m = /^\/flows\/machines\/([^/]+)$/.exec(path))) {
+      const name = m ? decodeURIComponent(m[1]!) : firstDefinition(r.flows.definitions, r.flows.flows)
+      const def = r.flows.definitions.find((d) => d.name === name) ?? null
+      if (m && !def) return missing(res, 'flows', `no definition ${name} in flow's last answer`)
+      return page(res, 'flows', def ? `machine ${def.name}` : 'machines', machinesPane(ctx(), def, url.searchParams.get('state') ?? ''))
+    }
     if ((m = /^\/flows\/([^/]+)$/.exec(path))) {
       const id = decodeURIComponent(m[1]!)
       // Only an id flow listed is asked about, so nothing from the URL reaches a command line unchecked.
@@ -160,12 +167,6 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
         err = message(e)
       }
       return page(res, 'flows', f.id, flowPane(ctx(), f, tl, err))
-    }
-    if (path === '/machines' || (m = /^\/machines\/([^/]+)$/.exec(path))) {
-      const name = m ? decodeURIComponent(m[1]!) : firstDefinition(r.flows.definitions, r.flows.flows)
-      const def = r.flows.definitions.find((d) => d.name === name) ?? null
-      if (m && !def) return missing(res, 'machines', `no definition ${name} in flow's last answer`)
-      return page(res, 'machines', 'machines', machinesPane(ctx(), def, url.searchParams.get('state') ?? ''))
     }
     if (path === '/pod') return page(res, 'pod', 'pod', podPane(ctx()))
     if ((m = /^\/pod\/([^/]+)$/.exec(path))) {
@@ -195,11 +196,15 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
       })
     }
     if (path.startsWith('/static/')) return serveFile(res, join(PUBLIC, 'static'), decodeURIComponent(path.slice('/static/'.length)))
-    if (path === '/map') {
-      res.writeHead(301, { location: '/map/' })
+    if (path === '/architect') {
+      res.writeHead(301, { location: '/architect/' })
       return void res.end()
     }
-    if (path.startsWith('/map/')) return serveFile(res, join(PUBLIC, 'map'), decodeURIComponent(path.slice('/map/'.length)) || 'index.html')
+    if (path === '/architect/' || path === '/architect/index.html') {
+      // The editor's page, with the primary tabs put in it from this reading.
+      return send(res, 200, 'text/html; charset=utf-8', architectPage(ctx(), readFileSync(join(PUBLIC, 'architect', 'index.html'), 'utf8')))
+    }
+    if (path.startsWith('/architect/')) return serveFile(res, join(PUBLIC, 'architect'), decodeURIComponent(path.slice('/architect/'.length)))
     throw new HttpError(404, 'not found')
   }
 
@@ -268,14 +273,14 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
         return sendJSON(res, 503, { error: message(e) })
       }
     }
-    return sendJSON(res, 404, { error: `no ${method} /map/api/${what}` })
+    return sendJSON(res, 404, { error: `no ${method} /architect/api/${what}` })
   }
 
   return createServer((req, res) => {
     const url = new URL(req.url ?? '/', 'http://localhost')
     let csp = "default-src 'self'; frame-ancestors 'none'"
     // The map editor's graph library injects one stylesheet for its container; scripts stay this server's own.
-    if (url.pathname.startsWith('/map/')) csp += "; style-src 'self' 'unsafe-inline'"
+    if (url.pathname.startsWith('/architect/')) csp += "; style-src 'self' 'unsafe-inline'"
     res.setHeader('content-security-policy', csp)
     res.setHeader('x-content-type-options', 'nosniff')
     res.setHeader('referrer-policy', 'no-referrer')
@@ -283,7 +288,7 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
     route(req, res, url).catch((e: unknown) => {
       if (res.headersSent) return res.end()
       const code = e instanceof HttpError ? e.code : 500
-      if (url.pathname.startsWith('/map/api/')) sendJSON(res, code, { error: message(e) })
+      if (url.pathname.startsWith('/architect/api/')) sendJSON(res, code, { error: message(e) })
       else send(res, code, 'text/plain; charset=utf-8', message(e))
     })
   })
