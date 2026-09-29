@@ -4,7 +4,7 @@
 
 `operator`: one full-screen terminal view, in the shape of `htop`, of what every heai-tools tool is doing right now.
 It refreshes on its own and answers a keypress at once.
-It holds no state, changes nothing, and learns everything it shows by asking each tool's own CLI or reading each tool's own files.
+It holds no state, runs no server, changes nothing, and learns everything it shows by asking each tool's own CLI or reading each tool's own files.
 
 ## What the survey found
 

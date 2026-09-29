@@ -1,0 +1,91 @@
+[
+  {
+    "id": "20260911-030505-73776c",
+    "source": "tasks_cli",
+    "kind": "task.todo",
+    "key": "fetch-company-favicon@todo",
+    "at": "2026-09-11T03:05:05.651Z",
+    "payload": {
+      "slug": "fetch-company-favicon"
+    },
+    "actions": [
+      {
+        "event": "20260911-030505-73776c",
+        "rule": "pick-now",
+        "action": "run",
+        "at": "2026-09-11T03:05:12.451Z",
+        "ok": true,
+        "outcome": {
+          "command": "scripts/pick.sh",
+          "exitCode": 0,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030505-73776c.pick-now.log",
+          "timedOut": false
+        },
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": "20260911-030500-4da737",
+    "source": "clock",
+    "kind": "tick",
+    "key": "clock@2026-09-11T03:05:00.000Z",
+    "at": "2026-09-11T03:05:00.000Z",
+    "payload": {
+      "slot": "2026-09-11T03:05:00.000Z",
+      "cron": "* * * * *",
+      "utc": false
+    },
+    "actions": [
+      {
+        "event": "20260911-030500-4da737",
+        "rule": "sweep",
+        "action": "run",
+        "at": "2026-09-11T03:05:06.015Z",
+        "ok": true,
+        "outcome": {
+          "command": "scripts/sweep.sh",
+          "exitCode": 0,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030500-4da737.sweep.log",
+          "timedOut": false
+        },
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": "20260911-030505-c23f53",
+    "source": "drops",
+    "kind": "exited",
+    "key": "exited.w2@1789095905658.7617@b0f27d35650e",
+    "at": "2026-09-11T03:05:05.658Z",
+    "payload": {
+      "workspace": "w2",
+      "pane": "w2:p2",
+      "agent": "w2",
+      "state": "exited",
+      "exitCode": 0,
+      "flow": "20260906-024801-session-77f0",
+      "file": "exited.w2"
+    },
+    "actions": [
+      {
+        "event": "20260911-030505-c23f53",
+        "rule": "session-exited",
+        "action": "run",
+        "at": "2026-09-11T03:05:05.820Z",
+        "ok": false,
+        "outcome": {
+          "command": "exit 3",
+          "exitCode": 3,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030505-c23f53.session-exited.log",
+          "timedOut": false
+        },
+        "error": "exited 3"
+      }
+    ]
+  }
+]

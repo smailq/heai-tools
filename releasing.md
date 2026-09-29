@@ -5,10 +5,10 @@ The tool's directory name is the tool's name; the command it installs is `heai-<
 
 | tool | tag | artifact | package |
 |---|---|---|---|
-| `architect`, `flow`, `pod`, `reactor`, `tasks` | `tasks-v0.2.0` | the npm tarball on the release | `@heai-tools/<tool>` on npm, once enabled |
+| `architect`, `flow`, `pod`, `reactor`, `tasks`, `operator-web` | `tasks-v0.2.0` | the npm tarball on the release | `@heai-tools/<tool>` on npm, once enabled |
 | `operator` | `operator-v0.1.0` | `heai-operator` for linux and darwin, amd64 and arm64, with checksums | none; `go install` also works |
 
-`map-editor` is not released on its own; its page ships inside `heai-operator`, served at `/map/` by `--serve`.
+`map-editor` is not released on its own; its page ships inside `operator-web`, served at `/map/`.
 
 ## Cutting a release
 
@@ -27,7 +27,7 @@ A release for a tool the workflow does not know, or a tag that is not `<tool>-v<
 ## What a Node tool ships
 
 `npm install` (and so `npm ci`, `npm link` and `npm publish`) runs `prepare`, which compiles `src/` to `dist/` with `tsconfig.build.json`.
-The package's `bin` and `exports` point at `dist/`; `files` limits the tarball to `dist/`, `schemas/` and, for `pod`, `image/`.
+The package's `bin` and `exports` point at `dist/`; `files` limits the tarball to `dist/`, `schemas/`, and for `pod` `image/`, for `operator-web` `public/`.
 `npm pack --dry-run` from the tool's directory lists exactly what a release would publish.
 
 Sources are compiled rather than shipped as TypeScript because Node does not strip types from files under `node_modules`, which is where an installed package lives.

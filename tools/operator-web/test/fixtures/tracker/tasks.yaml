@@ -1,0 +1,2 @@
+# Territories, and the actor owning each, are read from the architecture map.
+map: ../architecture.yaml

@@ -12,7 +12,8 @@ Each tool does one job:
 - [**`flow`**](tools/flow) runs a multi-stage process as a state machine that refuses illegal moves and journals every move.
 - [**`reactor`**](tools/reactor) reacts to events such as webhooks, file changes, git commits and more.
 - [**`pod`**](tools/pod) runs jobs dropped into a work queue, in a container, and leaves each job's output and result beside it.
-- [**`operator`**](tools/operator) displays the status and state of heai-tools in an `htop`-like text UI, or as a web page with `--serve` that also edits the architecture map.
+- [**`operator`**](tools/operator) displays the status and state of heai-tools in an `htop`-like text UI.
+- [**`operator-web`**](tools/operator-web) shows the same as a web page, draws each flow as its state machine, and edits the architecture map.
 
 ## How the tools work together
 
@@ -26,7 +27,7 @@ The process is yours: flow definitions say which states a piece of work passes t
 Each tool is released on its own, as one GitHub release per version tagged `<tool>-v<version>`; the command a release installs is the tool's name with a `heai-` prefix, so the short names in this repository never collide with anything else on a PATH.
 
 ```sh
-npm install -g @heai-tools/tasks          # heai-tasks; likewise architect, flow, pod, reactor
+npm install -g @heai-tools/tasks          # heai-tasks; likewise architect, flow, pod, reactor, operator-web
 go install github.com/smailq/heai-tools/tools/operator/cmd/heai-operator@latest
 ```
 

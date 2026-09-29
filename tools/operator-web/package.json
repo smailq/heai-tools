@@ -1,0 +1,44 @@
+{
+  "name": "@heai-tools/operator-web",
+  "version": "0.1.0",
+  "description": "The operator's panes as a web page - tasks, flows drawn as state machines, the pod, the reactor - and an editor for the architecture map",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/smailq/heai-tools.git",
+    "directory": "tools/operator-web"
+  },
+  "homepage": "https://github.com/smailq/heai-tools/tree/main/tools/operator-web#readme",
+  "bugs": {
+    "url": "https://github.com/smailq/heai-tools/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "bin": {
+    "heai-operator-web": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "public"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "start": "node src/cli.ts",
+    "test": "node --test 'test/*.test.ts'",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "typescript": "^5.8.0"
+  }
+}

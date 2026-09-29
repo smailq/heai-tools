@@ -1,6 +1,6 @@
 # @heai-tools/map-editor
 
-> This page is now served by [`heai-operator --serve`](../operator#the-map-editor) at `/map/`, where it loads and saves the project's map file. The copy here is the standalone original, which holds the map in the browser only.
+> This page is now served by [`heai-operator-web`](../operator-web#the-map-editor) at `/map/`, where it loads and saves the project's map file. The copy here is the standalone original, which holds the map in the browser only.
 
 A web editor for the architecture map: the system drawn from the map, an inspector that edits one field at a time, and live validation against the schema and the rules in [`architect`'s README](../architect/README.md#the-map).
 

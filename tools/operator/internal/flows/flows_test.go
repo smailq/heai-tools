@@ -191,33 +191,3 @@ func TestPollWithoutFlowIsANoteNotAnError(t *testing.T) {
 		t.Errorf("%+v", r)
 	}
 }
-
-// definitions --json carries each machine whole: transitions one source each, after in ms, hooks by state.
-func TestParseDefinitionsMachine(t *testing.T) {
-	raw, err := os.ReadFile(filepath.Join("..", "..", "testdata", "flow", "definitions.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defs, err := ParseDefinitions(raw)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var s *Definition
-	for i := range defs {
-		if defs[i].Name == "session" {
-			s = &defs[i]
-		}
-	}
-	if s == nil || s.Initial != "queued" || !s.IsTerminal("clean") || s.IsTerminal("running") {
-		t.Fatalf("session: %+v", s)
-	}
-	clock := 0
-	for _, tr := range s.Transitions {
-		if tr.After != nil && *tr.After == 12*3600*1000 && tr.From == "running" && tr.To == "lost" {
-			clock++
-		}
-	}
-	if clock != 1 || s.Hooks["exited"].Run != "scripts/session/finish.sh" {
-		t.Fatalf("the clock transition or the hooks did not parse: %+v", s)
-	}
-}

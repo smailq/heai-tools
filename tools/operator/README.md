@@ -1,11 +1,11 @@
 # operator
 
 An `htop`-shaped terminal view of what the heai tools are doing: one screen, refreshed on its own clocks, that reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing: every key on it moves, opens, filters or reloads, and every change to a task, a flow or the reactor is made at the shell with that tool's own command.
-The one exception is the map editor that `--serve` adds at `/map/`, which writes the architecture map and nothing else.
 
 Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
 One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
+The same panes in a browser, with every flow definition drawn as its state machine and an editor for the architecture map, are [`operator-web`](../operator-web).
 The name is the Matrix's: the one at the console watching the crew inside.
 
 ```sh
@@ -190,59 +190,6 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 Colour is the sixteen ANSI colours only, so the screen follows the terminal's theme: moving green, waiting yellow, gone wrong red, over dim, ready to move bold, and red for what is wrong.
 The tracker's statuses and pod's job states are fixed vocabularies, so they are coloured; a flow's state is whatever its definition names, so it is not - colouring a project's own states is a later question.
 
-## The web page
-
-`heai-operator --serve 127.0.0.1:8080` is the same screen in a browser: one tab per pane - **tasks**, **flows**, **pod**, **reactor** - and two the terminal has no room for, **machines** and **map**, each carrying its one-line summary in the tab bar, so the three panes that are not open still show their counts and their `⚠` and `●`, as the one-line panes do on the terminal.
-
-| route | what it shows |
-| --- | --- |
-| `/tasks` | the tasks table with every column and the blocker notes; `?active=1` is `b`, `?sort=age\|slug\|territory` is `S` |
-| `/tasks/<slug>` | the task pane: frontmatter, territories with their owners, the blocker and where it stands, the file, the body |
-| `/flows` | the stuck flows with where their waits stand, every flow flow lists, and the definitions with their states |
-| `/flows/<id>` | the flow pane: its record, its links and waits, its definition drawn with the moves it made and the state it is in, and its timeline from `heai-flow trace <id> --json` |
-| `/machines`, `/machines/<definition>` | a flow definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
-| `/pod` | the container's line and every workspace, the clone dimmed |
-| `/pod/<id>` | a workspace: its tokens, agents and panes |
-| `/reactor` | the sources, the rules and the last hour's events with what each rule did |
-| `/reactor/<id>` | an event: its fields, every action with its command, result and log, and the payload |
-| `/api/state` | what `--json` prints, from the last reading |
-| `/map/` | the map editor, below |
-
-It reads on the same clocks as the screen - the tracker on `--interval`, flow, pod and reactor on `--poll` - into one reading shared by every browser, so ten open tabs cost the tools nothing more than one terminal does. A page reads that reading again on the tracker's interval and swaps itself in place, keeping the filter and the scroll; without JavaScript it reloads.
-The filter box, `/` to reach it and `1` to `4` for the tabs behave as they do on the screen.
-A flow's timeline is the one call made per page view, and only for an id flow listed in its last answer.
-
-The four panes are as read-only as the screen: every route is a `GET`, anything else is `405`, and the pages load no script or style from anywhere but the server itself. There is no login, so bind it to loopback - an address anyone can reach shows them the project's tasks, branches and event payloads, and lets them edit the map.
-
-### The machines
-
-`/machines` draws each flow definition as the state machine it is, one at a time, the one with the most open flows first.
-States are boxes: the initial one entered by a dot, a terminal one double-bordered, the script a state's hook runs on entry under its name, and a count on every state flows stand in - open flows, or for a terminal state the flows that ended there - linking to the table of them below the drawing.
-Transitions are arrows labelled with the event that makes them and, one line each, what else it takes: `when` the event's data must say, `after` the clock, `waits on` what the flows it waits on must reach, and `by` who may make it.
-A transition back to an earlier state closes a cycle and is drawn pointing up, so every other arrow points down and the drawing reads from start to finish.
-One rule from three or more states to the same one - the usual `canceled` from anywhere - is written once, on the state it reaches, instead of drawn as that many arrows.
-A flow's own page draws its definition too, with the moves its trace recorded and the state it stands in highlighted.
-
-The machine is `heai-flow definitions --json`, which carries each definition whole - states, initial, terminal, transitions with every `from` list expanded, hooks and links - so this tool reads no flow YAML. [`testdata/flow/definitions.json`](testdata/flow/definitions.json) records it from the sample project's definitions.
-The drawing is laid out on the server - ranked by longest path from the initial state, a layer between ranks for the labels, waypoints for arrows that cross ranks, barycentre ordering - and sent as SVG, so it needs no script and no library, and follows the page's light and dark colours. States are not coloured by name, as on the screen: a state is whatever its definition calls it.
-
-### The map editor
-
-`/map/` views and edits the architecture map - the same file the tasks pane asks architect about for `routes to` - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, the actors with what each owns and watches and the open tasks in each territory, and the map-wide postures, each field edited on its own with live validation.
-It is the browser app that lived in [`tools/_map-editor`](../_map-editor), served from this binary: its page and the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`internal/web/map/vendor/LICENSES.txt`](internal/web/map/vendor/LICENSES.txt)) are embedded, so nothing is installed and nothing is fetched from elsewhere.
-
-It opens the map file and edits a copy in the page; **Save** writes it back. That is the one write this tool makes, and it is guarded:
-
-- **Only a valid map is written.** Every edit is validated by `heai-architect check --format json`, the reference validator, run on the text being edited; Save runs it once more and refuses a map with errors. Without architect on `PATH` nothing validates, so nothing saves.
-- **Only over the version the page loaded.** Save names the version it edited; if the file changed on disk since, the page says so and asks before overwriting, and declining keeps the edits unsaved, to export or to reload over.
-- **Only an edit's own lines change.** The system view edits a plain object, so the server merges it back into the YAML the page loaded: every key, list item and value left as it was keeps its comments, quoting, blank lines and comment alignment, and a saved map differs from the file by the lines that were edited. Raw YAML mode saves its text as typed.
-- **Nothing is half-written.** The file is replaced by a rename, keeping its mode, so a reader - architect, this server's own tasks pane - never sees part of a map.
-- Unsaved edits are kept in the browser as a draft, per map file, so a reload or a restarted server loses nothing; the page restores the draft and warns when the file moved on underneath it. **Paste YAML…** and **Export .yaml** still bring a map in and take a copy out; a project without a map yet starts from the paste dialog or architect's template, and Save creates the file.
-
-Two things differ from the standalone tool: a repository's `localPath`, which the file tree lists files from, resolves against the map file's directory rather than the server's working directory; and the Actors tab's tasks are this server's tracker rather than trackers searched for under each `localPath`.
-
-The editor's endpoints are under `/map/api/`: `GET file`, `PUT file` (the save), and `POST validate`, `serialize` and `tree`, `tasks`, `GET template`. They answer only the page this server serves: every request must arrive under a `Host` that is an address, `localhost`, or a name given to `--serve-host`, so a page on a DNS name rebound to this machine cannot read the map or list directories through a visitor's browser; and a write must be JSON from the same origin, which a cross-site form cannot send. `tree` lists directories on this machine for whoever reaches the page, one more reason to keep it on loopback.
-
 ## Where the numbers come from
 
 Everything on the screen is read fresh on its pane's clock; the process keeps only the last reading.
@@ -258,7 +205,7 @@ Everything on the screen is read fresh on its pane's clock; the process keeps on
 
 Reading the tracker has no side effects.
 Asking architect, flow, pod and reactor has none either: every command this tool runs is a query.
-The terminal screen and the four panes make no writes; the map editor's Save is the only one, and it writes only the map. An earlier build bound `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` to keys; they were removed so the screen is only ever a reading of the tools, and a change is made where it is recorded, at the shell with the tool's own command.
+There are no writes. An earlier build bound `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` to keys; they were removed so the screen is only ever a reading of the tools, and a change is made where it is recorded, at the shell with the tool's own command.
 
 ## Discovery
 
@@ -281,8 +228,6 @@ heai-operator                  the screen
 heai-operator --once                the screen, once, to stdout, then exit
 heai-operator --once --active       only the active tasks, not the backlog and the closed
 heai-operator --json                the tracker, the flows, the pod and the reactor as the screen read them, with owners, counts and whether anything is red
-heai-operator --serve 127.0.0.1:8080  the screen as a web page, one tab per pane, and the map editor at /map/, until ctrl-c
-heai-operator --serve 0.0.0.0:8080 --serve-host box.tailnet   also answer the map editor under that name
 heai-operator --interval 5s         the tracker's refresh interval (default 2s)
 heai-operator --poll 10s            the clock for the panes that ask flow, pod and reactor (default 5s)
 heai-operator --width 100           --once: columns to render (default $COLUMNS, else 120)
@@ -297,7 +242,7 @@ heai-operator --width 100           --once: columns to render (default $COLUMNS,
 | --- | --- |
 | `0` | shown; under `--once` or `--json`, nothing on the screen is red |
 | `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or has ended, or a reactor rule that ran and failed on an event in the last hour |
-| `2` | no tracker at the resolved directory, bad usage, or `--serve` could not listen |
+| `2` | no tracker at the resolved directory, or bad usage |
 
 The interactive screen exits `0` on `q` whatever it shows; the split is for the batch modes, and it is the same `0` yes, `1` no, `2` could not ask as every other tool here.
 
@@ -312,9 +257,6 @@ internal/flows/           heai-flow definitions --json, list --json, stuck --jso
 internal/pod/             heai-pod status --json and heai-pod list --json; the fixtures are testdata/pod/ at the root
 internal/reactor/         heai-reactor status --json and heai-reactor events --json; the fixtures are testdata/reactor/ at the root
 internal/ui/              the Bubble Tea model, the screen, and golden renderings in testdata/golden/
-internal/web/             --serve: the poller, the routes, and the embedded templates and static files
-internal/web/machine.go   the flow definitions' state-machine layout and SVG
-internal/web/map/         the map editor's page, app and vendored graph library, embedded; mapeditor.go is its server side
 testdata/                 the sibling tools' recorded output, the format contracts this tool reads; record.sh makes the pod and reactor ones
 ```
 
@@ -324,11 +266,11 @@ go test ./internal/ui -update      # rewrite the goldens after a deliberate chan
 go vet ./...                       # the typecheck
 ```
 
-Built on [Bubble Tea v2](https://github.com/charmbracelet/bubbletea) and [Lip Gloss v2](https://github.com/charmbracelet/lipgloss), with `yaml.v3` for the tracker's `tasks.yaml`; the web page is the standard library's `net/http` and `html/template`; nothing else.
+Built on [Bubble Tea v2](https://github.com/charmbracelet/bubbletea) and [Lip Gloss v2](https://github.com/charmbracelet/lipgloss), with `yaml.v3` for the tracker's `tasks.yaml`; nothing else.
 
 ## What is not here yet
 
 The map pane, over `heai-architect check --format json`, designed in [`DESIGN.md`](DESIGN.md): the map's verdict is one line the header could carry when a pane for it is worth the height.
 The design's `pages` line is gone with the pages: the implemented tools are command line only.
-Any write beyond the map: the keys `e`, `a`, `c` and `s` that once ran `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` are gone, and this tool changes nothing.
+Any write: the keys `e`, `a`, `c` and `s` that once ran `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` are gone, and this tool changes nothing.
 A source that is quiet - one that has not produced within twice its interval - is not marked; only a source whose own cursor reports a problem is, because `status --json` does not say when a source last polled, and a git source with no commits for a day is quiet and fine.
