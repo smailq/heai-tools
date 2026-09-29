@@ -44,7 +44,7 @@ The drawing is laid out on the server - ranked by longest path from the initial 
 ### The map editor
 
 `/map/` views and edits the architecture map - the file the tasks tab asks architect about for `routes to` - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, the actors with what each owns and watches and the open tasks in each territory, and the map-wide postures, each field edited on its own with live validation.
-It is the browser app from [`tools/_map-editor`](../_map-editor), with the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`public/map/vendor/LICENSES.txt`](public/map/vendor/LICENSES.txt)) shipped in the package, so nothing is fetched from elsewhere.
+It is the browser app that began as the standalone `map-editor`, with the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`public/map/vendor/LICENSES.txt`](public/map/vendor/LICENSES.txt)) shipped in the package, so nothing is fetched from elsewhere.
 
 It opens the map file and edits a copy in the page; **Save** writes it back. That is the one write this tool makes, and it is guarded:
 
