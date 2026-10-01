@@ -1,12 +1,12 @@
 # @heai-tools/pod
 
 One container that watches a directory of jobs.
-A **job** is a directory a producer drops into `work_queue/`: a `run.sh` saying what to do, and the code, the instructions, whatever the work needs.
-A **worker** inside the container takes jobs one at a time, runs `sh run.sh` in each, and moves it to `.done/` with a `result.json`.
-The worker never reads inside a job beyond `run.sh` and one optional file, and the producer never reaches inside the container: the directory is the whole of the contract.
+A **job** is a directory a producer drops into `work_queue/`: a `job.json` saying what to run, and a `workdir/` holding the code, the instructions, whatever the work needs.
+A **worker** inside the container takes jobs one at a time, runs `job.json`'s `run` in the job's `workdir/`, and moves the job to `.done/` with a `result.json` and the command's `stdout` and `stderr`.
+The worker never reads inside a job beyond `job.json`, and the producer never reaches inside the container: the directory is the whole of the contract.
 
 Pod knows nothing about git, agents, tasks or flows.
-What goes in a job and what comes out is the producer's business, written into `run.sh`; the image is a toolbox, and pod only moves directories and keeps the result honest.
+What goes in a job and what comes out is the producer's business, written into `job.json`; the image is a toolbox, and pod only moves directories and keeps the result honest.
 
 Requires Node 22.18 or newer, and one of Apple's `container` CLI, Docker or Podman on the host.
 Building the base image needs nothing else: the worker is compiled inside the build.
@@ -39,24 +39,26 @@ heai-pod status
 
 **3. Your first job.**
 
-A job is a directory with a `run.sh`.
+A job is a directory with a `job.json`, and a `workdir/` for its files.
+Like a `package.json`, `job.json` says what to run.
 Make one, hand it to `submit`, and wait for it:
 
 ```sh
-mkdir hello
-cat > hello/run.sh <<'EOF'
-echo "hello from $JOB, running in $(pwd)"
-ls -a
-echo "and this goes to stderr" >&2
+mkdir -p hello/workdir
+echo 'a file of the job' > hello/workdir/notes.txt
+cat > hello/job.json <<'EOF'
+{
+  "run": "echo \"hello from $JOB, running in $(pwd)\" && ls . .. && echo 'and this goes to stderr' >&2"
+}
 EOF
 heai-pod submit hello                 # prints: hello
 heai-pod wait hello                   # prints: ok
 heai-pod show hello
 ```
 
-`submit` copied the directory into the queue, the worker ran `sh run.sh` inside it, and `wait` returned as soon as the job landed under `.done/`.
-`show` prints the result - status, exit code, when it started and finished, which worker had it - and the tail of both logs.
-The listing in stdout shows what the worker added beside your files: `claim.json` while it ran, `log/` with the output, `result.json` when it finished.
+`submit` copied the directory into the queue, the worker ran the `run` line with `sh -c` in the job's `workdir/`, and `wait` returned as soon as the job landed under `.done/`.
+`show` prints the result - status, exit code, when it started and finished, which worker had it - and the tail of `stdout` and `stderr`.
+The listing in stdout shows the two levels of a job: your `notes.txt` in `workdir/`, and above it `job.json` with what the worker added beside it - `claim.json` while it ran, `stdout` and `stderr`, and `result.json` when it finished.
 
 **4. Where everything is.**
 
@@ -64,7 +66,7 @@ The listing in stdout shows what the worker added beside your files: `claim.json
 heai-pod list
 ls pod/work_queue/.done/hello
 cat pod/work_queue/.done/hello/result.json
-cat pod/work_queue/.done/hello/log/stdout
+cat pod/work_queue/.done/hello/stdout
 ```
 
 Nothing is hidden in the container.
@@ -74,20 +76,20 @@ Any script can read these without `heai-pod`.
 **5. Failing, timing out, canceling.**
 
 ```sh
-mkdir broken && echo 'exit 3' > broken/run.sh
+mkdir broken && echo '{"run": "exit 3"}' > broken/job.json
 heai-pod submit broken && heai-pod wait broken        # prints: failed; exits 1
 
-mkdir slow && echo 'sleep 600' > slow/run.sh
+mkdir slow && echo '{"run": "sleep 600"}' > slow/job.json
 heai-pod submit slow --timeout 5s && heai-pod wait slow    # prints: timeout, five seconds later
 
-mkdir slower && echo 'sleep 600' > slower/run.sh
+mkdir slower && echo '{"run": "sleep 600"}' > slower/job.json
 heai-pod submit slower
 sleep 2 && heai-pod cancel slower                     # Asked the worker to stop slower
 heai-pod wait slower                                  # prints: canceled
 
 mkdir empty && touch empty/notes.md
 heai-pod submit empty && heai-pod wait empty          # prints: failed
-heai-pod show empty                                   # error     no run.sh in the job
+heai-pod show empty                                   # error     no job.json in the job
 ```
 
 `wait` exits `0` only for `ok`, `1` for every other status, so a script can branch on it.
@@ -96,19 +98,19 @@ A `cancel` of a job that is still queued finishes it right there; a running one 
 
 **6. A job on your code.**
 
-Put a clone in the job, and let `run.sh` work on it.
+Put a clone in the job's `workdir/`, and let `run` work on it.
 A worktree would not survive the mount; a clone does.
 
 ```sh
-mkdir -p tests/repos
-git clone -q ~/Code/app tests/repos/app
-echo 'cd repos/app && npm test' > tests/run.sh
-heai-pod submit tests --name app-tests --timeout 30m
+mkdir -p tests/workdir/repos
+git clone -q ~/Code/app tests/workdir/repos/app
+echo '{"run": "cd repos/app && npm test", "timeout": "30m"}' > tests/job.json
+heai-pod submit tests --name app-tests
 heai-pod wait app-tests && echo "green" || heai-pod show app-tests --lines 40
 ```
 
 The base image has git but no node, so this one needs an image with the project's toolchain, which is the next step.
-Whatever `run.sh` changes, it changes in `repos/app` inside the job; when the job is done, that clone is at `pod/work_queue/.done/app-tests/repos/app`, and the host can fetch a branch from it, diff it, or delete it.
+Whatever `run` changes, it changes in `workdir/repos/app` inside the job; when the job is done, that clone is at `pod/work_queue/.done/app-tests/workdir/repos/app`, and the host can fetch a branch from it, diff it, or delete it.
 
 **7. An image with your tools, and an agent.**
 
@@ -129,20 +131,20 @@ heai-pod down && heai-pod up --image tour/dev
 ```
 
 The example installs node, python and claude.
-Now a job can prompt the agent: the prompt is a file, `run.sh` is the one line that runs claude on it.
+Now a job can prompt the agent: the prompt is a file in `workdir/`, `run` is the one line that runs claude on it.
 
 ```sh
-mkdir -p agent/repos && git clone -q ~/Code/app agent/repos/app
-git -C agent/repos/app checkout -q -b agent/add-readme
-cat > agent/prompt.md <<'EOF'
+mkdir -p agent/workdir/repos && git clone -q ~/Code/app agent/workdir/repos/app
+git -C agent/workdir/repos/app checkout -q -b agent/add-readme
+cat > agent/workdir/prompt.md <<'EOF'
 Add a README.md explaining what this project does. Commit it on the current branch.
 EOF
-echo 'cd repos/app && claude -p --dangerously-skip-permissions < ../../prompt.md > ../../out.md' > agent/run.sh
+echo '{"run": "cd repos/app && claude -p --dangerously-skip-permissions < ../../prompt.md"}' > agent/job.json
 heai-pod submit agent --name add-readme --timeout 20m
-heai-pod wait add-readme && git -C ~/Code/app fetch pod/work_queue/.done/add-readme/repos/app agent/add-readme:agent/add-readme
+heai-pod wait add-readme && git -C ~/Code/app fetch pod/work_queue/.done/add-readme/workdir/repos/app agent/add-readme:agent/add-readme
 ```
 
-The branch is now in your real repository, for a human to read and merge.
+The branch is now in your real repository, for a human to read and merge, and what the agent said is the job's `stdout`.
 Pod did not know a branch was involved.
 
 **8. From a script.**
@@ -151,13 +153,14 @@ This is the whole loop a producer runs, with or without the command:
 
 ```sh
 # with heai-pod
-job=$(mktemp -d) && echo 'make check' > "$job/run.sh" && cp -r src "$job/"
+job=$(mktemp -d) && echo '{"run": "make check"}' > "$job/job.json" && mkdir "$job/workdir" && cp -r Makefile src "$job/workdir/"
 name=$(heai-pod submit "$job" --name "check-$(date +%s)" --move)
 if heai-pod wait "$name"; then echo "passed"; else heai-pod show "$name"; fi
 
 # with nothing but the filesystem: write under a dotted name, rename into place, wait for .done
 q=pod/work_queue
-mkdir -p "$q/.tmp-check" && echo 'make check' > "$q/.tmp-check/run.sh" && mv "$q/.tmp-check" "$q/check"
+mkdir -p "$q/.tmp-check/workdir" && cp -r Makefile src "$q/.tmp-check/workdir/"
+echo '{"run": "make check"}' > "$q/.tmp-check/job.json" && mv "$q/.tmp-check" "$q/check"
 until [ -f "$q/.done/check/result.json" ]; do sleep 1; done
 jq -r .status "$q/.done/check/result.json"
 ```
@@ -180,23 +183,31 @@ Jobs it had been running when it was killed come back as `crashed`, so nothing i
 work_queue/                     host: <state>/work_queue     container: /work_queue
   <job>/                        queued: dropped by a producer, taken in name order
   .running/<job>/               claimed by a worker; holds claim.json while it runs
-  .done/<job>/                  finished; holds result.json and log/
+  .done/<job>/                  finished; holds result.json, stdout and stderr
 ```
 
-**A job is a directory at the top of the queue whose name does not start with a dot, holding a `run.sh`.**
+**A job is a directory at the top of the queue whose name does not start with a dot, holding a `job.json`.**
 A name is letters, digits, `.`, `_` and `-`, and is unique across the three places; `submit` refuses a name that exists anywhere.
 Dotted entries at the top level are never jobs, and that is what makes a drop safe: a producer writes the directory as `.tmp-<job>`, then renames it to `<job>`.
 On one filesystem the rename is atomic, so the worker never sees a half-written job.
 `submit` does exactly this; a script that knows the layout can do it with `mkdir` and `mv`.
 
-**The worker reads one file inside a job besides `run.sh`**, `job.json`, and only its `timeout`:
+**`job.json` says what to run and how**, the way a `package.json` does for a package, and it is the one file the worker reads inside a job:
 
 ```json
-{"timeout": "2h"}
+{
+  "run": "cd repos/app && npm test",
+  "timeout": "2h"
+}
 ```
 
-A Go duration - `30m`, `2h`, `90s` - or `0` for no limit; absent, the worker's default applies.
-Anything else in `job.json` is the producer's business.
+`run` is required: one line handed to `sh -c`, so `&&`, pipes and redirections work, and anything longer is a script in `workdir/` that the line names, `sh build.sh`.
+`timeout` is optional: a Go duration - `30m`, `2h`, `90s` - or `0` for no limit; absent, the worker's default applies.
+Any other key in `job.json` is the producer's business.
+
+**`workdir/` holds every file of the job's** - the code, the prompt, whatever the command writes - and is where the command starts.
+The worker creates it when the job brought none, and never looks inside.
+The top of the job is left to `job.json` and what the worker writes beside it: `claim.json`, `stdout`, `stderr` and `result.json`.
 
 **Claiming** is one rename, `<job>` into `.running/`.
 A rename that fails means another worker has it, so several containers can share one queue.
@@ -206,8 +217,9 @@ The worker then writes `.running/<job>/claim.json`:
 {"worker": "a1b2c3", "started": "2026-09-25T10:00:00.000Z"}
 ```
 
-**Running** is `sh run.sh` with the job directory as the working directory, `JOB` and `JOB_DIR` in the environment, stdout and stderr captured to `log/stdout` and `log/stderr` inside the job, in its own process group, under the timeout.
-`run.sh` need not be executable, and it calls whatever the image installed: a test suite, an agent, a build.
+**Running** is `sh -c` on `run` with the job's `workdir/` as the working directory, the job's name and its directory - the one above `workdir/` - in the environment as `JOB` and `JOB_DIR`, in its own process group, under the timeout.
+The command's stdout and stderr are the files `stdout` and `stderr` at the top of the job, written as they come and as they are, so a `tail -f` from the host follows a running job.
+The command calls whatever the image installed: a test suite, an agent, a build.
 
 **Finishing** is `result.json` written into the running directory by write-and-rename, then the directory renamed into `.done/`.
 The directory appearing under `.done/` is the whole of "it is done", and `result.json` is always in it when it appears.
@@ -227,16 +239,18 @@ The directory appearing under `.done/` is the whole of "it is done", and `result
 
 | status | meaning | `exit` |
 | --- | --- | --- |
-| `ok` | `run.sh` exited 0 | 0 |
+| `ok` | `run` exited 0 | 0 |
 | `failed` | it exited non-zero, died of a signal, or could not be started; `error` says why when the worker refused it | its code; -1 with `signal` or `error` |
 | `timeout` | killed at the job's timeout, or the worker's default | -1, `signal` |
 | `canceled` | a `cancel` file appeared in `.running/<job>/`, or the worker was stopped while it ran | -1 |
 | `crashed` | found under `.running/` when the worker started: the worker died with it | -1 |
 
 Times are RFC 3339 in UTC with milliseconds.
-A job refused before it ran - no `run.sh`, a `job.json` that does not parse, a timeout that is not a duration - is `failed` with `error` and no `log/`.
+A job refused before it ran - no `job.json`, one that does not parse or has no `run`, a timeout that is not a duration - is `failed` with `error`, and has no `stdout` or `stderr`.
 
-**Canceling** is a file: create `.running/<job>/cancel` and the worker sends the process group `SIGTERM`, then `SIGKILL` five seconds later, within one poll.
+**Stopping** a job - at its timeout, on a cancel, or when the worker is stopped - is `SIGTERM` to the command's process group, then `SIGKILL` five seconds later to whatever of the group is still alive, whether or not the shell itself has exited.
+The job reaches `.done/` only after that, so a finished job has nothing of its group left running; a process that moved itself to another group is out of the worker's reach.
+**Canceling** is a file: create `.running/<job>/cancel` and the worker stops the job within one poll.
 **Recovery** is by name: at start, a worker moves what it left under `.running/` to `.done/` as `crashed`, judged by `claim.json`'s `worker`, and leaves other workers' claims alone.
 A claimless entry has no owner and is taken as the starting worker's.
 **Several at once** is `WORKERS=n`; the worker never runs more than that, and takes jobs in name order, so a producer that wants an order prefixes names with one.
@@ -247,33 +261,34 @@ Nothing is ever deleted: `.done/` grows until someone removes what they have rea
 
 The **base image** is [`image/Containerfile`](image/Containerfile), tagged `heai/pod-base` unless the configuration's `base:` says otherwise.
 Its first stage compiles the worker from [`image/worker/`](image/worker), a Go program with no dependencies; its second stage is Debian with git, jq, ripgrep and curl, and the worker at `/heai/bin/worker` as the entrypoint.
-Nothing in it knows what a job does: that is the job's `run.sh`.
+Nothing in it knows what a job does: that is the job's `run`.
 
-An **extended image** is a directory of the user's holding a `Containerfile` that starts `FROM ${BASE}` and installs the project's toolchains and agents, so that a `run.sh` can call them.
+An **extended image** is a directory of the user's holding a `Containerfile` that starts `FROM ${BASE}` and installs the project's toolchains and agents, so that a job's `run` can call them.
 [`image/example/`](image/example) is one to copy: node, python and claude.
 `build <tag>` passes the base's tag as `BASE`, so an image built against a renamed base needs no edit.
-Credentials are not in any image: `up --env-from <path>` hands an env file to the runtime unread, and the worker passes its whole environment to `run.sh`.
+Credentials are not in any image: `up --env-from <path>` hands an env file to the runtime unread, and the worker passes its whole environment to the command.
 
 The worker takes its settings from the environment `up` sets: `WORKERS` (default 1), `TIMEOUT` (default `1h`), `POLL` (default `2s`), and `WORKER` for its name (default the container's hostname).
 Its log goes to the container's stdout, one line per claim and per finish.
 
 ### A job's shape
 
-Only `run.sh` is pod's; the rest is a convention the other tools' examples follow:
+These names are the whole of the convention; there is no other file and no other directory pod knows:
 
 ```
 <job>/
-  run.sh          what to do: a command, or an agent on the prompt
-  job.json        optional, {"timeout": "2h"}
-  prompt.md       the instructions for the agent, when run.sh runs one
-  repos/<name>/   the code as the producer put it, changed in place
-  out/            whatever run.sh chooses to hand back
-  log/            stdout and stderr, the worker's
-  result.json     the worker's, once done
+  job.json          the producer's: what to run, {"run": "...", "timeout": "2h"}
+  workdir/          the producer's: every file of the job's, and where run starts
+  stdout            the worker's: what run printed
+  stderr            the worker's: what run printed to stderr
+  claim.json        the worker's, while it runs
+  cancel            anyone's, to stop a running job
+  result.json       the worker's, once done
 ```
 
-A `run.sh` for an agent is one line, `cd repos/app && claude -p < ../../prompt.md > ../../out/answer.md`; for a test suite, `cd repos/app && npm test`.
-Code goes in however the producer likes - a `git clone` of a local checkout, a copy, an unpacked archive - and comes back the same way: `.done/<job>/repos/app` is a clone the host can fetch a branch from, diff, or discard.
+What is inside `workdir/` has no convention: it is whatever `run` expects to find and chooses to leave.
+A `run` for an agent is one line, `cd app && claude -p < ../prompt.md`, with a clone and the prompt in `workdir/`, and its answer is the job's `stdout`; for a test suite, `cd app && npm test`.
+Code goes in however the producer likes - a `git clone` of a local checkout, a copy, an unpacked archive - and comes back the same way: `.done/<job>/workdir/app` is a clone the host can fetch a branch from, diff, or discard.
 A git worktree does not survive the mount, since its `.git` file points at a path in the other filesystem; a clone does.
 
 ## The command
@@ -303,9 +318,9 @@ It mounts `<state>/work_queue` at `/work_queue` plus any mount the configuration
 `shell` is an interactive bash in the container, for looking around.
 
 **The queue.**
-`submit` copies the directory into the queue under the name given, else the directory's own, and prints the name; `--move` moves it instead, and `--timeout` writes the job's timeout into its `job.json`, joining whatever the file already says.
+`submit` copies the directory - a `job.json` and its `workdir/` - into the queue under the name given, else the directory's own, and prints the name; `--move` moves it instead, and `--timeout` writes the job's timeout into its `job.json`, joining whatever the file already says.
 `list` prints every job, queued in name order, then running, then done, with its status, exit code, duration and start time.
-`show` prints a job's claim or result and the last `--lines` lines of each log, twenty by default.
+`show` prints a job's claim or result and the last `--lines` lines of its `stdout` and `stderr`, twenty by default; with `--json` the two tails are the keys `stdout` and `stderr`, named for the files.
 `wait` blocks until the job is under `.done/` and prints its status; `--timeout` bounds the wait.
 `cancel` finishes a queued job as `canceled` right there, with a result of the host's, and gives a running job its `cancel` file for the worker to act on; a done job is refused.
 

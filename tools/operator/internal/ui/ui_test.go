@@ -627,7 +627,7 @@ func TestEnterOnAJobOpensIt(t *testing.T) {
 		t.Fatalf("detail: %+v", m.jobDetail)
 	}
 	out := m.Render()
-	for _, want := range []string{"job ── core-reviewer-merge-two-entities", "heai-pod show core-reviewer-merge-two-entities", "exit        3", "took        1m31s", "/repo/pod/work_queue/.done/core-reviewer-merge-two-entities", "log/stdout", "(empty)"} {
+	for _, want := range []string{"job ── core-reviewer-merge-two-entities", "heai-pod show core-reviewer-merge-two-entities", "exit        3", "took        1m31s", "/repo/pod/work_queue/.done/core-reviewer-merge-two-entities", "── stdout", "(empty)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
@@ -644,16 +644,13 @@ func TestEnterOnAJobOpensIt(t *testing.T) {
 
 func TestAJobsLogsAreReadFromTheHost(t *testing.T) {
 	dir := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(dir, "log"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "log", "stderr"), []byte("one\ntwo\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, "stderr"), []byte("one\ntwo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	job := pod.Job{Name: "j", Place: "done", Path: dir, Result: &pod.JobResult{Status: "failed", Exit: 2, Error: "job.json: timeout \"soon\" is not a duration like 2h"}}
 	m := fixture(t).WithSize(100, 20).WithPod(pod.Result{Status: &pod.Status{Container: &pod.Container{Name: "x", State: "running", Running: true}}, Jobs: []pod.Job{job}, At: now})
 	out := press(m, "3", "enter").Render()
-	for _, want := range []string{"error       job.json: timeout", "── log/stderr", " one", " two"} {
+	for _, want := range []string{"error       job.json: timeout", "── stderr", " one", " two"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}

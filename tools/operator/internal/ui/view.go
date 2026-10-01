@@ -925,7 +925,7 @@ func (m Model) podRow(st styles, cols []column, j pod.Job, selected bool, width 
 	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
 }
 
-// jobLines is one job in full: what pod knows about it, and the tail of its logs read from the host.
+// jobLines is one job in full: what pod knows about it, and the tail of its stdout and stderr read from the host.
 func (m Model) jobLines(st styles, j *pod.Job) []string {
 	width := m.width
 	lines := []string{paneTitle(st, "job", j.Name, "heai-pod show "+j.Name, width)}
@@ -945,8 +945,8 @@ func (m Model) jobLines(st styles, j *pod.Job) []string {
 	}
 	lines = append(lines, kv("path", truncate(j.Path, width-14)))
 	for _, name := range []string{"stdout", "stderr"} {
-		text := pod.Tail(filepath.Join(j.Path, "log", name), 20)
-		lines = append(lines, paneRule(st, " ── log/"+name+" ", "", width))
+		text := pod.Tail(filepath.Join(j.Path, name), 20)
+		lines = append(lines, paneRule(st, " ── "+name+" ", "", width))
 		if text == "" {
 			lines = append(lines, " "+st.faint.Render("(empty)"))
 			continue

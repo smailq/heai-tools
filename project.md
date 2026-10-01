@@ -33,7 +33,7 @@ The tools each do one job: the map and its questions, the tasks, the referee, th
                                                           │
    the scripts call:  architect (owner, context, gate)   tasks (new, set, list)   flow (start, advance, link)   pod (submit, wait, show)
                                                           │
-   pod: a job directory per piece of work, its run.sh run in a container, a result.json under .done when it finishes
+   pod: a job directory per piece of work, its job.json's run run in a container, a result.json under .done when it finishes
    operator: the screen a human watches it all on
 ```
 
@@ -149,22 +149,22 @@ It knows no flow and no task; a script it runs does whatever those need.
 
 A **base image** carries the worker and git; the project's **images** are Containerfiles `FROM ${BASE}` that add its toolchains and agents, listed in `pod.yaml` by tag.
 `heai-pod up --image <tag>` runs one persistent container from an image with the worker inside, watching `pod/work_queue`.
-A **job** is a directory a script prepares - a `run.sh` saying what to do, the code, a `prompt.md`, a `job.json` with a timeout - and drops into the queue; the worker claims it into `.running/`, runs `sh run.sh` in it, and moves it to `.done/` with a `result.json` saying `ok`, `failed`, `timeout`, `canceled` or `crashed`.
+A **job** is a directory a script prepares - a `job.json` saying what to run and for how long, and a `workdir/` with the code and a `prompt.md` - and drops into the queue; the worker claims it into `.running/`, runs `job.json`'s `run` in `workdir/` with its output in the job's `stdout` and `stderr`, and moves it to `.done/` with a `result.json` saying `ok`, `failed`, `timeout`, `canceled` or `crashed`.
 
 ```sh
 heai-pod build                                    # the base, then every image in pod.yaml
 heai-pod up --image proj/dev --workers 2 [--env-from ~/.heai/proj.env]
-job=$(mktemp -d) && mkdir "$job/repos" && git clone -q ../app "$job/repos/app" && cp prompt.md "$job/"   # the script's own doing
-echo 'cd repos/app && claude -p < ../../prompt.md' > "$job/run.sh"
+job=$(mktemp -d) && mkdir -p "$job/workdir/repos" && git clone -q ../app "$job/workdir/repos/app" && cp prompt.md "$job/workdir/"   # the script's own doing
+echo '{"run": "cd repos/app && claude -p < ../../prompt.md"}' > "$job/job.json"
 heai-pod submit "$job" --name t1 --timeout 2h --move   # into the queue under a dotted name, renamed into place
 heai-pod wait t1                                  # blocks; prints the status; exits 0 only for ok
-heai-pod show t1                                  # result.json and the tail of log/
-git -C ../app fetch pod/work_queue/.done/t1/repos/app agent/t1:agent/t1     # the branch home, for the gate and the landing
+heai-pod show t1                                  # result.json and the tail of stdout and stderr
+git -C ../app fetch pod/work_queue/.done/t1/workdir/repos/app agent/t1:agent/t1     # the branch home, for the gate and the landing
 heai-pod cancel t1; heai-pod list; heai-pod status; heai-pod shell
 ```
 
-`.done/<job>/result.json` is the whole of how the container talks back: a hook that submitted a job waits on it with `heai-pod wait`, and a `run.sh` that wants to tell a flow directly writes the fact itself, into a directory `pod.yaml` mounts.
-The worker reads nothing in a job but `run.sh` and `job.json`'s timeout, and the pod never learns what a flow or a task is.
+`.done/<job>/result.json` is the whole of how the container talks back: a hook that submitted a job waits on it with `heai-pod wait`, and a `run` that wants to tell a flow directly writes the fact itself, into a directory `pod.yaml` mounts.
+The worker reads nothing in a job but `job.json`, and the pod never learns what a flow or a task is.
 Several containers from several images run side by side with `--container`, one per kind of actor if credentials should not mix, and may share one queue.
 
 ### operator - the screen
@@ -261,7 +261,7 @@ Scripts pass `--by <name>` so the journal says which script moved the flow, and 
 
 **The two files a script writes.** A fact into a flow's inbox is a file named for the event, with the event's data as a JSON body, written under a `.tmp` name and renamed into place, which is the whole of flow's inbox protocol, and the same write-and-rename that drops a job into pod's queue. A task a script files goes through `heai-tasks new` with a provenance line in its body naming the rule, the event and the source, so the task reads where it came from.
 
-**Tasks that run.** A task whose body carries a fenced block tagged `run` is a script with its reason above it. The script that starts work on it reads the block with `heai-tasks show --json` and puts it in the job as `run.sh` instead of the line that prompts an agent; the job, the branch, the result and the gate are the same. No frontmatter key is added.
+**Tasks that run.** A task whose body carries a fenced block tagged `run` is a script with its reason above it. The script that starts work on it reads the block with `heai-tasks show --json` and puts it in the job's `workdir/` as a script that `job.json`'s `run` names, instead of the line that prompts an agent; the job, the branch, the result and the gate are the same. No frontmatter key is added.
 
 ## Rules
 

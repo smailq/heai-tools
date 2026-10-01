@@ -30,12 +30,12 @@ export interface World {
   fake: string
   replies(list: Reply[]): void
   calls(): { bin: string; argv: string[] }[]
-  /** A directory to submit, holding the files given. */
+  /** A directory to submit, holding the files given; a job.json and a prompt in workdir/ when none are. */
   jobDir(name: string, files?: Record<string, string>): string
   /** Play the worker: move a queued job under .running with a claim. */
   claim(name: string, worker?: string): void
-  /** Play the worker: finish a running job with a result and logs. */
-  finish(name: string, result: Partial<JobResult>, log?: { stdout?: string; stderr?: string }): void
+  /** Play the worker: finish a running job with a result, its stdout and its stderr. */
+  finish(name: string, result: Partial<JobResult>, output?: { stdout?: string; stderr?: string }): void
 }
 
 export function makeWorld(): World {
@@ -57,7 +57,7 @@ export function makeWorld(): World {
       if (!existsSync(p)) return []
       return readFileSync(p, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l) as { bin: string; argv: string[] })
     },
-    jobDir(name, files = { 'prompt.md': 'do the thing\n' }) {
+    jobDir(name, files = { 'job.json': '{"run": "claude -p < prompt.md"}\n', 'workdir/prompt.md': 'do the thing\n' }) {
       const d = join(dir, 'jobs', name)
       mkdirSync(d, { recursive: true })
       for (const [f, body] of Object.entries(files)) {
@@ -70,12 +70,11 @@ export function makeWorld(): World {
       renameSync(join(dirs.queue, name), join(dirs.running, name))
       writeFileSync(join(dirs.running, name, 'claim.json'), JSON.stringify({ worker, started: '2026-09-25T10:00:00.000Z' }))
     },
-    finish(name, result, log = {}) {
+    finish(name, result, output = {}) {
       const running = join(dirs.running, name)
       const full: JobResult = { job: name, status: 'ok', exit: 0, started: '2026-09-25T10:00:00.000Z', finished: '2026-09-25T10:01:31.234Z', duration_ms: 91234, worker: 'w1', ...result }
-      mkdirSync(join(running, 'log'), { recursive: true })
-      writeFileSync(join(running, 'log', 'stdout'), log.stdout ?? '')
-      writeFileSync(join(running, 'log', 'stderr'), log.stderr ?? '')
+      writeFileSync(join(running, 'stdout'), output.stdout ?? '')
+      writeFileSync(join(running, 'stderr'), output.stderr ?? '')
       writeFileSync(join(running, 'result.json'), JSON.stringify(full, null, 2) + '\n')
       renameSync(running, join(dirs.done, name))
     }

@@ -2,7 +2,7 @@
 
 Proposed 2026-09-24, decided and implemented 2026-09-25. Replaces the Herdr-based pod: no git
 integration, no Herdr, no workspaces. A pod is one container that watches a directory of job
-folders, runs each one's `run.sh`, and leaves the result in `.done`. Producers
+folders, runs each one's `job.json`, and leaves the result in `.done`. Producers
 and the pod share nothing but the directory. `tools/pod/README.md` is now the specification; this
 file keeps the rationale and the decisions.
 
@@ -17,11 +17,16 @@ file keeps the rationale and the decisions.
 4. The host command keeps the file-only queue commands: `submit`, `list`, `show`, `wait`, `cancel`.
    They never ask the runtime, so a machine without one can still feed and read a queue.
 5. No fact files from the worker. `result.json` is the one thing the worker writes about a job;
-   anything else a job needs to say - a fact into a flow's inbox, an artifact - `run.sh` writes
-   itself, into the job or into a directory `pod.yaml` mounts.
+   anything else a job needs to say - a fact into a flow's inbox, an artifact - the job's command
+   writes itself, into the job or into a directory `pod.yaml` mounts.
 6. (2026-10-01) No `do_work.sh` in the image at all. The first cut had one in the base image and
    another in the example image, both deciding how to run a job; that was the job's decision
    twice over. Now the job carries `run.sh`, the worker runs it, and the image is only a toolbox.
+7. (2026-10-01) No `run.sh` either: `job.json` says what to run, the way `package.json` does. Its
+   `run` is one `sh -c` line and its `timeout` sits beside it, so what a job does and how is one
+   file. The job's files live in a `workdir/` the command starts in, and the command's output is
+   two plain files at the top of the job, `stdout` and `stderr`, with no `log/` around them. The
+   top of a job is then `job.json` and what the worker wrote; everything else is in `workdir/`.
 
 ## Why
 
@@ -47,4 +52,4 @@ file keeps the rationale and the decisions.
   running, queued and badly finished jobs, the table lists jobs, and Enter shows a job with the
   tail of its logs read from the host.
 - `examples.md`'s session example now waits on the job from the `queued` hook; a project that
-  prefers events can have its `run.sh` write a fact into a mounted flow inbox.
+  prefers events can have its job's `run` write a fact into a mounted flow inbox.

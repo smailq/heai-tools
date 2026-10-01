@@ -1,8 +1,8 @@
 // The protocol, from the worker's side. A job is a directory at the top of the
 // queue whose name does not start with a dot; claiming it is one rename into
-// .running/, running it is `sh run.sh` in it, finishing it is a result.json
-// written by write-and-rename and one rename into .done/. Nothing inside the
-// job is read except job.json, and only its timeout.
+// .running/, running it is job.json's `run` as a shell command in the job's
+// workdir/, finishing it is a result.json written by write-and-rename and one
+// rename into .done/. Nothing inside the job is read except job.json.
 package main
 
 import (
@@ -29,11 +29,15 @@ const (
 	resultFile = "result.json"
 	cancelFile = "cancel"
 	jobFile    = "job.json"
-	runFile    = "run.sh"
-	logDir     = "log"
-	// how long a job gets between SIGTERM and SIGKILL when it is stopped
-	grace = 5 * time.Second
+	// where the command runs, and where everything the job works on lives
+	workDir = "workdir"
+	// the command's output, at the top of the job beside job.json
+	stdoutFile = "stdout"
+	stderrFile = "stderr"
 )
+
+// how long a job gets between SIGTERM and SIGKILL when it is stopped
+var grace = 5 * time.Second
 
 type Config struct {
 	Queue   string
@@ -55,7 +59,7 @@ type Claim struct {
 type Result struct {
 	Job    string `json:"job"`
 	Status string `json:"status"`
-	// The script's exit code; -1 when it died of a signal or never ran.
+	// The command's exit code; -1 when it died of a signal or never ran.
 	Exit       int    `json:"exit"`
 	Signal     string `json:"signal,omitempty"`
 	Error      string `json:"error,omitempty"`
@@ -65,7 +69,11 @@ type Result struct {
 	Worker     string `json:"worker"`
 }
 
+// jobSpec is what the worker reads of job.json; any other key is the producer's.
 type jobSpec struct {
+	// What to run: one line for `sh -c`, with workdir/ as its working directory.
+	Run string `json:"run"`
+	// A Go duration; absent, the worker's default applies.
 	Timeout string `json:"timeout"`
 }
 
@@ -174,27 +182,32 @@ func claim(cfg Config) (string, bool) {
 	return "", false
 }
 
-// jobTimeout is job.json's timeout, 0 when the file or the key is absent.
-func jobTimeout(dir string) (time.Duration, error) {
+// readSpec is the job's job.json: the command, and the job's own timeout,
+// `fallback` when it names none. A job without the file, or without a run in
+// it, is refused.
+func readSpec(dir string, fallback time.Duration) (string, time.Duration, error) {
 	b, err := os.ReadFile(filepath.Join(dir, jobFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+		return "", 0, errors.New("no " + jobFile + " in the job")
 	}
 	if err != nil {
-		return 0, err
+		return "", 0, err
 	}
 	var spec jobSpec
 	if err := json.Unmarshal(b, &spec); err != nil {
-		return 0, fmt.Errorf("%s: %v", jobFile, err)
+		return "", 0, fmt.Errorf("%s: %v", jobFile, err)
+	}
+	if strings.TrimSpace(spec.Run) == "" {
+		return "", 0, fmt.Errorf("%s: no run, the command to run", jobFile)
 	}
 	if spec.Timeout == "" {
-		return 0, nil
+		return spec.Run, fallback, nil
 	}
 	d, err := time.ParseDuration(spec.Timeout)
 	if err != nil || d < 0 {
-		return 0, fmt.Errorf("%s: timeout %q is not a duration like 2h", jobFile, spec.Timeout)
+		return "", 0, fmt.Errorf("%s: timeout %q is not a duration like 2h", jobFile, spec.Timeout)
 	}
-	return d, nil
+	return spec.Run, d, nil
 }
 
 func runJob(ctx context.Context, cfg Config, name string) {
@@ -206,48 +219,40 @@ func runJob(ctx context.Context, cfg Config, name string) {
 	}
 	cfg.Log.Printf("%s: claimed", name)
 
-	timeout := cfg.Timeout
-	if t, err := jobTimeout(dir); err != nil {
+	refuse := func(err error) {
 		res.Status, res.Exit, res.Error = "failed", -1, err.Error()
 		finish(cfg, name, res, started)
-		return
-	} else if t > 0 {
-		timeout = t
 	}
-
-	if _, err := os.Stat(filepath.Join(dir, runFile)); err != nil {
-		res.Status, res.Exit, res.Error = "failed", -1, "no "+runFile+" in the job"
-		finish(cfg, name, res, started)
-		return
-	}
-	if err := os.MkdirAll(filepath.Join(dir, logDir), 0o755); err != nil {
-		res.Status, res.Exit, res.Error = "failed", -1, err.Error()
-		finish(cfg, name, res, started)
-		return
-	}
-	stdout, err := os.Create(filepath.Join(dir, logDir, "stdout"))
+	run, timeout, err := readSpec(dir, cfg.Timeout)
 	if err != nil {
-		res.Status, res.Exit, res.Error = "failed", -1, err.Error()
-		finish(cfg, name, res, started)
+		refuse(err)
+		return
+	}
+	work := filepath.Join(dir, workDir)
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		refuse(err)
+		return
+	}
+	stdout, err := os.Create(filepath.Join(dir, stdoutFile))
+	if err != nil {
+		refuse(err)
 		return
 	}
 	defer stdout.Close()
-	stderr, err := os.Create(filepath.Join(dir, logDir, "stderr"))
+	stderr, err := os.Create(filepath.Join(dir, stderrFile))
 	if err != nil {
-		res.Status, res.Exit, res.Error = "failed", -1, err.Error()
-		finish(cfg, name, res, started)
+		refuse(err)
 		return
 	}
 	defer stderr.Close()
 
-	cmd := exec.Command("sh", runFile)
-	cmd.Dir = dir
+	cmd := exec.Command("sh", "-c", run)
+	cmd.Dir = work
 	cmd.Env = append(os.Environ(), "JOB="+name, "JOB_DIR="+dir)
 	cmd.Stdout, cmd.Stderr = stdout, stderr
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := cmd.Start(); err != nil {
-		res.Status, res.Exit, res.Error = "failed", -1, err.Error()
-		finish(cfg, name, res, started)
+		refuse(err)
 		return
 	}
 
@@ -289,18 +294,54 @@ func runJob(ctx context.Context, cfg Config, name string) {
 	finish(cfg, name, res, started)
 }
 
-// terminate stops the script's whole process group: SIGTERM, then SIGKILL
-// after the grace period, and returns what Wait said.
+// terminate stops the command's whole process group: SIGTERM, then SIGKILL
+// to whatever of the group is left after the grace period, and returns what
+// Wait said. The shell exiting is not the end of it: a child that ignored
+// SIGTERM is still in the group, so the group is watched until it is empty.
 func terminate(cmd *exec.Cmd, done <-chan error) error {
 	pgid := -cmd.Process.Pid
 	_ = syscall.Kill(pgid, syscall.SIGTERM)
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(grace):
+	deadline := time.After(grace)
+	tick := time.NewTicker(20 * time.Millisecond)
+	defer tick.Stop()
+	var waitErr error
+	exited := false
+	for {
+		select {
+		case waitErr = <-done:
+			exited = true
+			done = nil
+		case <-deadline:
+			_ = syscall.Kill(pgid, syscall.SIGKILL)
+			if !exited {
+				waitErr = <-done
+			}
+			// SIGKILL cannot be refused; give the dead a moment to be reaped
+			for i := 0; i < 50 && !groupGone(pgid); i++ {
+				time.Sleep(20 * time.Millisecond)
+			}
+			return waitErr
+		case <-tick.C:
+		}
+		// no process left in the group: nothing to wait for, nothing to kill
+		if exited && groupGone(pgid) {
+			return waitErr
+		}
 	}
-	_ = syscall.Kill(pgid, syscall.SIGKILL)
-	return <-done
+}
+
+// groupGone says whether the process group, given negated, has no member left.
+// It is asked only once the shell has been waited for. In the container the
+// worker is PID 1, so the shell's orphans become its children and stay in the
+// group as zombies until reaped; they are reaped here, by group, first.
+func groupGone(pgid int) bool {
+	for {
+		pid, err := syscall.Wait4(pgid, nil, syscall.WNOHANG, nil)
+		if pid <= 0 || err != nil {
+			break
+		}
+	}
+	return errors.Is(syscall.Kill(pgid, 0), syscall.ESRCH)
 }
 
 func exitOf(err error) (int, string) {

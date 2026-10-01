@@ -80,10 +80,10 @@ heai-flow start session --link task="$1" --link actor="$actor" --by dispatch.sh
 
 # scripts/start.sh: a job holding a clone and the prompt, submitted; the hook is detached, so it waits for the result itself
 name="$HEAI_LINK_ACTOR-$HEAI_LINK_TASK"
-job=$(mktemp -d) && mkdir "$job/repos"
-git clone -q ../app "$job/repos/app" && git -C "$job/repos/app" checkout -q -b "agent/$name"
-{ heai-architect context "$HEAI_LINK_ACTOR"; heai-tasks show "$HEAI_LINK_TASK"; } > "$job/prompt.md"
-echo 'cd repos/app && claude -p < ../../prompt.md' > "$job/run.sh"
+job=$(mktemp -d) && mkdir -p "$job/workdir/repos"
+git clone -q ../app "$job/workdir/repos/app" && git -C "$job/workdir/repos/app" checkout -q -b "agent/$name"
+{ heai-architect context "$HEAI_LINK_ACTOR"; heai-tasks show "$HEAI_LINK_TASK"; } > "$job/workdir/prompt.md"
+echo '{"run": "cd repos/app && claude -p < ../../prompt.md"}' > "$job/job.json"
 heai-pod submit "$job" --name "$name" --move --timeout 2h
 heai-flow link "$HEAI_FLOW" job="$name"
 heai-flow advance "$HEAI_FLOW" started --by start.sh
@@ -92,7 +92,7 @@ heai-flow advance "$HEAI_FLOW" exited --data "{\"status\":\"$status\"}" --by sta
 
 # scripts/gate.sh: fetch the branch home from the finished job's clone, then judge it against the map
 branch="agent/$HEAI_LINK_JOB"
-git -C ../app fetch -q "pod/work_queue/.done/$HEAI_LINK_JOB/repos/app" "$branch:$branch"
+git -C ../app fetch -q "pod/work_queue/.done/$HEAI_LINK_JOB/workdir/repos/app" "$branch:$branch"
 if git -C ../app diff --name-only "main...$branch" | heai-architect gate --actor "$HEAI_LINK_ACTOR"
 then heai-flow advance "$HEAI_FLOW" gated --data '{"verdict":"clean"}' --by gate.sh
 else heai-flow advance "$HEAI_FLOW" gated --data '{"verdict":"violation"}' --by gate.sh

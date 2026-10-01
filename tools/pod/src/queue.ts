@@ -1,6 +1,7 @@
 // The protocol, from the host's side. Everything here is files under the
-// state directory's work_queue/: a job is a directory at the top, .running/
-// while the worker has it, .done/ with a result.json after. The container is
+// state directory's work_queue/: a job is a directory at the top holding a
+// job.json and a workdir/, .running/ while the worker has it, .done/ with a
+// result.json, stdout and stderr after. The container is
 // never asked; a script that knows the layout can do all of this without the
 // command.
 

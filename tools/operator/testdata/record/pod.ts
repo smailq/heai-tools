@@ -18,7 +18,7 @@ const must = (r: { code: number; stdout: string; stderr: string }, want: number,
 }
 const job = (actor: string, task: string) => {
   const name = `${actor}-${task}`
-  must(cli(w, 'submit', w.jobDir(name, { 'prompt.md': `${task}\n`, 'repos/app/README.md': 'hi\n' }), '--timeout', '2h'), 0, `submit ${name}`)
+  must(cli(w, 'submit', w.jobDir(name, { 'job.json': '{"run": "cd repos/app && claude -p < ../../prompt.md"}\n', 'workdir/prompt.md': `${task}\n`, 'workdir/repos/app/README.md': 'hi\n' }), '--timeout', '2h'), 0, `submit ${name}`)
   return name
 }
 const ok = job('api-owner', 'cache-the-index')

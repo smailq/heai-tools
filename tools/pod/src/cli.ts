@@ -14,7 +14,7 @@ import { dockerRuntime } from './runtimes/docker.ts'
 import { buildBase, buildImage, down, parseMount, status, up } from './box.ts'
 import { cancel, find, formatDuration, jobs, submit, tail, wait, type Job } from './queue.ts'
 
-const USAGE = `heai-pod - one container watching a work queue: a job is a directory with a run.sh, the worker runs it, the result lands in .done
+const USAGE = `heai-pod - one container watching a work queue: a job is a directory with a job.json, the worker runs its "run" in the job's workdir/, the result lands in .done
 
   heai-pod up    --image <tag> [--workers n] [--timeout <duration>] [--poll <duration>] [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
   heai-pod down  [--force]                          refused while a job is running
@@ -26,7 +26,7 @@ const USAGE = `heai-pod - one container watching a work queue: a job is a direct
 
   heai-pod submit <dir> [--name <job>] [--timeout <duration>] [--move]   copy (or move) the directory into the queue; prints the job's name
   heai-pod list [--json]                            every job: queued, running, done
-  heai-pod show <job> [--lines N] [--json]          the job's claim or result, and the tail of its logs
+  heai-pod show <job> [--lines N] [--json]          the job's claim or result, and the tail of its stdout and stderr
   heai-pod wait <job> [--timeout <duration>] [--json]   block until it is done; prints the status
   heai-pod cancel <job>                             a queued job is finished as canceled here; a running one is told to stop
 
@@ -82,9 +82,9 @@ function printJob(j: Job, lines: number): void {
   } else if (j.claim) rows.push(['started', j.claim.started], ['worker', j.claim.worker])
   rows.push(['path', j.path])
   for (const [k, v] of rows) console.log(`${pad(k, 9)} ${v}`)
-  for (const log of ['stdout', 'stderr']) {
-    const text = tail(join(j.path, 'log', log), lines)
-    if (text) process.stdout.write(`--- log/${log} (last ${lines} lines)\n${text}`)
+  for (const file of ['stdout', 'stderr']) {
+    const text = tail(join(j.path, file), lines)
+    if (text) process.stdout.write(`--- ${file} (last ${lines} lines)\n${text}`)
   }
 }
 
@@ -230,7 +230,7 @@ async function main(argv: string[]): Promise<number> {
       const job = find(state, name)
       if (!job) throw new UsageError(`no job named ${name}`)
       const lines = values.lines !== undefined ? positiveInt(values.lines, '--lines') : 20
-      if (values.json) json({ ...job, log: { stdout: tail(join(job.path, 'log', 'stdout'), lines), stderr: tail(join(job.path, 'log', 'stderr'), lines) } })
+      if (values.json) json({ ...job, stdout: tail(join(job.path, 'stdout'), lines), stderr: tail(join(job.path, 'stderr'), lines) })
       else printJob(job, lines)
       return 0
     }

@@ -1,7 +1,7 @@
 {
   "name": "@heai-tools/pod",
   "version": "0.2.0",
-  "description": "One container watching a work queue: a job is a directory with a run.sh, the worker runs it, and the result lands beside it in .done",
+  "description": "One container watching a work queue: a job is a directory with a job.json, the worker runs its command in the job's workdir, and the result lands beside it in .done",
   "license": "MIT",
   "repository": {
     "type": "git",

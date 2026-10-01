@@ -1,6 +1,6 @@
 // The worker: the base image's entrypoint. It watches /work_queue for job
-// directories, runs `sh run.sh` in each, and moves it to .done with a
-// result.json. Flags first, then the environment `up` passes in.
+// directories, runs each one's job.json `run` in its workdir/, and moves it
+// to .done with a result.json. Flags first, then the environment `up` passes in.
 package main
 
 import (

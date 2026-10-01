@@ -5,21 +5,28 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
 
-// The run.sh every test job carries unless it says otherwise: prints, sleeps
-// for `sleep` seconds when that file is present, and exits with `exit` when
-// that file is present.
-const script = `#!/bin/sh
-echo "out $JOB in $JOB_DIR"
+// The run every test job carries unless it brings its own job.json: prints,
+// sleeps for `sleep` seconds when that file is in the workdir, and exits with
+// `exit` when that file is.
+const script = `echo "out $JOB in $JOB_DIR"
 echo "err $JOB" >&2
 [ -f sleep ] && sleep "$(cat sleep)"
 [ -f exit ] && exit "$(cat exit)"
 exit 0
 `
+
+// spec is a job.json running `run`.
+func spec(run string) string {
+	b, _ := json.Marshal(map[string]string{"run": run})
+	return string(b)
+}
 
 type world struct {
 	t     *testing.T
@@ -35,23 +42,25 @@ func newWorld(t *testing.T) *world {
 }
 
 // job drops a job directory the way a producer does: under a dotted name, then
-// renamed; it carries the test run.sh unless `files` names its own, or `norun`.
+// renamed. `files` are paths in the job; it carries a job.json running the test
+// script unless `files` names its own, or `nojob`.
 func (w *world) job(name string, files map[string]string) {
 	w.t.Helper()
 	tmp := filepath.Join(w.queue, ".tmp-"+name)
+	all := map[string]string{jobFile: spec(script)}
+	for f, body := range files {
+		all[f] = body
+	}
+	if _, skip := all["nojob"]; skip {
+		delete(all, "nojob")
+		delete(all, jobFile)
+	}
 	if err := os.MkdirAll(tmp, 0o755); err != nil {
 		w.t.Fatal(err)
 	}
-	if _, has := files[runFile]; !has {
-		if _, skip := files["norun"]; !skip {
-			if err := os.WriteFile(filepath.Join(tmp, runFile), []byte(script), 0o644); err != nil {
-				w.t.Fatal(err)
-			}
-		}
-	}
-	for f, body := range files {
-		if f == "norun" {
-			continue
+	for f, body := range all {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(tmp, f)), 0o755); err != nil {
+			w.t.Fatal(err)
 		}
 		if err := os.WriteFile(filepath.Join(tmp, f), []byte(body), 0o644); err != nil {
 			w.t.Fatal(err)
@@ -113,7 +122,7 @@ func (w *world) waitFor(rel string, timeout time.Duration) {
 
 func TestOkAndFailedInNameOrder(t *testing.T) {
 	w := newWorld(t)
-	w.job("b-second", map[string]string{"exit": "3"})
+	w.job("b-second", map[string]string{"workdir/exit": "3"})
 	w.job("a-first", nil)
 	w.job(".tmp-half-written", nil)
 	if err := os.MkdirAll(w.queue, 0o755); err != nil {
@@ -143,11 +152,11 @@ func TestOkAndFailedInNameOrder(t *testing.T) {
 	if !(a.Finished < b.Finished) {
 		t.Errorf("a-first should finish before b-second: %s vs %s", a.Finished, b.Finished)
 	}
-	out, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "a-first", logDir, "stdout"))
+	out, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "a-first", stdoutFile))
 	if !strings.HasPrefix(string(out), "out a-first in "+filepath.Join(w.queue, runningDir, "a-first")) {
 		t.Errorf("stdout: %q", out)
 	}
-	errOut, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "a-first", logDir, "stderr"))
+	errOut, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "a-first", stderrFile))
 	if string(errOut) != "err a-first\n" {
 		t.Errorf("stderr: %q", errOut)
 	}
@@ -168,7 +177,7 @@ func TestOkAndFailedInNameOrder(t *testing.T) {
 
 func TestTimeoutFromJobJSON(t *testing.T) {
 	w := newWorld(t)
-	w.job("slow", map[string]string{"sleep": "10", jobFile: `{"timeout": "150ms"}`})
+	w.job("slow", map[string]string{jobFile: `{"run": "sleep 10", "timeout": "150ms"}`})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
@@ -184,19 +193,25 @@ func TestTimeoutFromJobJSON(t *testing.T) {
 func TestDefaultTimeout(t *testing.T) {
 	w := newWorld(t)
 	w.cfg.Timeout = 150 * time.Millisecond
-	w.job("slow", map[string]string{"sleep": "10"})
+	w.job("slow", map[string]string{"workdir/sleep": "10"})
+	w.job("unbounded", map[string]string{jobFile: `{"run": "sleep 0.5", "timeout": "0"}`})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
 	if r := w.waitDone("slow", 5*time.Second); r.Status != "timeout" {
 		t.Errorf("%+v", r)
 	}
+	if r := w.waitDone("unbounded", 5*time.Second); r.Status != "ok" {
+		t.Errorf("a job's timeout of 0 is no limit, not the default: %+v", r)
+	}
 }
 
 func TestBadJobJSON(t *testing.T) {
 	w := newWorld(t)
-	w.job("bad", map[string]string{jobFile: `{"timeout": "soon"}`})
+	w.job("bad", map[string]string{jobFile: `{"run": "true", "timeout": "soon"}`})
 	w.job("worse", map[string]string{jobFile: `{`})
+	w.job("idle", map[string]string{jobFile: `{"timeout": "1h"}`})
+	w.job("listed", map[string]string{jobFile: `{"run": ["echo", "hi"]}`})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
@@ -207,14 +222,22 @@ func TestBadJobJSON(t *testing.T) {
 	if worse := w.waitDone("worse", 5*time.Second); worse.Status != "failed" || worse.Error == "" {
 		t.Errorf("%+v", worse)
 	}
-	if w.exists(filepath.Join(doneDir, "bad", logDir)) {
-		t.Error("a job refused before it ran has no log")
+	if idle := w.waitDone("idle", 5*time.Second); idle.Status != "failed" || idle.Exit != -1 || idle.Error != "job.json: no run, the command to run" {
+		t.Errorf("%+v", idle)
+	}
+	if listed := w.waitDone("listed", 5*time.Second); listed.Status != "failed" || !strings.HasPrefix(listed.Error, "job.json: ") {
+		t.Errorf("run is one string: %+v", listed)
+	}
+	for _, f := range []string{stdoutFile, stderrFile, workDir} {
+		if w.exists(filepath.Join(doneDir, "bad", f)) {
+			t.Errorf("a job refused before it ran has no %s", f)
+		}
 	}
 }
 
 func TestCancelFile(t *testing.T) {
 	w := newWorld(t)
-	w.job("long", map[string]string{"sleep": "10"})
+	w.job("long", map[string]string{"workdir/sleep": "10"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
@@ -238,7 +261,7 @@ func TestCancelFile(t *testing.T) {
 
 func TestShutdownCancelsRunningJobs(t *testing.T) {
 	w := newWorld(t)
-	w.job("long", map[string]string{"sleep": "10"})
+	w.job("long", map[string]string{"workdir/sleep": "10"})
 	ctx, cancel := context.WithCancel(context.Background())
 	errc := w.start(ctx)
 	w.waitFor(filepath.Join(runningDir, "long", claimFile), 5*time.Second)
@@ -288,7 +311,7 @@ func TestWorkersRunSideBySide(t *testing.T) {
 	w := newWorld(t)
 	w.cfg.Workers = 3
 	for _, n := range []string{"x", "y", "z"} {
-		w.job(n, map[string]string{"sleep": "1"})
+		w.job(n, map[string]string{"workdir/sleep": "1"})
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -304,31 +327,77 @@ func TestWorkersRunSideBySide(t *testing.T) {
 	}
 }
 
-func TestAJobWithoutRunShIsRefused(t *testing.T) {
+func TestAJobWithoutJobJSONIsRefused(t *testing.T) {
 	w := newWorld(t)
-	w.job("j", map[string]string{"norun": "", "prompt.md": "do it\n"})
+	w.job("j", map[string]string{"nojob": "", "workdir/prompt.md": "do it\n", "run.sh": "echo hi\n"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
 	r := w.waitDone("j", 5*time.Second)
-	if r.Status != "failed" || r.Exit != -1 || r.Error != "no run.sh in the job" {
+	if r.Status != "failed" || r.Exit != -1 || r.Error != "no job.json in the job" {
 		t.Errorf("%+v", r)
 	}
-	if w.exists(filepath.Join(doneDir, "j", logDir)) {
-		t.Error("a job refused before it ran has no log")
+	if w.exists(filepath.Join(doneDir, "j", stdoutFile)) {
+		t.Error("a job refused before it ran has no stdout")
 	}
 }
 
-func TestRunShNeedNotBeExecutable(t *testing.T) {
+func TestRunIsAShellLineInTheWorkdir(t *testing.T) {
 	w := newWorld(t)
-	w.job("plain", map[string]string{runFile: "echo ran > out.txt\n"})
+	w.job("bare", map[string]string{jobFile: spec("echo ran > out.txt && pwd")})
+	w.job("full", map[string]string{jobFile: spec("cat input.txt | tr a-z A-Z; ls .."), "workdir/input.txt": "shout\n"})
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	w.start(ctx)
-	if r := w.waitDone("plain", 5*time.Second); r.Status != "ok" {
+	if r := w.waitDone("bare", 5*time.Second); r.Status != "ok" {
 		t.Errorf("%+v", r)
 	}
-	if b, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "plain", "out.txt")); string(b) != "ran\n" {
-		t.Errorf("run.sh runs with the job as its cwd: %q", b)
+	if b, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "bare", workDir, "out.txt")); string(b) != "ran\n" {
+		t.Errorf("a job without a workdir gets one, and run starts in it: %q", b)
+	}
+	if b, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "bare", stdoutFile)); !strings.HasSuffix(string(b), filepath.Join("bare", workDir)+"\n") {
+		t.Errorf("pwd: %q", b)
+	}
+	if r := w.waitDone("full", 5*time.Second); r.Status != "ok" {
+		t.Errorf("%+v", r)
+	}
+	b, _ := os.ReadFile(filepath.Join(w.queue, doneDir, "full", stdoutFile))
+	if string(b) != "SHOUT\nclaim.json\njob.json\nstderr\nstdout\nworkdir\n" {
+		t.Errorf("the job's files are in workdir, and the worker's beside it: %q", b)
+	}
+}
+
+func TestAStoppedJobLeavesNothingRunning(t *testing.T) {
+	old := grace
+	grace = 300 * time.Millisecond
+	defer func() { grace = old }()
+	w := newWorld(t)
+	// the shell dies of SIGTERM at once; its child ignores it
+	w.job("stubborn", map[string]string{jobFile: `{"run": "(trap '' TERM; exec sleep 30) & echo $! > pid; wait", "timeout": "150ms"}`})
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	w.start(ctx)
+	r := w.waitDone("stubborn", 5*time.Second)
+	if r.Status != "timeout" {
+		t.Errorf("%+v", r)
+	}
+	if r.DurationMS < 400 {
+		t.Errorf("the child gets the grace period before it is killed, took %dms", r.DurationMS)
+	}
+	b, err := os.ReadFile(filepath.Join(w.queue, doneDir, "stubborn", workDir, "pid"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer syscall.Kill(pid, syscall.SIGKILL)
+	deadline := time.Now().Add(2 * time.Second)
+	for syscall.Kill(pid, 0) == nil {
+		if time.Now().After(deadline) {
+			t.Fatalf("the child that ignored SIGTERM is still running as %d after the job is done", pid)
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }
