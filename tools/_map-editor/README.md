@@ -1,6 +1,6 @@
 # @heai-tools/map-editor
 
-A web editor for the architecture map: the system drawn from the map, an inspector that edits one field at a time, and live validation against the schema and the rules in [`docs/architecture-map.md`](../../docs/architecture-map.md).
+A web editor for the architecture map: the system drawn from the map, an inspector that edits one field at a time, and live validation against the schema and the rules in [`architect`'s README](../architect/README.md#the-map).
 
 ```sh
 npm install
@@ -57,13 +57,14 @@ Warnings cover what is worth looking at before it becomes wrong - an actor neith
 
 ## Endpoints
 
-The server serves the page and four stateless endpoints; none of them touch the map file.
+The server serves the page and seven stateless endpoints; none of them write the map file.
 
 | endpoint | purpose |
 | --- | --- |
 | `POST /api/validate` | `{"yaml": "..."}` or `{"map": {...}}` → `{valid, errors, warnings, map?}` |
 | `POST /api/serialize` | `{"map": {...}}` → `{yaml}` |
 | `POST /api/tree` | `{"repositories": {...}}` → the files under each entry's `localPath` |
+| `POST /api/tasks` | `{"repositories": {...}}` → the tasks of each tracker found at `.heai/tasks` or `tasks/` under an entry's `localPath`, or beside the `--file` map; read only |
 | `GET /api/file` | the `--file` seed as `{path, name, yaml}`; 404 when none is configured |
 | `GET /api/template` | the starter map, as YAML and as an object |
 | `GET /api/schema` | the schema being validated against |
@@ -84,7 +85,7 @@ That is why the default binding is loopback: bind wider only inside a container 
 ## Tests
 
 ```sh
-npm test        # the endpoints: validate, serialize, template, schema
+npm test        # the endpoints: validate, serialize, schema
 npm run typecheck
 ```
 

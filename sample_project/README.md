@@ -19,7 +19,7 @@ To use the tools here yourself: `PATH=$PWD/bin:$PATH heai-flow list`.
 | pane | what is there | why |
 | --- | --- | --- |
 | tasks | 10 tasks: 1 in progress, 1 in review, 3 blocked, 2 todo, 1 backlog, 1 done, 1 canceled; every territory routes to an actor from the map | `multiple-workspaces` is blocked by a canceled task, so its row is red |
-| flows | 3 stuck: two sessions blocked on requests, one request still todo; 6 open | the session waiting on the canceled request is red, since it can never unblock; `d` then `session` lists the four sessions (running, blocked, blocked, clean) with their task, actor, repo and branch; `⏎` traces one |
+| flows | 3 stuck: two sessions blocked on requests, one request still todo; 5 open of 7 | the session waiting on the canceled request is red, since it can never unblock; the four sessions are running, blocked, blocked and clean, and the pane beside the list shows the flow under the cursor with its links: task, actor, repo and branch; `⏎` traces it |
 | pod | `○ no container` in amber | `pod.yaml` names `heai-sample`, which was never built or started; the pane shows the down path |
 | reactor | 5 sources with `github` and `health` in amber; 5 rules; 4 events, one of them red | the webhook's secret is unset, the poll's port answers nothing, and `session-failed` exits 3 on purpose |
 
@@ -40,7 +40,7 @@ heai-reactor tick                                                      # the min
 ```
 architecture.yaml         the map: one human, seven llm-agents, one repository, eight territories
 tasks/                    the tracker; items/ are the ten tasks, INDEX.md is built by heai-tasks
-flows/                    session, request and landing definitions (landing is templates/software/flows/landing.yaml)
+flows/                    session, request and landing definitions
 scripts/                  what the hooks and rules run; session/cancel.sh cancels one session through flow
 reactor.yaml              five sources, five rules
 pod.yaml                  the container name and one image, never built; images/dev/ is pod's example image

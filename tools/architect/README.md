@@ -266,14 +266,14 @@ heai-architect context <actor>|<territory> [--json]
 heai-architect template
 
   --map <path>      the map; default HEAI_MAP, else $HEAI_DIR/architecture.yaml, else .heai/architecture.yaml, else architecture.yaml
-  --schema <path>   the schema; default this repository's, or HEAI_SCHEMA
+  --schema <path>   the schema; default the tool's own schemas/architecture.schema.json, or HEAI_SCHEMA
 ```
 
-A subcommand is required; bare `architect` prints usage and exits `2`.
+A subcommand is required; bare `heai-architect` prints usage and exits `2`.
 The map and schema flags are global, so every subcommand finds the map the same way.
 `--map` names it outright; else `HEAI_MAP` names it; else `HEAI_DIR`, when set, is the project directory and the map is its `architecture.yaml`; else `.heai/architecture.yaml` if it exists, else `architecture.yaml`, from the current directory.
 `HEAI_DIR` is the project directory every tool shares, so a script run with it set never names the map, and a `HEAI_DIR` without a map is exit `2`, never a fall through to the current directory.
-The schema defaults to this repository's, beside the tools, so a linked install finds it and a copied one is told where it is.
+The schema defaults to the one shipped with the tool, in its own `schemas/`, so a linked install and a published one both find it.
 
 The map is read once, by the validator, and every subcommand runs over the validated document.
 `check` reports what the validator found; every other subcommand refuses, with exit `2`, to answer over a map with errors, because an owner resolved over an overlapping map, or a verdict over a map with a broken parent chain, would be a guess.
@@ -306,7 +306,7 @@ An agent definition generated from the map is a shell-out to it.
 | `1` | errors, or warnings under `--strict`; a boundary violation; the path is unowned |
 | `2` | the map or the schema cannot be read; a query or gate over a map with errors; bad usage |
 
-It is the same split `tasks` and `agent-host` make.
+It is the same split every other tool here makes.
 Exit `2` covers anything that makes the question unanswerable rather than answered "no": an unknown subject, a subject named twice, an unknown `--format`, a missing or unparseable map, and a map with errors.
 
 ## The gate
@@ -395,7 +395,7 @@ The parser errs toward reading more paths than fewer, since a path it misses is 
 | `findings[].fatal` | whether this finding fails the gate |
 | `findings[].note` | present only where a finding needs explaining, such as an unowned path the posture allows |
 
-`agent-host` parses exactly this, keeps `findings` whole on the run, and reads the verdict off the exit code.
+A script that gates a change parses exactly this, or reads only the verdict off the exit code.
 
 ## The library
 
@@ -429,7 +429,7 @@ if (result.map) {
 `UsageError` is the one exit-`2` class: an unreadable map or schema, a map with errors, an unknown subject or repository.
 
 `map-editor` depends on this package by name, resolved locally by `file:../architect`, and validates on every keystroke through `createValidator`.
-Because the sources are TypeScript run directly, the package resolves through a symlink so Node strips types outside `node_modules`.
+The package's exports point at `dist/`, which `npm install` builds here, so a dependent imports compiled JavaScript and never the TypeScript sources.
 
 `runGate` is handed a map object rather than a path, so a library caller may hand it one the validator has not seen.
 It still refuses, as a `UsageError`, a glob outside the dialect, a territory whose parent chain resolves no owner, and a path two territories claim, so such a caller gets a message rather than a stack trace; over a map `loadMap` returned, none of those branches is reachable.
@@ -453,12 +453,10 @@ It still refuses, as a `UsageError`, a glob outside the dialect, a territory who
   Two globs an exclusion separates only in combination, or a child glob covered only by the union of its parent's globs, are reported as findings.
   The map is rewritten to a form the checker can prove, which has been a clearer map every time so far.
 - **The dialect has no classes, braces, or negation**, and a glob written in another dialect's syntax is matched literally, without a warning.
-- **The package is not published.**
-  The sources run directly under Node 22.18 or newer and resolve through a symlink; a registry publish would need an emitted `dist/`.
 
 ## Potential future features
 
-Ideas, not commitments; the root README's list holds the ones that span tools.
+Ideas, not commitments.
 
 - **An import-boundary check** that enforces `dependsOn` under the `undeclaredDependencies` posture, reading a language-agnostic import graph and resolving both ends of each edge through `owner`.
 - **A hook mode** that reads a harness's pre-edit event on stdin and denies an edit outside the actor's territories, naming the owner, so the gate answers while the agent can still stop rather than at review time.

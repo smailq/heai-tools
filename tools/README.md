@@ -10,7 +10,7 @@ Tools here target different languages and ecosystems, so there is no shared buil
 - **`test` and `typecheck` (or the ecosystem's equivalent), runnable from the tool's own directory** with no root-level setup.
 - **A `README.md`** covering what it does, how it is invoked, and its exit codes.
 - **A released command named `heai-<tool>`**, where `<tool>` is the directory name: a Node tool sets `bin` to that name and builds into `dist/` on `npm install` (so an installed package never depends on Node stripping types under `node_modules`); a Go tool keeps its `main` under `cmd/heai-<tool>`. A tool that shells out to another asks for it by the released name.
-- **A release per tool**, from a GitHub release tagged `<tool>-v<version>`; [`docs/releasing.md`](../docs/releasing.md) has the procedure.
+- **A release per tool**, from a GitHub release tagged `<tool>-v<version>`; [`releasing.md`](../releasing.md) has the procedure.
 
 ## Independence
 
@@ -26,6 +26,6 @@ Tools read [`architect/schemas/architecture.schema.json`](architect/schemas/arch
 - [`map-editor`](_map-editor) - a web editor for visualizing and editing the map.
 - [`tasks`](tasks) - a file-based task tracker for a repository, managed by an agent.
 - [`reactor`](reactor) - the one daemon, and a router: ticks, commits, webhooks, polls and `heai-reactor emit` become events, and each event runs the one script its rule names.
-- [`pod`](pod) - one persistent container running Herdr, a worktree per piece of work, an agent or a command in it, and a fact file when it settles.
+- [`pod`](pod) - one persistent container watching a work queue: a job is a directory with a `job.json` and a `workdir/`, the worker runs the job's command, and its `stdout`, `stderr` and `result.json` land beside it.
 - [`flow`](flow) - a state machine per record and a graph of records: a definition per process with one script per state, an append-only journal per flow, the script run on each state entered, and one command that says what state anything is in, what it waits on, and what is stuck.
-- [`operator`](operator) - an `htop`-shaped terminal view of the tools' state: tasks, flows and sessions, read from their files and CLIs.
+- [`operator`](operator) - an `htop`-shaped terminal view of the tools' state: tasks, flows, the pod's jobs and the reactor's events, read from their files and CLIs; written in Go, and read-only.

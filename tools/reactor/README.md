@@ -233,7 +233,7 @@ heai-reactor test <rule> --event <file.json>          one rule against one event
 - **`replay`** runs the rules over logged events again with dedupe still holding: how a new rule acts on what it missed, and how limited events are picked up. `--dry-run` prints what would happen and touches nothing.
 - **`test`** reads `{ source, kind, key, payload }` from a file and prints whether the rule matches and the rendered command.
 
-Common options: `--dir`, the project directory, where commands run and relative paths resolve (default: the current directory, else `HEAI_DIR`); `--config`, the configuration file (default: `.heai/reactor.yaml` when `.heai/` exists under the project directory, else `reactor.yaml` in it); `--state`, the state directory (default: `reactor` beside the configuration; `HEAI_REACTOR_STATE`).
+Common options: `--dir`, the project directory, where commands run and relative paths resolve (default: `HEAI_DIR`, else the current directory); `--config`, the configuration file (default: `.heai/reactor.yaml` when `.heai/` exists under the project directory, else `reactor.yaml` in it); `--state`, the state directory (default: `reactor` beside the configuration; `HEAI_REACTOR_STATE`).
 
 | exit | meaning |
 | --- | --- |
@@ -288,14 +288,15 @@ tools/reactor/
     events.ts             the log, ids, keys, cursors, rule state, action records
     rules.ts              matching and the template context
     template.ts           {{ path | default | join }}
+    errors.ts             the two kinds of failure: UsageError, exit 2, and ReactorError, exit 1
     cron.ts               five fields, names, aliases; previous, next and missed slots
     run.ts                the one action: a command with the environment contract
     pool.ts               the concurrency cap over the commands
     receiver.ts           the HTTP listener for posts
     source.ts             the source contract, the context, the module-path loader
     sources/              schedule, git, webhook, poll, cli, dir
-    providers/            github, sentry, vercel, generic; sign.ts for the HMACs
+    providers/            github, sentry, vercel, generic; index.ts picks one by name, sign.ts for the HMACs
   test/
     fixtures/             one recorded body per provider
-    *.test.ts             one file per module, config.test.ts for the schema and this README, cli.test.ts end to end
+    *.test.ts             the sources, cron, rules, templates, run and emit; config.test.ts for the schema and this README; cli.test.ts end to end
 ```

@@ -212,7 +212,7 @@ A link value that names no flow, `task=inline-images-from-eml`, leads nowhere, w
 heai-flow start <definition> [--id <id>] [--link name=value ...] [--waits-on <flow> ...] [--by <who>] [--note "..."] [--definition <path>]
 heai-flow advance <id> <event> [--data '<json>'] [--seq <n>] [--by <who>] [--note "..."]
 heai-flow touch <id>
-heai-flow link <id> [name=value ...] [--waits-on <flow> ...]
+heai-flow link <id> [name=value ...] [--waits-on <flow> ...] [--by <who>]
 heai-flow show <id> [--json]                    state, links, hooks, the journal, and the actions
 heai-flow list [<definition>] [--in <state>] [--link name=value] [--json]
 heai-flow trace <id | name=value> [--json]
@@ -265,6 +265,8 @@ tools/flow/
     flow.schema.json      the formal definition of flow.yaml
   src/
     cli.ts                the commands, and where everything is
+    cli-format.ts         how long something has been idle, as the CLI prints it
+    errors.ts             the two kinds of no: UsageError, exit 2, and FlowError, exit 1
     store.ts              the operations the CLI calls; scans the flows directory for definitions
     core.ts               the referee: start, advance, link, touch, repin, each under the flow's lock
     actions.ts            the one script per state entered: the environment, the detached start, the record
@@ -278,5 +280,5 @@ tools/flow/
   test/
     fixtures/definitions/ run, request, landing, and session with its hooks
     fixtures/journal.jsonl  the format contract, pinned
-    *.test.ts             one file per module above, plus the CLI
+    *.test.ts             definitions, the journal, actions, settle, trace, check and the configuration, plus the CLI end to end
 ```

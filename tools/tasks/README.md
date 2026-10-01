@@ -106,6 +106,8 @@ title: Human-readable task title
 status: backlog
 priority:
 territory:
+created_at: 2026-09-01
+modified_at: 2026-09-01
 ---
 
 The task body: free markdown - context, motivation, proposed approach,
@@ -152,7 +154,7 @@ pnpm --filter ontology generate && git add -A && git commit -m "Regenerate ontol
 
 The block is a body convention, not a frontmatter key, so the format is unchanged and a task that has one validates exactly as one that does not.
 This tool only reports it: `show --json` carries the block's contents as `run`, and the library's `runBlockOf` is the one reader of it.
-What runs it is the project's script, which reads `run` and hands it to the workspace as a command instead of a prompt; see [`docs/project.md`](../../docs/project.md), "Tasks that run".
+What runs it is the project's script, which reads `run` and makes it the command of the pod job instead of the line that prompts an agent; see [`project.md`](../../project.md), "Tasks that run".
 The fence is three or more backticks or tildes and closes with the same character; a block left unclosed is not a run block, and where a body has several, the first is the one reported.
 The block says what the work is, in a language a machine runs, and says nothing about where or how, which is the same rule the frontmatter keeps.
 

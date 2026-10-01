@@ -193,7 +193,7 @@ The tracker's statuses and pod's job states are fixed vocabularies, so they are 
 
 Everything on the screen is read fresh on its pane's clock; the process keeps only the last reading.
 
-- **The tracker** is read from its files every two seconds, under the format contract the tasks tool's README states: one file per task under `items/`, exactly six frontmatter keys, its status and priority vocabularies, and a comma-separated territory list. This is a second reader of that format, written on purpose (root README, principle 1) and pinned by the same fixture the tasks tool's own model test parses, in [`internal/tracker`](internal/tracker). `heai-tasks list --json` does not exist yet; when it does, this reader can go.
+- **The tracker** is read from its files every two seconds, under the format contract the tasks tool's README states: one file per task under `items/`, exactly six frontmatter keys, its status and priority vocabularies, and a comma-separated territory list. This is a second reader of that format, written on purpose (root README, principle 1) and pinned by the same fixture the tasks tool's own model test parses, in [`internal/tracker`](internal/tracker). `heai-tasks list --json` and `show --json` exist now; this reader predates them and has not been replaced.
 - **Owners and repositories** are asked of `heai-architect territories --json --map <path>` and `heai-architect check --format json --map <path>`, never read from the map itself, so this tool holds no second map reader or glob dialect. architect is asked again only when the map's mtime moves. Without architect on `PATH`, or without a map, the column shows `-` and the pane's title says why. [`internal/owners`](internal/owners) pins both outputs.
 - **The blocker** is the tracker's own convention - the `Blocked by` note - and its state is that slug's status in the same tracker.
 - **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. The table is the `list` answer; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. The flow pane's timeline is one more call, `heai-flow trace <id> --json`, made for the flow under the cursor when the cursor moves onto it and again after each flows poll; the recording is [`testdata/flow/trace.json`](testdata/flow/trace.json), and `⏎` asks again without `--json` for the printed form. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
@@ -248,7 +248,7 @@ The interactive screen exits `0` on `q` whatever it shows; the split is for the 
 ## Layout
 
 ```
-cmd/operator/main.go      flags, discovery, --once and --json, exit codes
+cmd/heai-operator/main.go  flags, discovery, --once and --json, exit codes
 internal/discover/        the project directory, the tracker, the map
 internal/tracker/         the tracker reader and its fixture: testdata/tracker/ has one task per case
 internal/owners/          heai-architect territories --json and check --format json, recorded in testdata/
