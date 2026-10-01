@@ -46,8 +46,8 @@ func (m Model) Render() string {
 		lines = append(lines, m.traceLines(st)...)
 	case m.detail != nil:
 		lines = append(lines, m.detailLines(st, m.detail, m.width, m.detailOff, m.fullHeight())...)
-	case m.wsDetail != nil:
-		lines = append(lines, m.workspaceLines(st, m.wsDetail)...)
+	case m.jobDetail != nil:
+		lines = append(lines, m.jobLines(st, m.jobDetail)...)
 	case m.evDetail != nil:
 		lines = append(lines, m.eventLines(st, m.evDetail)...)
 	default:
@@ -150,7 +150,14 @@ func (m Model) header(st styles) string {
 	}
 	if p := m.pod.Status; p != nil {
 		if p.Up() {
-			parts = append(parts, fmt.Sprintf("pod ●%d", linkedCount(m.pod.Workspaces)))
+			meter := fmt.Sprintf("pod ●%d", p.Queue.Running)
+			if p.Queue.Queued > 0 {
+				meter += fmt.Sprintf("+%d", p.Queue.Queued)
+			}
+			if n := p.Queue.ByStatus["failed"] + p.Queue.ByStatus["timeout"] + p.Queue.ByStatus["crashed"]; n > 0 {
+				meter += " " + st.red.Render(fmt.Sprintf("✗%d", n))
+			}
+			parts = append(parts, meter)
 		} else {
 			parts = append(parts, "pod "+st.yellow.Render("○"))
 		}
@@ -272,18 +279,20 @@ func (m Model) podSummary(st styles) string {
 		}
 		return st.faint.Render("asking…")
 	}
-	if !p.Status.Up() {
-		return st.yellow.Render("○ " + p.Status.Summary())
+	var parts []string
+	if p.Status.Up() {
+		parts = append(parts, "● "+p.Status.Summary())
+	} else {
+		parts = append(parts, st.yellow.Render("○ "+p.Status.Summary()))
 	}
-	parts := []string{"● " + p.Status.Summary()}
-	if n := linkedCount(p.Workspaces); n > 0 {
+	if len(p.Jobs) > 0 {
 		var states []string
-		for _, c := range pod.CountByStatus(p.Workspaces) {
+		for _, c := range pod.CountByState(p.Jobs) {
 			states = append(states, st.agentState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
 		}
-		parts = append(parts, fmt.Sprintf("workspaces %d (%s)", n, strings.Join(states, " · ")))
+		parts = append(parts, fmt.Sprintf("jobs %d (%s)", len(p.Jobs), strings.Join(states, " · ")))
 	} else {
-		parts = append(parts, st.faint.Render("no workspaces"))
+		parts = append(parts, st.faint.Render("no jobs"))
 	}
 	return strings.Join(parts, "   ")
 }
@@ -333,17 +342,6 @@ func (m Model) reactorAge(st styles) string {
 		return st.red.Render("⚠ "+m.reactor.Note) + " · as of " + m.reactor.At.Format("15:04:05")
 	}
 	return "reactor " + ago(m.reactor.At, m.opts.Now())
-}
-
-// linkedCount is how many workspaces are worktrees, leaving out the clone Herdr opens as one.
-func linkedCount(list []pod.Workspace) int {
-	n := 0
-	for _, w := range list {
-		if w.Linked {
-			n++
-		}
-	}
-	return n
 }
 
 // ---- split ------------------------------------------------------------------
@@ -853,18 +851,18 @@ func (m Model) panelTraceLines(st styles, f *flows.Flow, width, off, room int) [
 
 func (m Model) podColumns(width int) []column {
 	cols := []column{
-		{"id", 4, 0},
-		{"actor", 14, 70},
-		{"repo", 8, 90},
-		{"branch", 0, 0}, // flexible
-		{"agent", 12, 100},
-		{"state", 8, 0},
+		{"job", 0, 0}, // flexible
+		{"place", 7, 0},
+		{"state", 9, 0},
+		{"exit", 4, 70},
+		{"took", 7, 80},
+		{"started", 24, 100},
 	}
-	// The branch takes what is left up to 40; what remains is the label.
-	return layout(cols, width, -1, 16, 40, 12, 10, "label")
+	// The name takes what is left up to 48; what remains is the worker.
+	return layout(cols, width, -1, 16, 48, 12, 6, "worker")
 }
 
-// podTable is the container's status on the title and every workspace pod lists under it.
+// podTable is the container's status and the queue's counts on the title, and every job pod lists under it.
 func (m Model) podTable(st styles) []string {
 	width := m.width
 	p := m.pod
@@ -875,23 +873,23 @@ func (m Model) podTable(st styles) []string {
 		}
 		return []string{paneTitle(st, "pod", "", m.podAge(st), width), " " + st.faint.Render(msg)}
 	}
-	if !p.Status.Up() {
-		return []string{
-			paneTitle(st, "pod", st.yellow.Render("○ "+p.Status.Summary()), m.podAge(st), width),
-			" " + st.faint.Render("nothing to list while the container is down · heai-pod status"),
-		}
-	}
 	rows := m.podRows()
-	left := p.Status.Summary() + fmt.Sprintf(" · %d workspaces", linkedCount(p.Workspaces))
+	var left string
+	if p.Status.Up() {
+		left = "● " + p.Status.Summary()
+	} else {
+		left = st.yellow.Render("○ " + p.Status.Summary())
+	}
+	left += " · " + p.Status.QueueText()
 	var states []string
-	for _, c := range p.Status.AgentCounts() {
+	for _, c := range p.Status.DoneCounts() {
 		states = append(states, st.agentState(c.State).Render(fmt.Sprintf("%s %d", c.State, c.Count)))
 	}
 	if len(states) > 0 {
-		left += " · agents " + strings.Join(states, " · ")
+		left += " (" + strings.Join(states, " · ") + ")"
 	}
 	if m.filter != "" {
-		left = fmt.Sprintf("%d of %d · filter %q", len(rows), len(p.Workspaces), m.filter)
+		left = fmt.Sprintf("%d of %d · filter %q", len(rows), len(p.Jobs), m.filter)
 	}
 	cols := m.podColumns(width)
 	lines := []string{paneTitle(st, "pod", left, m.podAge(st), width), columnHeader(st, cols)}
@@ -901,29 +899,25 @@ func (m Model) podTable(st styles) []string {
 		lines = append(lines, m.podRow(st, cols, rows[i], i == m.cursor, width))
 	}
 	if len(rows) == 0 {
-		lines = append(lines, st.faint.Render(" (no workspaces)"))
+		lines = append(lines, st.faint.Render(" (no jobs)"))
 	}
 	return append(lines, m.filterLine()...)
 }
 
-func (m Model) podRow(st styles, cols []column, w pod.Workspace, selected bool, width int) string {
-	label := w.Label
-	if !w.Linked {
-		label += "  (the clone)"
-	}
+func (m Model) podRow(st styles, cols []column, j pod.Job, selected bool, width int) string {
 	values := map[string]string{
-		"id": w.ID, "actor": orDash(w.Actor), "repo": orDash(w.Repo), "branch": orDash(w.Branch),
-		"agent": orDash(w.AgentText()), "state": orDash(w.Status), "label": label,
+		"job": j.Name, "place": j.Place, "state": j.State(), "exit": orDash(j.Exit()),
+		"took": orDash(j.Duration()), "started": orDash(j.Started()), "worker": orDash(j.Worker()),
 	}
 	var cells []string
 	for _, c := range cols {
 		cell := pad(values[c.name], c.width)
 		if !selected {
 			switch {
-			case !w.Linked:
+			case j.Place == "done" && c.name == "job":
 				cell = st.faint.Render(cell)
 			case c.name == "state":
-				cell = st.agentState(w.Status).Render(cell)
+				cell = st.agentState(j.State()).Render(cell)
 			}
 		}
 		cells = append(cells, cell)
@@ -931,42 +925,35 @@ func (m Model) podRow(st styles, cols []column, w pod.Workspace, selected bool, 
 	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
 }
 
-// workspaceLines is one workspace in full: what pod knows about it, its agents and its panes.
-func (m Model) workspaceLines(st styles, w *pod.Workspace) []string {
+// jobLines is one job in full: what pod knows about it, and the tail of its logs read from the host.
+func (m Model) jobLines(st styles, j *pod.Job) []string {
 	width := m.width
-	title := w.ID + " · " + w.Label
-	right := "heai-pod list"
-	if !w.Linked {
-		right = "the clone · " + right
-	}
-	lines := []string{paneTitle(st, "workspace", title, right, width)}
+	lines := []string{paneTitle(st, "job", j.Name, "heai-pod show "+j.Name, width)}
 	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
-	lines = append(lines, kv("status", st.agentState(w.Status).Render(orDash(w.Status))))
-	lines = append(lines, kv("actor", orDash(w.Actor)), kv("repo", orDash(w.Repo)), kv("branch", orDash(w.Branch)))
-	lines = append(lines, kv("path", truncate(orDash(w.Path), width-14)))
-	if len(w.Tokens) > 0 {
-		names := make([]string, 0, len(w.Tokens))
-		for n := range w.Tokens {
-			names = append(names, n)
+	lines = append(lines, kv("place", j.Place), kv("state", st.agentState(j.State()).Render(j.State())))
+	if r := j.Result; r != nil {
+		lines = append(lines, kv("exit", fmt.Sprintf("%d", r.Exit)))
+		if r.Signal != "" {
+			lines = append(lines, kv("signal", r.Signal))
 		}
-		sort.Strings(names)
-		var parts []string
-		for _, n := range names {
-			parts = append(parts, n+"="+w.Tokens[n])
+		if r.Error != "" {
+			lines = append(lines, kv("error", truncate(r.Error, width-14)))
 		}
-		lines = append(lines, kv("tokens", truncate(strings.Join(parts, " "), width-14)))
+		lines = append(lines, kv("started", r.Started), kv("finished", r.Finished), kv("took", j.Duration()), kv("worker", r.Worker))
+	} else if c := j.Claim; c != nil {
+		lines = append(lines, kv("started", c.Started), kv("worker", c.Worker))
 	}
-	lines = append(lines, paneRule(st, fmt.Sprintf(" ── agents %d ", len(w.Agents)), "", width))
-	if len(w.Agents) == 0 {
-		lines = append(lines, " "+st.faint.Render("(none started)"))
-	}
-	for _, a := range w.Agents {
-		lines = append(lines, " "+pad(orDash(a.Kind), 10)+pad(orDash(a.Name), 16)+pad(a.Pane, 8)+st.agentState(a.State).Render(a.State))
-	}
-	lines = append(lines, paneRule(st, fmt.Sprintf(" ── panes %d ", len(w.Panes)), "", width))
-	for _, p := range w.Panes {
-		agent := orDash(p.Agent)
-		lines = append(lines, " "+pad(p.ID, 8)+pad(agent, 10)+pad(st.agentState(p.State).Render(p.State), 10)+st.faint.Render(truncate(p.Cwd, width-30)))
+	lines = append(lines, kv("path", truncate(j.Path, width-14)))
+	for _, name := range []string{"stdout", "stderr"} {
+		text := pod.Tail(filepath.Join(j.Path, "log", name), 20)
+		lines = append(lines, paneRule(st, " ── log/"+name+" ", "", width))
+		if text == "" {
+			lines = append(lines, " "+st.faint.Render("(empty)"))
+			continue
+		}
+		for _, l := range strings.Split(text, "\n") {
+			lines = append(lines, " "+truncate(l, width-2))
+		}
 	}
 	return m.scrolled(lines, 1, m.detailOff, m.fullHeight())
 }
@@ -1346,7 +1333,7 @@ func (m Model) helpLines(st styles) []string {
 	keys := [][2]string{
 		{"1 2 3 4", "the pane with the table: tasks, flows, pod, reactor"},
 		{"↑ ↓  j k", "move"}, {"pgup pgdn  g G", "page, first, last"},
-		{"enter", "open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)"},
+		{"enter", "open: the task, the job or the event full width, or the flow's trace (flow trace <id>)"},
 		{"→  l", "move to the pane beside the list; again from there, it opens full width"},
 		{"p", "show or hide the detail pane beside the tasks and flows lists"},
 		{"tab", "focus the detail pane, to scroll it"},
@@ -1486,7 +1473,7 @@ func (s styles) status(status string) lipgloss.Style {
 	return lipgloss.NewStyle()
 }
 
-// agentState colours a pod agent's or workspace's state by what it means: moving
+// agentState colours a pod job's state by what it means: moving
 // green, waiting yellow, gone wrong red, over dim, ready to move bold. These are
 // pod's and reactor's own vocabularies; a flow's state is any string a project
 // chooses, so flows are not coloured by it.
@@ -1499,11 +1486,11 @@ func (s styles) agentState(state string) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(lipgloss.Green)
 	case "blocked", "waiting", "proposed", "in-review", "exited":
 		return lipgloss.NewStyle().Foreground(lipgloss.Yellow)
-	case "failed", "lost", "violation", "refused":
+	case "failed", "lost", "violation", "refused", "timeout", "crashed":
 		return lipgloss.NewStyle().Foreground(lipgloss.Red)
 	case "queued", "resumable", "todo":
 		return lipgloss.NewStyle().Bold(true)
-	case "clean", "done", "canceled", "landed", "withdrawn", "idle", "unknown", "-":
+	case "clean", "done", "ok", "canceled", "landed", "withdrawn", "idle", "unknown", "-":
 		return lipgloss.NewStyle().Faint(true)
 	}
 	return lipgloss.NewStyle()

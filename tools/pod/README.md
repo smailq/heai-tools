@@ -1,222 +1,319 @@
 # @heai-tools/pod
 
-Persistent containers holding the development tools an actor needs - git, language toolchains, cloud CLIs, coding agents - each running a [Herdr](https://herdr.dev) server so that many pieces of work run in it side by side, each in its own git worktree.
-A base image carries Herdr and the tool's helpers; the user builds one or more images on it with the project's tools, and runs a container from whichever fits.
-A command line lets a script or a human open a worktree, start an agent or a command in it, send a prompt, wait, read, and attach.
+One container that watches a directory of jobs.
+A **job** is a directory a producer drops into `work_queue/`: a `run.sh` saying what to do, and the code, the instructions, whatever the work needs.
+A **worker** inside the container takes jobs one at a time, runs `sh run.sh` in each, and moves it to `.done/` with a `result.json`.
+The worker never reads inside a job beyond `run.sh` and one optional file, and the producer never reaches inside the container: the directory is the whole of the contract.
 
-The tool keeps no record of work.
-A piece of work is a Herdr workspace, named by the id Herdr gave it, and the caller keeps its own record under that id.
+Pod knows nothing about git, agents, tasks or flows.
+What goes in a job and what comes out is the producer's business, written into `run.sh`; the image is a toolbox, and pod only moves directories and keeps the result honest.
+
+Requires Node 22.18 or newer, and one of Apple's `container` CLI, Docker or Podman on the host.
+Building the base image needs nothing else: the worker is compiled inside the build.
+Released as `@heai-tools/pod` on npm: `npm install -g @heai-tools/pod` puts `heai-pod` on PATH.
+
+## Tutorial
+
+Ten minutes, in an empty directory. Steps 1 to 5, 8 and 9 were run as written; 6 and 7 need your own repository and an API key.
+
+**1. Install, and build the base image.**
 
 ```sh
-npm install && npm link                                          # builds dist/ and puts `heai-pod` on PATH
-heai-pod build                                            # the base image, then every image in pod.yaml
-heai-pod up --image aw3/workshop                          # one container from that image, herdr server inside
-heai-pod repo add app ~/Code/app                          # a clone
-ws=$(heai-pod open app --branch agent/api-owner/t1 --actor api-owner)   # prints w2
-heai-pod start "$ws" --agent claude                       # prints w2:p2
-heai-pod prompt "$ws" --file prompt.md --notify /heai/inbox --event exited
-heai-pod run "$ws" "npm test" --wait                      # prints the exit code, and exits with it
-heai-pod attach "$ws"                                     # the Herdr UI, at that workspace
+npm install -g @heai-tools/pod        # or, from this directory: npm install && npm link
+mkdir ~/pod-tour && cd ~/pod-tour
+heai-pod build base                   # heai/pod-base: Debian, git, jq, and the worker compiled in the build
 ```
 
-Requires Node 22.18 or newer, and one of Apple's `container` CLI, Docker or Podman on the host. Released as `@heai-tools/pod` on npm: `npm install -g @heai-tools/pod` puts `heai-pod` on PATH.
-`npm install` pulls two runtime dependencies, a YAML parser and a JSON Schema validator, and builds the command into `dist/`; during development `node src/cli.ts` runs the sources directly.
+The first build downloads two images and compiles a small Go program; later builds are seconds.
 
-## The shape of it
+**2. Start a container.**
 
-```
-image/Containerfile ─ herdr, git, jq, the helpers ─────────────────────► heai/pod-base
-  <project>/images/<x>/Containerfile ─ FROM ${BASE}, plus toolchains, agents ─► aw3/workshop, aw3/ops, ...
-                                                                                     │
-  heai-pod up --image aw3/workshop ───────────────────────────────► one persistent container
-                                                                          herdr server, headless
-  /repos/<name>       a clone per repository, on a mounted volume                     │
-  /worktrees/...      one worktree per piece of work, on a mounted volume             │
-                                                                                     │
-  heai-pod open app --branch agent/api-owner/t1 ──► herdr worktree create ──► w2   (Herdr's id)
-  heai-pod start w2 --agent claude              ──► pane split + agent start ──► w2:p2
-  heai-pod prompt w2 "..." --notify /heai/inbox --event exited ──► a fact file when settled
-  heai-pod run w2 "npm test" --wait              ──► pane split + pane run + wait-output
-  heai-pod attach w2                             ──► the human, in Herdr, at that workspace
+```sh
+heai-pod up --image heai/pod-base --poll 1s
+heai-pod status
 ```
 
-- **A base image, and the user's images on it.** The tool ships the base `Containerfile` - Herdr, git, jq, the in-container helpers, `herdr server` as the entrypoint.
-  Each extended image is a `Containerfile` of the user's that starts `FROM ${BASE}` and installs the project's toolchains and agents; the configuration lists them by tag.
-- **One persistent container per name, from one image.** `up --image <tag>` creates it and it stays up; `down` stops it.
-  Run one container for every actor or one per actor with `--container`, each from the image that suits it; the actor is a property of a workspace, not of the container.
-- **A clone per repository, a worktree per piece of work.** `/repos/<name>` is a full clone the host keeps in sync with the real repository; every workspace opened for it is a worktree of that clone, made by Herdr, on its own branch.
-- **Herdr's ids are the ids.** `open` prints the workspace id Herdr returned, `w2`; `start` prints the pane, `w2:p2`; every later command takes one of those or the agent's name.
-- **Facts on request.** `prompt`, `run` and `wait` take `--notify <dir>`: when the agent settles or the command exits, a helper inside the container writes one fact file into that directory by write-and-rename.
-  The directory is whatever the caller mounted.
+`up` created a container named `heai-workshop`, mounted `./pod/work_queue` into it at `/work_queue`, and started the worker.
+`status` shows the container and an empty queue, and names the queue directory on the host.
+`./pod/` is the tool's state; it carries a `.gitignore` of `*`, so it never ends up in a commit.
 
-## Images
+**3. Your first job.**
 
-The **base image** is [`image/Containerfile`](image/Containerfile), tagged `heai/pod-base` unless the configuration's `base:` says otherwise:
+A job is a directory with a `run.sh`.
+Make one, hand it to `submit`, and wait for it:
 
-```dockerfile
-FROM docker.io/library/debian:bookworm-slim
-ARG HERDR_VERSION=0.9.0
-RUN apt-get install ... git ca-certificates curl jq ripgrep openssh-client procps
-RUN curl -fsSL "https://github.com/herdrdev/herdr/releases/download/v${HERDR_VERSION}/herdr-linux-$(uname -m)" -o /usr/local/bin/herdr
-COPY herdr.toml /etc/herdr/config.toml
-COPY bin/ /heai/bin/
-RUN git config --system safe.directory '*' && git config --system user.name heai && git config --system user.email heai@localhost
-ENV PATH=/heai/bin:$PATH HERDR_CONFIG_PATH=/etc/herdr/config.toml HOME=/root
-ENTRYPOINT ["herdr", "server"]
+```sh
+mkdir hello
+cat > hello/run.sh <<'EOF'
+echo "hello from $JOB, running in $(pwd)"
+ls -a
+echo "and this goes to stderr" >&2
+EOF
+heai-pod submit hello                 # prints: hello
+heai-pod wait hello                   # prints: ok
+heai-pod show hello
 ```
 
-`build base` passes `image/HERDR_VERSION` as `HERDR_VERSION`, so the Herdr release is pinned.
-[`image/herdr.toml`](image/herdr.toml) sets `[worktrees] directory = "/worktrees"`, the headless size, bash as the shell, and `resume_agents_on_restore = true`, so a container restarted by `down` and `up` brings each agent's conversation back into its pane.
-Git's `safe.directory` is opened because the clones arrive over a bind mount owned by another uid; the system-level name and email are a fallback that the actor's name overrides.
+`submit` copied the directory into the queue, the worker ran `sh run.sh` inside it, and `wait` returned as soon as the job landed under `.done/`.
+`show` prints the result - status, exit code, when it started and finished, which worker had it - and the tail of both logs.
+The listing in stdout shows what the worker added beside your files: `claim.json` while it ran, `log/` with the output, `result.json` when it finished.
 
-An **extended image** is a directory of the user's holding a `Containerfile` that starts from the base and adds the project's tools.
-[`image/example/Containerfile`](image/example/Containerfile) is one to copy:
+**4. Where everything is.**
 
-```dockerfile
-ARG BASE=heai/pod-base
-FROM ${BASE}
-RUN apt-get update && apt-get install -y --no-install-recommends nodejs npm python3 && rm -rf /var/lib/apt/lists/*
-RUN npm install -g @anthropic-ai/claude-code @openai/codex \
- && herdr integration install claude && herdr integration install codex
+```sh
+heai-pod list
+ls pod/work_queue/.done/hello
+cat pod/work_queue/.done/hello/result.json
+cat pod/work_queue/.done/hello/log/stdout
 ```
 
+Nothing is hidden in the container.
+A job is in one of three places - the top of `work_queue/` while queued, `.running/` while a worker has it, `.done/` after - and `result.json` is the one file the worker writes about it.
+Any script can read these without `heai-pod`.
+
+**5. Failing, timing out, canceling.**
+
+```sh
+mkdir broken && echo 'exit 3' > broken/run.sh
+heai-pod submit broken && heai-pod wait broken        # prints: failed; exits 1
+
+mkdir slow && echo 'sleep 600' > slow/run.sh
+heai-pod submit slow --timeout 5s && heai-pod wait slow    # prints: timeout, five seconds later
+
+mkdir slower && echo 'sleep 600' > slower/run.sh
+heai-pod submit slower
+sleep 2 && heai-pod cancel slower                     # Asked the worker to stop slower
+heai-pod wait slower                                  # prints: canceled
+
+mkdir empty && touch empty/notes.md
+heai-pod submit empty && heai-pod wait empty          # prints: failed
+heai-pod show empty                                   # error     no run.sh in the job
+```
+
+`wait` exits `0` only for `ok`, `1` for every other status, so a script can branch on it.
+A `cancel` of a job that is still queued finishes it right there; a running one gets a `cancel` file and the worker stops it within a poll.
+`list` now shows all five, with the status, exit code and how long each took.
+
+**6. A job on your code.**
+
+Put a clone in the job, and let `run.sh` work on it.
+A worktree would not survive the mount; a clone does.
+
+```sh
+mkdir -p tests/repos
+git clone -q ~/Code/app tests/repos/app
+echo 'cd repos/app && npm test' > tests/run.sh
+heai-pod submit tests --name app-tests --timeout 30m
+heai-pod wait app-tests && echo "green" || heai-pod show app-tests --lines 40
+```
+
+The base image has git but no node, so this one needs an image with the project's toolchain, which is the next step.
+Whatever `run.sh` changes, it changes in `repos/app` inside the job; when the job is done, that clone is at `pod/work_queue/.done/app-tests/repos/app`, and the host can fetch a branch from it, diff it, or delete it.
+
+**7. An image with your tools, and an agent.**
+
+An extended image is a `Containerfile` that starts `FROM ${BASE}` and installs what your jobs call.
+Copy the example and name it in `pod.yaml`:
+
+```sh
+mkdir -p images/dev && cp "$(npm root -g)/@heai-tools/pod/image/example/Containerfile" images/dev/
+cat > pod.yaml <<'EOF'
+images:
+  tour/dev: ./images/dev
+envFile: ~/.heai/pod.env             # ANTHROPIC_API_KEY=... ; handed to the runtime, never read by pod
+workers: 2
+timeout: 1h
+EOF
+heai-pod build                       # the base, then tour/dev
+heai-pod down && heai-pod up --image tour/dev
+```
+
+The example installs node, python and claude.
+Now a job can prompt the agent: the prompt is a file, `run.sh` is the one line that runs claude on it.
+
+```sh
+mkdir -p agent/repos && git clone -q ~/Code/app agent/repos/app
+git -C agent/repos/app checkout -q -b agent/add-readme
+cat > agent/prompt.md <<'EOF'
+Add a README.md explaining what this project does. Commit it on the current branch.
+EOF
+echo 'cd repos/app && claude -p --dangerously-skip-permissions < ../../prompt.md > ../../out.md' > agent/run.sh
+heai-pod submit agent --name add-readme --timeout 20m
+heai-pod wait add-readme && git -C ~/Code/app fetch pod/work_queue/.done/add-readme/repos/app agent/add-readme:agent/add-readme
+```
+
+The branch is now in your real repository, for a human to read and merge.
+Pod did not know a branch was involved.
+
+**8. From a script.**
+
+This is the whole loop a producer runs, with or without the command:
+
+```sh
+# with heai-pod
+job=$(mktemp -d) && echo 'make check' > "$job/run.sh" && cp -r src "$job/"
+name=$(heai-pod submit "$job" --name "check-$(date +%s)" --move)
+if heai-pod wait "$name"; then echo "passed"; else heai-pod show "$name"; fi
+
+# with nothing but the filesystem: write under a dotted name, rename into place, wait for .done
+q=pod/work_queue
+mkdir -p "$q/.tmp-check" && echo 'make check' > "$q/.tmp-check/run.sh" && mv "$q/.tmp-check" "$q/check"
+until [ -f "$q/.done/check/result.json" ]; do sleep 1; done
+jq -r .status "$q/.done/check/result.json"
+```
+
+The second form is the protocol itself, and it is what a hook in another tool does when it would rather not depend on this one.
+
+**9. Stopping, and tidying.**
+
+```sh
+heai-pod down                        # refused while a job runs; --force cancels them on the way out
+rm -rf pod/work_queue/.done/*        # pod never deletes a finished job; that is yours to do
+```
+
+A stopped container keeps nothing the queue does not; `up` brings it back, and the worker picks up whatever was queued while it was away.
+Jobs it had been running when it was killed come back as `crashed`, so nothing is silently lost.
+
+## The protocol
+
+```
+work_queue/                     host: <state>/work_queue     container: /work_queue
+  <job>/                        queued: dropped by a producer, taken in name order
+  .running/<job>/               claimed by a worker; holds claim.json while it runs
+  .done/<job>/                  finished; holds result.json and log/
+```
+
+**A job is a directory at the top of the queue whose name does not start with a dot, holding a `run.sh`.**
+A name is letters, digits, `.`, `_` and `-`, and is unique across the three places; `submit` refuses a name that exists anywhere.
+Dotted entries at the top level are never jobs, and that is what makes a drop safe: a producer writes the directory as `.tmp-<job>`, then renames it to `<job>`.
+On one filesystem the rename is atomic, so the worker never sees a half-written job.
+`submit` does exactly this; a script that knows the layout can do it with `mkdir` and `mv`.
+
+**The worker reads one file inside a job besides `run.sh`**, `job.json`, and only its `timeout`:
+
+```json
+{"timeout": "2h"}
+```
+
+A Go duration - `30m`, `2h`, `90s` - or `0` for no limit; absent, the worker's default applies.
+Anything else in `job.json` is the producer's business.
+
+**Claiming** is one rename, `<job>` into `.running/`.
+A rename that fails means another worker has it, so several containers can share one queue.
+The worker then writes `.running/<job>/claim.json`:
+
+```json
+{"worker": "a1b2c3", "started": "2026-09-25T10:00:00.000Z"}
+```
+
+**Running** is `sh run.sh` with the job directory as the working directory, `JOB` and `JOB_DIR` in the environment, stdout and stderr captured to `log/stdout` and `log/stderr` inside the job, in its own process group, under the timeout.
+`run.sh` need not be executable, and it calls whatever the image installed: a test suite, an agent, a build.
+
+**Finishing** is `result.json` written into the running directory by write-and-rename, then the directory renamed into `.done/`.
+The directory appearing under `.done/` is the whole of "it is done", and `result.json` is always in it when it appears.
+`claim.json` and any `cancel` file are removed first.
+
+```json
+{
+  "job": "t1-cache",
+  "status": "ok",
+  "exit": 0,
+  "started": "2026-09-25T10:00:00.000Z",
+  "finished": "2026-09-25T10:01:31.234Z",
+  "duration_ms": 91234,
+  "worker": "a1b2c3"
+}
+```
+
+| status | meaning | `exit` |
+| --- | --- | --- |
+| `ok` | `run.sh` exited 0 | 0 |
+| `failed` | it exited non-zero, died of a signal, or could not be started; `error` says why when the worker refused it | its code; -1 with `signal` or `error` |
+| `timeout` | killed at the job's timeout, or the worker's default | -1, `signal` |
+| `canceled` | a `cancel` file appeared in `.running/<job>/`, or the worker was stopped while it ran | -1 |
+| `crashed` | found under `.running/` when the worker started: the worker died with it | -1 |
+
+Times are RFC 3339 in UTC with milliseconds.
+A job refused before it ran - no `run.sh`, a `job.json` that does not parse, a timeout that is not a duration - is `failed` with `error` and no `log/`.
+
+**Canceling** is a file: create `.running/<job>/cancel` and the worker sends the process group `SIGTERM`, then `SIGKILL` five seconds later, within one poll.
+**Recovery** is by name: at start, a worker moves what it left under `.running/` to `.done/` as `crashed`, judged by `claim.json`'s `worker`, and leaves other workers' claims alone.
+A claimless entry has no owner and is taken as the starting worker's.
+**Several at once** is `WORKERS=n`; the worker never runs more than that, and takes jobs in name order, so a producer that wants an order prefixes names with one.
+
+Nothing is ever deleted: `.done/` grows until someone removes what they have read.
+
+## The image
+
+The **base image** is [`image/Containerfile`](image/Containerfile), tagged `heai/pod-base` unless the configuration's `base:` says otherwise.
+Its first stage compiles the worker from [`image/worker/`](image/worker), a Go program with no dependencies; its second stage is Debian with git, jq, ripgrep and curl, and the worker at `/heai/bin/worker` as the entrypoint.
+Nothing in it knows what a job does: that is the job's `run.sh`.
+
+An **extended image** is a directory of the user's holding a `Containerfile` that starts `FROM ${BASE}` and installs the project's toolchains and agents, so that a `run.sh` can call them.
+[`image/example/`](image/example) is one to copy: node, python and claude.
 `build <tag>` passes the base's tag as `BASE`, so an image built against a renamed base needs no edit.
-Install each agent's Herdr integration beside the agent - `herdr integration install claude` - so Herdr classifies its states from the integration's reports rather than from the screen.
-Entrypoint, environment and helpers are inherited from the base; an extended image adds and never has to repeat them.
-Credentials are not in any image: `up --env-from <path>` hands an env file to the runtime unread.
+Credentials are not in any image: `up --env-from <path>` hands an env file to the runtime unread, and the worker passes its whole environment to `run.sh`.
 
-Several images serve several containers: one image per kind of actor, or one per project sharing a base, each run with `up --container <name> --image <tag>`.
+The worker takes its settings from the environment `up` sets: `WORKERS` (default 1), `TIMEOUT` (default `1h`), `POLL` (default `2s`), and `WORKER` for its name (default the container's hostname).
+Its log goes to the container's stdout, one line per claim and per finish.
 
-## The container
+### A job's shape
+
+Only `run.sh` is pod's; the rest is a convention the other tools' examples follow:
 
 ```
-heai-pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
+<job>/
+  run.sh          what to do: a command, or an agent on the prompt
+  job.json        optional, {"timeout": "2h"}
+  prompt.md       the instructions for the agent, when run.sh runs one
+  repos/<name>/   the code as the producer put it, changed in place
+  out/            whatever run.sh chooses to hand back
+  log/            stdout and stderr, the worker's
+  result.json     the worker's, once done
+```
+
+A `run.sh` for an agent is one line, `cd repos/app && claude -p < ../../prompt.md > ../../out/answer.md`; for a test suite, `cd repos/app && npm test`.
+Code goes in however the producer likes - a `git clone` of a local checkout, a copy, an unpacked archive - and comes back the same way: `.done/<job>/repos/app` is a clone the host can fetch a branch from, diff, or discard.
+A git worktree does not survive the mount, since its `.git` file points at a path in the other filesystem; a clone does.
+
+## The command
+
+```
+heai-pod up    --image <tag> [--workers n] [--timeout <duration>] [--poll <duration>] [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
 heai-pod down  [--force]
 heai-pod status [--json]
 heai-pod build                                       the base, then every image in the configuration's images:
 heai-pod build base [--tag <image>] [--image-dir <dir>]
 heai-pod build <image> [--image-dir <dir>]           one extended image, FROM the base
+heai-pod shell                                       bash in the container
+
+heai-pod submit <dir> [--name <job>] [--timeout <duration>] [--move]   → prints the job's name
+heai-pod list [--json]
+heai-pod show <job> [--lines N] [--json]
+heai-pod wait <job> [--timeout <duration>] [--json]  → prints the status
+heai-pod cancel <job>
 ```
 
+**The container.**
 `up` creates the container from `--image` if it does not exist and starts it if it is stopped.
-It mounts three directories of its own plus any the configuration or the caller adds:
+It mounts `<state>/work_queue` at `/work_queue` plus any mount the configuration or the caller adds, and passes `--workers`, `--timeout` and `--poll` to the worker as its environment, from the flags, else the configuration, else not at all.
+`down` refuses, exit `1`, while `.running/` holds a job unless `--force`; forced, the worker finishes each running job as `canceled` on its way out.
+`status` is the runtime's word on the container plus the queue's counts, read from the host's side; it exits `1` when the container is not running.
+`build` with no argument builds the base and then every image under `images:`, in order; `build base` builds the base alone, from the tool's own `image/`, or `baseDir:` from the configuration, or `--image-dir`; `build <tag>` builds one extended image from the directory `images:` names for that tag, or from `--image-dir`.
+`shell` is an interactive bash in the container, for looking around.
 
-| container path | host path | holds |
-| --- | --- | --- |
-| `/repos` | `<state>/repos` | the clones; they survive the container being recreated |
-| `/worktrees` | `<state>/worktrees` | the worktrees; a human can open one from the host |
-| `/heai/inbox` | `<state>/inbox` | a default place for fact files |
+**The queue.**
+`submit` copies the directory into the queue under the name given, else the directory's own, and prints the name; `--move` moves it instead, and `--timeout` writes the job's timeout into its `job.json`, joining whatever the file already says.
+`list` prints every job, queued in name order, then running, then done, with its status, exit code, duration and start time.
+`show` prints a job's claim or result and the last `--lines` lines of each log, twenty by default.
+`wait` blocks until the job is under `.done/` and prints its status; `--timeout` bounds the wait.
+`cancel` finishes a queued job as `canceled` right there, with a result of the host's, and gives a running job its `cancel` file for the worker to act on; a done job is refused.
 
-Any directory named on `--notify` must be mounted; every workspace in the container can write into it.
-
-`down` refuses, exit `1`, while any agent is `working` unless `--force`; a stopped container keeps its Herdr state and its worktrees.
-`status` is the runtime's word on the container plus `herdr status` inside it, the workspace count and the agents by state; it exits `1` when either the container or Herdr is not running.
-`build` with no argument builds the base and then every image under `images:`, in order.
-`build base` builds the base alone, from the tool's own `image/`, or `baseDir:` from the configuration, or `--image-dir`.
-`build <tag>` builds one extended image from the directory `images:` names for that tag, or from `--image-dir`, passing the base's tag as the `BASE` build argument.
-Relative directories in the configuration are resolved against the project directory.
+The five queue commands touch only files and never ask the runtime, so a machine without one can still submit, wait and read.
+A script that knows the protocol can skip them.
 
 The **runtime** is chosen with `--runtime` or `runtime:`: `apple` wraps Apple's `container` CLI, `docker` and `podman` wrap those two.
 The default is `apple` on macOS and `docker` elsewhere.
-
-## Repositories
-
-```
-heai-pod repo add <name> [<source>]          clone into <state>/repos/<name>
-heai-pod repo list [--json]
-heai-pod repo fetch [<name>]                 fetch origin and fast-forward the clone's checked-out branch
-heai-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into a host checkout
-```
-
-The clone is made and updated **by the host**, on the mounted volume, so the container never needs credentials for the real repository.
-`pull-branch` is how work comes home: it fetches `refs/heads/<branch>` from the clone into the checkout named by `--into`.
-Git refuses to move a branch that is checked out there, and that refusal is exit `1`.
-Inside the container, git is Herdr's: `herdr worktree create` makes the worktree and the branch, and the agent commits on it.
-
-When `repo add` is given no source and an architecture map is present (`--map`, see Configuration), the source is `repositories.<name>.localPath`, else `remotePath`; `pull-branch` without `--into` uses `localPath`.
-Nothing else in the map is read.
-
-A worktree's `.git` file points into `/repos/<name>/.git`, a container path, so git on a worktree from the host does not resolve; the files under `<state>/worktrees` are readable, and git on them is `run`'s job.
-
-## Workspaces
-
-```
-heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>] [--set key=value]...   → prints the workspace id
-heai-pod list [--json]
-heai-pod diff <workspace | repo branch> [--name-only|--stat|--patch] [--base <ref>] [--json]
-heai-pod log  <workspace | repo branch> [-n <count>] [--json]
-heai-pod show <workspace | repo branch> [--json]
-heai-pod close <workspace> [--keep-worktree] [--force]
-heai-pod attach [<workspace>]
-```
-
-`open` is `herdr worktree create --cwd /repos/<repo> --branch <name> [--base <ref>] --label <label> --no-focus --trust-repository` and prints the workspace id.
-The branch is the durable name of the work; the workspace id is Herdr's handle on it for as long as the server runs.
-`open` records repo, branch, base and actor as Herdr workspace metadata, and writes the same facts as `branch.<branch>.heai-*` in the clone's git config.
-`--set key=value` writes additional `heai-*` facts under the branch and mirrors them as workspace tokens.
-The worktree lands at `/worktrees/<repo>/<branch with / as ->`, which is `<state>/worktrees/...` on the host.
-
-`close` removes the worktree and the workspace; with `--keep-worktree` it closes the workspace and leaves the files, and `open` on the same branch later reopens them.
-`attach` opens the Herdr UI in this terminal, focused on the workspace named; the human sees every workspace, because that is what Herdr shows.
-
-`list --json` gives, for each workspace, Herdr's id, label and metadata tokens, the repository, branch and worktree path, a host-git summary (`base`, `head`, `ahead/behind`, changed file count and last commit), the rolled-up agent status, every agent in it with its kind, name, pane and state, and every pane.
-The clone itself appears as a workspace, `linked: false`, because Herdr opens the source repository as one when the first worktree is created.
-
-## Agents, prompts and commands
-
-```
-heai-pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
-heai-pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-heai-pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-heai-pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
-heai-pod read   <target> [--lines N] [--ansi]
-heai-pod keys   <target> <key>...
-heai-pod herdr  -- <any herdr command>
-```
-
-`<target>` is a pane id, `w2:p2`, or an agent name; `<workspace>` is `w2`.
-`start` splits a pane below the workspace's root pane, in the worktree, and runs `herdr agent start` in it; the agent's name defaults to the workspace id, and the root pane stays an idle shell for whoever attaches.
-The pane carries `HEAI_ACTOR`, `GIT_AUTHOR_NAME` and `GIT_COMMITTER_NAME` from the workspace's actor, so every commit made in it is attributed to that actor; `--env` adds the caller's own variables.
-`prompt` sends text to the agent.
-`run` splits a pane the same way and runs the command with a sentinel appended so the exit code is known; a `--file` with newlines is carried as base64 and piped to `sh`, so a multi-line script runs as one.
-`read` and `keys` read a pane's screen and send keys to it; `herdr --` passes any other Herdr command through on this terminal.
-Durations - `--timeout`, `--every` - are milliseconds, or `30s`, `5m`, `2h`.
-
-**Waiting, two ways.**
-`--wait` blocks and prints the settled state - `idle`, `done`, `blocked`, or for a command its exit code - and exits `0` for `idle`, `done` or a command that exited `0`, `1` for `blocked` or a failing command, `2` for a timeout, a stalled prompt or a target that is gone.
-`--notify <dir>` starts the wait **inside the container**, detached, and returns at once; when the wait settles, a helper writes a fact file into `<dir>`.
-The host process may be long gone by then; the fact is written anyway.
-`prompt` and `run` take one of the two, not both.
-
-**The fact file.**
-Named by `--event`, default `settled`; written as `<event>.<workspace>.tmp` then renamed to `<event>.<workspace>`, so a reader never sees a torn file and two workspaces reporting the same event do not collide.
-Its body is one JSON object with the workspace and pane ids, the agent's name and settled state, and for a command the exit code.
-When the workspace has git metadata, it also carries a committed-work summary (`branch`, `base`, `head`, `ahead`):
-
-```json
-{"workspace":"w2","pane":"w2:p2","agent":"w2","state":"idle","exitCode":0,"git":{"branch":"agent/api-owner/t1","base":"main","head":"9f21c0a","ahead":3}}
-```
-
-`exitCode` is `0` for `idle` and `done`, `1` for `blocked`, the command's own for `exited`, and `2` for `timeout`, `stalled` and `lost`.
-`wait <ws> --until blocked --notify <dir> --event needs-input` reports that an agent stopped to ask, without polling.
-
-**A heartbeat.**
-`wait <ws> --notify <dir> --every 60s` writes a `touch.<workspace>-<n>` fact with an empty body every minute until the agent settles, and no settled fact.
-
-## The helpers in the image
-
-Three POSIX shell scripts under `/heai/bin`, the only code that runs inside the container:
-
-| helper | does |
-| --- | --- |
-| `fact <dir> <event> <suffix> [<json>]` | writes one fact file by write-and-rename |
-| `settled wait <target> [--until ...] [--timeout ms]` | `herdr agent get` for identity, `herdr agent wait` for the state, printed as the fact body, exit status the `exitCode` |
-| `settled prompt <target> <text> [--timeout ms]` | the same through `herdr agent prompt --wait`, so the wait is for the prompted turn |
-| `settled run <pane> <sentinel> [--timeout ms]` | `herdr pane wait-output --regex '<sentinel>=[0-9]+'`, the exit code lifted from the matched line |
-| `notify <dir> <event> [--every s] -- <settled args>` | `settled`, then `fact`; what `--notify` starts detached; with `--every`, touches instead |
-
-They call `herdr` and `jq` and write files; nothing else.
-`--wait` on the host runs the same `settled` helper in the foreground, so the two ways of waiting cannot disagree.
 
 ## Configuration
 
@@ -232,8 +329,11 @@ images:                            # extended images, tag → directory holding 
   aw3/ops: ./images/ops
 envFile: ~/.heai/pod.env
 mounts:                            # added to every `up`
-  - ~/Code/project/inbox:/heai/project-inbox
+  - ~/Code/project/shared:/heai/shared
 resources: { cpus: 6, memory: 12G }
+workers: 2                         # jobs at once
+timeout: 2h                        # the default job timeout; 0 for none
+poll: 2s                           # how often the worker looks
 ```
 
 [`schemas/pod.schema.json`](schemas/pod.schema.json) is the formal definition: JSON Schema, draft 2020-12, with every key and its type.
@@ -244,22 +344,22 @@ Common options on every command:
 
 | option | default |
 | --- | --- |
-| `--dir <path>` | `HEAI_DIR`, else the directory of an explicit `--map`, else the cwd |
-| `--state <dir>` | `HEAI_POD_STATE`, else `<dir>/pod`; holds `repos/`, `worktrees/`, `inbox/` and a `.gitignore` of `*` |
+| `--dir <path>` | `HEAI_DIR`, else the cwd |
+| `--state <dir>` | `HEAI_POD_STATE`, else `<dir>/pod`; holds `work_queue/` and a `.gitignore` of `*` |
 | `--config <path>` | `<dir>/pod.yaml` |
-| `--map <path>` | `HEAI_MAP`, else `<dir>/.heai/architecture.yaml`, else `<dir>/architecture.yaml`; only read by `repo add` and `repo pull-branch` |
 | `--runtime <name>` | `runtime:` from the configuration, else `apple` on macOS and `docker` elsewhere |
-| `--container <name>` | `name:` from the configuration |
+| `--container <name>` | `name:` from the configuration, else `heai-workshop`; `--name` is always a job's name, never the container's |
+
+Durations for the worker - `--timeout` on `up` and `submit`, `--poll`, and the configuration's - are Go's: digits and one unit of `ms`, `s`, `m` or `h`, or `0` for no limit.
+`wait --timeout` also takes a bare number of milliseconds.
 
 ### Exit codes
 
 | code | meaning |
 | --- | --- |
-| `0` | done, or settled well: `idle`, `done`, a command that exited `0` |
-| `1` | settled badly - `blocked`, a failing command - or refused: a busy container on `down`, a clone that exists, a branch git would not move, a Herdr refusal such as a branch that exists |
-| `2` | bad usage, a runtime or container that could not be asked, a workspace, pane or agent that does not exist, a timeout |
-
-Herdr's own error code is printed on stderr, `pod: herdr: agent_not_found: ...`; `*_not_found`, `timeout` and `server_not_running` are `2`, anything else it refused is `1`.
+| `0` | done, or a job that finished `ok` |
+| `1` | refused - a running job on `down`, a job name that exists, a `cancel` of a done job - or a job that finished `failed`, `timeout`, `canceled` or `crashed` |
+| `2` | bad usage, a runtime or container that could not be asked, a job that does not exist, or `wait`'s own timeout |
 
 ## Layout
 
@@ -268,26 +368,20 @@ tools/pod/
   package.json            @heai-tools/pod, Node 22.18+, two dependencies: yaml and ajv
   schemas/pod.schema.json   the formal definition of pod.yaml
   image/
-    Containerfile         the base image: herdr, git, jq, the helpers
-    herdr.toml            the in-container Herdr configuration
-    HERDR_VERSION         the pinned herdr release the Containerfile downloads
-    bin/fact, bin/settled, bin/notify
-    example/Containerfile an extended image to copy: FROM the base, plus toolchains and agents
+    Containerfile         the base image: a Go stage compiling the worker, then Debian with git, jq and the worker
+    worker/               the worker: main.go (flags, signals), worker.go (the protocol), worker_test.go
+    example/Containerfile an extended image to copy: node, python, claude
   src/
     cli.ts                the commands
     runtime.ts            the runtime contract; runtimes/apple.ts, runtimes/docker.ts
-    herdr.ts              `herdr ...` in the container, its JSON read back
     box.ts                up, down, status, build
-    repos.ts              clone, list, fetch, pull-branch
-    workspaces.ts         open, list, close, the root pane
-    agents.ts             start, prompt, run, wait, read, keys; settled and notify
+    queue.ts              the protocol from the host: submit, list, find, wait, cancel
     config.ts             paths, pod.yaml, the state directory
   test/
     fixtures/container-list.json   real Apple `container list` output
     fixtures/docker-ps.jsonl       `docker ps --format '{{json .}}'` as documented
-    fixtures/herdr/                herdr responses recorded from 0.9.0
-    fake/                          a container/docker shim that replays fixtures; a herdr shim for the helpers
-    *.test.ts                      the runtime parsers and argv, the herdr client, every command against the fake runtime, the helpers under sh, paths and configuration
+    fake/                          a container/docker shim that replays fixtures
+    *.test.ts                      the runtime parsers and argv, every command against the fake runtime, the queue with the worker played by hand, paths and configuration
 ```
 
-Run the tests with `npm test`.
+Run the Node tests with `npm test`, and the worker's with `go test ./...` from `image/worker`.

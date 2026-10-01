@@ -17,6 +17,6 @@
 
 
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo flow 4s ago
- pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (bloc pod 4s ago
+ pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 ·  pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
  ↑↓ move  ⏎ open  b active  S sort  1-4 pane  / filter  ? help  q quit

@@ -1,133 +1,59 @@
 [
   {
-    "id": "w1",
-    "label": "app",
-    "repo": "app",
-    "branch": "main",
-    "actor": null,
-    "path": "/repos/app",
-    "linked": false,
-    "status": "unknown",
-    "tokens": {},
-    "agents": [],
-    "panes": [
-      {
-        "id": "w1:p1",
-        "agent": null,
-        "state": "unknown",
-        "cwd": "/repos/app"
-      }
-    ]
+    "name": "web-ui-document-tabs",
+    "place": "queued",
+    "path": "/repo/pod/work_queue/web-ui-document-tabs"
   },
   {
-    "id": "w3",
-    "label": "desktop-owner/add-place-entity",
-    "repo": "app",
-    "branch": "agent/desktop-owner/add-place-entity",
-    "actor": "desktop-owner",
-    "path": "/worktrees/app/agent-desktop-owner-add-place-entity",
-    "linked": true,
-    "status": "working",
-    "tokens": {
-      "repo": "app",
-      "branch": "agent/desktop-owner/add-place-entity",
-      "actor": "desktop-owner"
-    },
-    "agents": [
-      {
-        "name": "w3",
-        "kind": "claude",
-        "pane": "w3:p2",
-        "state": "working"
-      }
-    ],
-    "panes": [
-      {
-        "id": "w3:p1",
-        "agent": null,
-        "state": "unknown",
-        "cwd": "/worktrees/app/agent-desktop-owner-add-place-entity"
-      },
-      {
-        "id": "w3:p2",
-        "agent": "claude",
-        "state": "working",
-        "cwd": "/worktrees/app/agent-desktop-owner-add-place-entity"
-      }
-    ]
+    "name": "desktop-owner-add-place-entity",
+    "place": "running",
+    "path": "/repo/pod/work_queue/.running/desktop-owner-add-place-entity",
+    "claim": {
+      "worker": "w1",
+      "started": "2026-09-25T10:00:00.000Z"
+    }
   },
   {
-    "id": "w4",
-    "label": "web-ui/document-tabs",
-    "repo": "app",
-    "branch": "agent/web-ui/document-tabs",
-    "actor": "web-ui",
-    "path": "/worktrees/app/agent-web-ui-document-tabs",
-    "linked": true,
-    "status": "idle",
-    "tokens": {
-      "repo": "app",
-      "branch": "agent/web-ui/document-tabs",
-      "actor": "web-ui"
-    },
-    "agents": [
-      {
-        "name": "w4",
-        "kind": "claude",
-        "pane": "w4:p2",
-        "state": "idle"
-      }
-    ],
-    "panes": [
-      {
-        "id": "w4:p1",
-        "agent": null,
-        "state": "unknown",
-        "cwd": "/worktrees/app/agent-web-ui-document-tabs"
-      },
-      {
-        "id": "w4:p2",
-        "agent": "claude",
-        "state": "idle",
-        "cwd": "/worktrees/app/agent-web-ui-document-tabs"
-      }
-    ]
+    "name": "api-owner-cache-the-index",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/api-owner-cache-the-index",
+    "result": {
+      "job": "api-owner-cache-the-index",
+      "status": "ok",
+      "exit": 0,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:01:31.234Z",
+      "duration_ms": 91234,
+      "worker": "w1"
+    }
   },
   {
-    "id": "w2",
-    "label": "core-reviewer/merge-two-entities",
-    "repo": "app",
-    "branch": "agent/core-reviewer/merge-two-entities",
-    "actor": "core-reviewer",
-    "path": "/worktrees/app/agent-core-reviewer-merge-two-entities",
-    "linked": true,
-    "status": "blocked",
-    "tokens": {
-      "repo": "app",
-      "branch": "agent/core-reviewer/merge-two-entities",
-      "actor": "core-reviewer"
-    },
-    "agents": [
-      {
-        "name": "w2",
-        "kind": "claude",
-        "pane": "w2:p2",
-        "state": "blocked"
-      }
-    ],
-    "panes": [
-      {
-        "id": "w2:p1",
-        "agent": null,
-        "state": "unknown",
-        "cwd": "/worktrees/app/agent-core-reviewer-merge-two-entities"
-      },
-      {
-        "id": "w2:p2",
-        "agent": "claude",
-        "state": "blocked",
-        "cwd": "/worktrees/app/agent-core-reviewer-merge-two-entities"
-      }
-    ]
+    "name": "core-reviewer-merge-two-entities",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/core-reviewer-merge-two-entities",
+    "result": {
+      "job": "core-reviewer-merge-two-entities",
+      "status": "failed",
+      "exit": 3,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:01:31.234Z",
+      "duration_ms": 91234,
+      "worker": "w1"
+    }
+  },
+  {
+    "name": "ops-rotate-keys",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/ops-rotate-keys",
+    "result": {
+      "job": "ops-rotate-keys",
+      "status": "canceled",
+      "exit": -1,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:00:04.200Z",
+      "duration_ms": 4200,
+      "worker": "w1",
+      "signal": "TERMINATED"
+    }
   }
 ]

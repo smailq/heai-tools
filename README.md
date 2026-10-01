@@ -11,7 +11,7 @@ Each tool does one job:
 - [**`tasks`**](tools/tasks) maintains units of work as markdown files with frontmatter.
 - [**`flow`**](tools/flow) runs a multi-stage process as a state machine that refuses illegal moves and journals every move.
 - [**`reactor`**](tools/reactor) reacts to events such as webhooks, file changes, git commits and more.
-- [**`pod`**](tools/pod) runs agents and commands in containers with [Herdr](https://herdr.dev).
+- [**`pod`**](tools/pod) runs jobs dropped into a work queue, each in a container, and leaves the result beside them.
 - [**`operator`**](tools/operator) displays the status and state of heai-tools in an `htop`-like text UI.
 
 ## How the tools work together

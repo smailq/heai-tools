@@ -22,28 +22,35 @@ func TestParseRecordedStatusAndList(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !st.Up() || st.Summary() != "heai-workshop running · herdr 0.9.0" || *st.Workspaces != 4 {
-		t.Errorf("status: %+v %q", st, st.Summary())
+	if !st.Up() || st.Summary() != "heai-workshop running" || st.QueueText() != "1 running · 1 queued · 3 done" {
+		t.Errorf("status: %+v %q %q", st, st.Summary(), st.QueueText())
 	}
-	if c := st.AgentCounts(); len(c) != 3 || c[0].State != "blocked" || c[1].State != "idle" || c[2].State != "working" {
-		t.Errorf("agents by state, ties by name: %+v", c)
+	if c := st.DoneCounts(); len(c) != 3 || c[0].State != "canceled" || c[1].State != "failed" || c[2].State != "ok" {
+		t.Errorf("done by status, ties by name: %+v", c)
 	}
 	list, err := ParseList(read(t, "list.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(list) != 4 || list[0].Linked || list[0].Label != "app" || list[0].Branch != "main" {
-		t.Errorf("the clone comes first, unlinked: %+v", list[0])
+	if len(list) != 5 || list[0].Name != "web-ui-document-tabs" || list[0].Place != "queued" || list[0].State() != "queued" || list[0].Started() != "" {
+		t.Errorf("queued first: %+v", list[0])
 	}
-	w := list[1]
-	if w.ID != "w3" || w.Actor != "desktop-owner" || w.Repo != "app" || w.Branch != "agent/desktop-owner/add-place-entity" || w.Status != "working" {
-		t.Errorf("workspace: %+v", w)
+	running := list[1]
+	if running.Name != "desktop-owner-add-place-entity" || running.State() != "running" || running.Worker() != "w1" || running.Started() != "2026-09-25T10:00:00.000Z" || running.Exit() != "" {
+		t.Errorf("running: %+v", running)
 	}
-	if w.AgentText() != "claude w3" || len(w.Panes) != 2 || w.Panes[1].State != "working" {
-		t.Errorf("agent and panes: %q %+v", w.AgentText(), w.Panes)
+	if list[2].State() != "ok" || list[2].Exit() != "0" || list[2].Path != "/repo/pod/work_queue/.done/api-owner-cache-the-index" {
+		t.Errorf("ok, with the host path rewritten: %+v", list[2])
 	}
-	if c := CountByStatus(list); len(c) != 3 || c[0].Count != 1 {
-		t.Errorf("linked workspaces by status: %+v", c)
+	failed := list[3]
+	if failed.Name != "core-reviewer-merge-two-entities" || failed.State() != "failed" || failed.Exit() != "3" || failed.Duration() != "1m31s" || failed.Worker() != "w1" {
+		t.Errorf("failed: %+v", failed)
+	}
+	if list[4].State() != "canceled" || list[4].Exit() != "-1" || list[4].Result.Signal != "TERMINATED" || list[4].Duration() != "4.2s" {
+		t.Errorf("canceled: %+v", list[4])
+	}
+	if c := CountByState(list); len(c) != 5 || c[0].Count != 1 || c[0].State != "canceled" {
+		t.Errorf("jobs by state: %+v", c)
 	}
 	if _, err := ParseList([]byte(`{"not":"an array"}`)); err == nil {
 		t.Error("expected an error")
@@ -55,12 +62,33 @@ func TestAStoppedContainerIsAnAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if st.Up() || st.Summary() != "heai-workshop stopped" || st.Herdr != nil || st.Workspaces != nil {
+	if st.Up() || st.Summary() != "heai-workshop stopped" || st.Queue.Queued != 1 {
 		t.Errorf("%+v %q", st, st.Summary())
 	}
 	var none *Status
-	if none.Up() || none.Summary() != "no container" {
+	if none.Up() || none.Summary() != "no container" || none.QueueText() != "" {
 		t.Error("a nil status is no container")
+	}
+}
+
+func TestJobText(t *testing.T) {
+	if got := (Job{Place: "done"}).State(); got != "no result" {
+		t.Errorf("a done directory without a result: %q", got)
+	}
+	for d, want := range map[time.Duration]string{1234 * time.Millisecond: "1.2s", 91234 * time.Millisecond: "1m31s", 3723 * time.Second: "1h2m"} {
+		if got := FormatDuration(d); got != want {
+			t.Errorf("%s: %q, want %q", d, got, want)
+		}
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "stdout"), []byte("a\nb\nc\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got := Tail(filepath.Join(dir, "stdout"), 2); got != "b\nc" {
+		t.Errorf("tail: %q", got)
+	}
+	if got := Tail(filepath.Join(dir, "missing"), 2); got != "" {
+		t.Errorf("missing: %q", got)
 	}
 }
 

@@ -31,9 +31,9 @@ The tools each do one job: the map and its questions, the tasks, the referee, th
    flow               ─── the chain: one state entered, one script ─────────────────────────────────────
      a script or a fact moves a flow    ──► the state entered ──► the script the definition names, detached
                                                           │
-   the scripts call:  architect (owner, context, gate)   tasks (new, set, list)   flow (start, advance, link)   pod (open, prompt, run, wait)
+   the scripts call:  architect (owner, context, gate)   tasks (new, set, list)   flow (start, advance, link)   pod (submit, wait, show)
                                                           │
-   pod: a workspace per piece of work, an agent or a command in it, a fact file into the flow's inbox when it settles
+   pod: a job directory per piece of work, its run.sh run in a container, a result.json under .done when it finishes
    operator: the screen a human watches it all on
 ```
 
@@ -48,11 +48,11 @@ The tools each do one job: the map and its questions, the tasks, the referee, th
   images/<name>/Containerfile    the pod images, FROM the base, with the project's tools         committed
   flow.yaml                      optional: where the definitions are                           committed
   reactor.yaml                   sources and rules                                              committed
-  pod.yaml                       runtime, container name, images, mounts, resources             committed
+  pod.yaml                       runtime, container name, images, mounts, resources, workers    committed
   <anything>.yaml                a project's own configuration its scripts read                 committed
   flow/                          journals, snapshots, indexes, each flow's inbox and actions    state, ignores itself
   reactor/                       events, actions, cursors, keys                                 state, ignores itself
-  pod/                           repos, worktrees, inbox                                        state, ignores itself
+  pod/                           work_queue: the jobs, .running, .done                          state, ignores itself
 ```
 
 Every tool finds the directory the same way: `--dir`, else `HEAI_DIR`, else the current directory.
@@ -62,7 +62,7 @@ The one exception is `tasks`, whose configuration sits inside its own directory 
 
 The directory is a git repository so that the process is reviewed the way the map is: a changed hook, a changed script, a moved task is a diff.
 The state directories are never the source of truth for anything a committed file records.
-A map may govern several repositories; `repositories.<name>.localPath` in the map says where each checkout is, and `heai-pod repo add <name>` clones from it.
+A map may govern several repositories; `repositories.<name>.localPath` in the map says where each checkout is, and a script clones from it into a job.
 
 ## The tools
 
@@ -147,31 +147,29 @@ It knows no flow and no task; a script it runs does whatever those need.
 
 ### pod - where agents and commands work
 
-A **base image** carries Herdr, git and the tool's helpers; the project's **images** are Containerfiles `FROM ${BASE}` that add its toolchains and agents, listed in `pod.yaml` by tag.
-`heai-pod up --image <tag>` runs one persistent container from an image with a Herdr server inside; the clones live under `pod/repos`, one **worktree per piece of work** under `pod/worktrees`, each a Herdr workspace with Herdr's id.
+A **base image** carries the worker and git; the project's **images** are Containerfiles `FROM ${BASE}` that add its toolchains and agents, listed in `pod.yaml` by tag.
+`heai-pod up --image <tag>` runs one persistent container from an image with the worker inside, watching `pod/work_queue`.
+A **job** is a directory a script prepares - a `run.sh` saying what to do, the code, a `prompt.md`, a `job.json` with a timeout - and drops into the queue; the worker claims it into `.running/`, runs `sh run.sh` in it, and moves it to `.done/` with a `result.json` saying `ok`, `failed`, `timeout`, `canceled` or `crashed`.
 
 ```sh
 heai-pod build                                    # the base, then every image in pod.yaml
-heai-pod up --image proj/dev [--env-from ~/.heai/proj.env]
-heai-pod repo add app                             # a clone from the map's localPath, kept in sync by the host
-ws=$(heai-pod open app --branch agent/api-owner/t1 --actor api-owner)     # w2
-heai-pod start "$ws" --agent claude               # w2:p2; commits in it are attributed to the actor
-heai-pod prompt "$ws" --file prompt.md --notify /heai/flow/<id>/inbox --event exited
-heai-pod run "$ws" --file block.sh --notify /heai/flow/<id>/inbox --event exited
-heai-pod wait "$ws" --until blocked --notify /heai/flow/<id>/inbox --event needs-input
-heai-pod wait "$ws" --notify /heai/flow/<id>/inbox --every 60s          # a heartbeat, for a state with an `after`
-heai-pod repo pull-branch app agent/api-owner/t1  # the branch home, for the gate and the landing
-heai-pod attach "$ws"                             # a human, in Herdr, looking at the agent
-heai-pod close "$ws" --keep-worktree
+heai-pod up --image proj/dev --workers 2 [--env-from ~/.heai/proj.env]
+job=$(mktemp -d) && mkdir "$job/repos" && git clone -q ../app "$job/repos/app" && cp prompt.md "$job/"   # the script's own doing
+echo 'cd repos/app && claude -p < ../../prompt.md' > "$job/run.sh"
+heai-pod submit "$job" --name t1 --timeout 2h --move   # into the queue under a dotted name, renamed into place
+heai-pod wait t1                                  # blocks; prints the status; exits 0 only for ok
+heai-pod show t1                                  # result.json and the tail of log/
+git -C ../app fetch pod/work_queue/.done/t1/repos/app agent/t1:agent/t1     # the branch home, for the gate and the landing
+heai-pod cancel t1; heai-pod list; heai-pod status; heai-pod shell
 ```
 
-`--notify <dir>` is the whole of how the container talks back: when the agent settles or the command exits, a helper writes one fact file into that directory by write-and-rename, with the settled state and exit code as JSON.
-The directory is a flow's inbox, mounted once in `pod.yaml`, and `heai-flow settle` reads it; the pod never learns what a flow is.
-Several containers from several images run side by side with `--container`, one per kind of actor if credentials should not mix.
+`.done/<job>/result.json` is the whole of how the container talks back: a hook that submitted a job waits on it with `heai-pod wait`, and a `run.sh` that wants to tell a flow directly writes the fact itself, into a directory `pod.yaml` mounts.
+The worker reads nothing in a job but `run.sh` and `job.json`'s timeout, and the pod never learns what a flow or a task is.
+Several containers from several images run side by side with `--container`, one per kind of actor if credentials should not mix, and may share one queue.
 
 ### operator - the screen
 
-An `htop`-shaped terminal view, read from the tools' files and CLIs, writing nothing of its own: every task with the actor it routes to and where its blocker stands; what `flow` says is open and stuck, and every flow of whichever definition is chosen; the container and the workspaces `heai-pod list` reports; the reactor's sources, rules and last hour of events.
+An `htop`-shaped terminal view, read from the tools' files and CLIs, writing nothing of its own: every task with the actor it routes to and where its blocker stands; what `flow` says is open and stuck, and every flow of whichever definition is chosen; the container and the jobs `heai-pod list` reports; the reactor's sources, rules and last hour of events.
 It changes nothing: every key moves, opens, filters or reloads, and a change is made at the shell with the tool that records it. `heai-operator --once` or `--json` is the same screen for a script or a CI job, exit `1` when anything is red.
 
 ## The team
@@ -181,11 +179,11 @@ The map declares the roster and the tools give each member a way to act.
 **Humans** are actors in the map like any other, owning the territories that stay theirs.
 A human edits the map, in a text editor or `map-editor`, and the review of that commit is the architectural decision.
 A human files and triages tasks, moves one to `todo` when it is ready, and is the only one who may make a move a definition marks `by: [human]`: `heai-flow advance <id> approved` is the approval, and nothing proceeds until it happens.
-When an agent stops to ask, a human answers it with `heai-pod prompt`, or steps in with `heai-pod attach` and sees what the agent sees.
+When an agent stops to ask, its job ends and `heai-pod show` says where; a human answers by submitting a new job with the answer in its prompt, or steps into the container with `heai-pod shell`.
 A human watches the whole of it on `operator`.
 
 **Agents** are llm-agent actors in the map, each owning territories and each steered by the `context` written beside them.
-An agent works in a pod workspace on its own branch, prompted with `heai-architect context <actor>` and the task, commits under its own name, and is judged by `heai-architect gate --actor <actor>` on the diff it produced.
+An agent works in a pod job, on a clone and a branch the script made for it, prompted with `heai-architect context <actor>` and the task, commits under its own name, and is judged by `heai-architect gate --actor <actor>` on the diff it produced.
 A change it needs outside its territories is not made; it is filed, as a task in the other territory and a flow the session waits on, so an agent never crosses a boundary and the owner of the other side decides.
 Any harness installed in the image is an agent kind: `heai-pod start --agent claude`, `--agent codex`.
 
@@ -210,14 +208,14 @@ heai-architect template > architecture.yaml && $EDITOR architecture.yaml && heai
 heai-tasks init --dir heai-tasks --map ../architecture.yaml
 mkdir -p flows scripts images/dev && $EDITOR flows/*.yaml scripts/*/*.sh images/dev/Containerfile
 $EDITOR pod.yaml reactor.yaml
-heai-pod build && heai-pod up --image myproject/dev && heai-pod repo add <repo>
+heai-pod build && heai-pod up --image myproject/dev
 heai-reactor serve                                                 # under the platform's service manager
 heai-operator
 ```
 
 A template under `templates/` is the usual starting point for `flows/` and `scripts/`; the two team documents each say which.
 
-**The loop, once it runs.** A human moves a task to `todo`. A rule, on the minute or on the `task.todo` emit, runs a script that finds the actor the task routes to and starts a flow. Entering its first state runs the script that opens a workspace and prompts the agent, with `--notify` into the flow's inbox. The agent works; its heartbeat touches the flow; when it settles, a fact lands and the next `heai-flow settle` moves the flow on, and the next state's script brings the branch home, gates it, and records the verdict. From there the project's own definitions say what follows: a landing, a review, a publish, a human's approval.
+**The loop, once it runs.** A human moves a task to `todo`. A rule, on the minute or on the `task.todo` emit, runs a script that finds the actor the task routes to and starts a flow. Entering its first state runs the script that builds a job around a clone and the prompt, submits it, and waits on the result. The agent works; when the job lands in `.done`, the script moves the flow on, and the next state's script brings the branch home from the job's clone, gates it, and records the verdict. From there the project's own definitions say what follows: a landing, a review, a publish, a human's approval.
 
 **Where a human steps in.** At the map, when a boundary should move. At a task, when the work is not yet worth an agent's time or is routed to two actors. When an agent asked. At every `by: [human]` move. At `heai-flow stuck` and the red on `operator`, when a script failed and left its log under the flow's `actions/`; the person reads it and runs the script or the move again.
 
@@ -251,7 +249,7 @@ hooks:
 - **A hook is one script**, `run`, keyed by the state it fires on entering. A script that wants a task filed calls `heai-tasks new`, one that wants a flow moved calls `heai-flow advance` or writes a fact into an inbox, one that wants the reactor told calls `heai-reactor emit`.
 - **`flow` runs it once per entry**, detached, after its locks are released, so a script may `heai-flow advance` its own flow without waiting. A flow that re-enters a state runs it again; a `link` or a `touch` enters no state.
 - **It never advances the flow on its own.** The script does, because whether the move happened is the script's to say and its data is what the next `when` reads. A script that exits non-zero leaves the flow where it was, with its exit and log under `flow/flows/<id>/actions/`, and `heai-flow stuck` shows the flow within the hour.
-- **It runs on the host, in the project directory**, with `HEAI_FLOW`, `HEAI_DEFINITION`, `HEAI_STATE`, `HEAI_EVENT`, `HEAI_SEQ`, one `HEAI_LINK_<NAME>` per link, and `HEAI_LINE` naming a file holding the journal line as JSON. It names no paths and receives none; every tool finds its files in the directory by convention. A script that wants the container runs `heai-pod run`; the host is where git, `gh` and credentials are.
+- **It runs on the host, in the project directory**, with `HEAI_FLOW`, `HEAI_DEFINITION`, `HEAI_STATE`, `HEAI_EVENT`, `HEAI_SEQ`, one `HEAI_LINK_<NAME>` per link, and `HEAI_LINE` naming a file holding the journal line as JSON. It names no paths and receives none; every tool finds its files in the directory by convention. A script that wants the container prepares a job and runs `heai-pod submit`; the host is where git, `gh` and credentials are.
 - **Two scripts of one flow may overlap.** `flow` spawns and forgets. A script that must not overlap takes its own lock, with `mkdir`.
 - **The block is validated and pinned** with the rest of the definition when a flow starts, so a definition edited while flows are open changes their scripts only on `heai-flow reindex --repin`.
 
@@ -261,9 +259,9 @@ A script is any executable; the templates' are POSIX shell with `jq`.
 The contract is the environment above, the exit code - `0` did it, `1` refused and said why on stderr, `2` could not try - and the rule that a script records what it did by advancing a flow, filing a task, or writing a file under the project's own state, never by remembering.
 Scripts pass `--by <name>` so the journal says which script moved the flow, and a definition's `by:` lists the names it accepts.
 
-**The two files a script writes.** A fact into a flow's inbox is a file named for the event, with the event's data as a JSON body, written under a `.tmp` name and renamed into place, which is the whole of flow's inbox protocol and the same one pod's helpers use. A task a script files goes through `heai-tasks new` with a provenance line in its body naming the rule, the event and the source, so the task reads where it came from.
+**The two files a script writes.** A fact into a flow's inbox is a file named for the event, with the event's data as a JSON body, written under a `.tmp` name and renamed into place, which is the whole of flow's inbox protocol, and the same write-and-rename that drops a job into pod's queue. A task a script files goes through `heai-tasks new` with a provenance line in its body naming the rule, the event and the source, so the task reads where it came from.
 
-**Tasks that run.** A task whose body carries a fenced block tagged `run` is a script with its reason above it. The script that starts work on it reads the block with `heai-tasks show --json` and runs `heai-pod run <workspace> --file` instead of `heai-pod prompt`; the workspace, the branch, the attribution, the fact file and the gate are the same. No frontmatter key is added.
+**Tasks that run.** A task whose body carries a fenced block tagged `run` is a script with its reason above it. The script that starts work on it reads the block with `heai-tasks show --json` and puts it in the job as `run.sh` instead of the line that prompts an agent; the job, the branch, the result and the gate are the same. No frontmatter key is added.
 
 ## Rules
 
@@ -290,7 +288,7 @@ The tools ship no process, so the repository ships examples of one under `templa
 
 - **`templates/software/`** - the development team's files. Four definitions are there: `landing`, `checkpoint`, `promotion` and `release`, each naming in `by:` the scripts allowed to move it. Still to write: the `session` and `request` definitions, the scripts, a `reactor.yaml`, and a `test.sh` that runs the team's worked day against a fake harness on a temporary repository, so the template is checked in this repository's CI.
 - **`templates/content/`** - designed, in [`marketing-team.md`](marketing-team.md): the `piece` and `experiment` definitions, the content scripts and the schedules, over the software template's sessions, landings, checkpoints and releases.
-- **`templates/testing/`** - designed: a `suite` definition, `open → pass | fail`, started by a nightly rule, `run.sh` running the suite through `heai-pod run`, and a hook on `fail` that files a task in the territory `heai-architect owner` gives for each failing path.
+- **`templates/testing/`** - designed: a `suite` definition, `open → pass | fail`, started by a nightly rule, `run.sh` submitting the suite as a pod job, and a hook on `fail` that files a task in the territory `heai-architect owner` gives for each failing path.
 
 Until a `heai init --template <name>` exists, `cp -r`.
 

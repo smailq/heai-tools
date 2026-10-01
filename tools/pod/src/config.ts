@@ -1,10 +1,10 @@
-// Where everything is, and pod.yaml. The project directory is
-// --dir, else HEAI_DIR, else the directory of an explicit map, else the cwd;
-// the map, the configuration and the state directory sit in it.
+// Where everything is, and pod.yaml. The project directory is --dir, else
+// HEAI_DIR, else the cwd; the configuration and the state directory sit in it,
+// and the state directory holds the work queue.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
 import { Ajv2020, type ErrorObject, type ValidateFunction } from 'ajv/dist/2020.js'
 import { parse } from 'yaml'
 
@@ -15,7 +15,7 @@ export class UsageError extends Error {
   }
 }
 
-/** Refused, exit 1: a container that is busy, a clone that exists, a branch git would not update. */
+/** Refused, exit 1: a container with a job running, a job that already exists, a job that is already done. */
 export class RefusedError extends Error {
   constructor(message: string) {
     super(message)
@@ -36,10 +36,18 @@ export interface Config {
   /** `host:container`, added to every `up`. */
   mounts?: string[]
   resources?: { cpus?: number; memory?: string }
+  /** How many jobs the worker runs at once. */
+  workers?: number
+  /** The default job timeout, a Go duration like `1h`. */
+  timeout?: string
+  /** How often the worker looks at the queue, like `2s`. */
+  poll?: string
 }
 
 export const DEFAULT_NAME = 'heai-workshop'
 export const DEFAULT_BASE = 'heai/pod-base'
+/** Where the queue is mounted inside the container. */
+export const QUEUE_MOUNT = '/work_queue'
 
 /** The formal definition of pod.yaml. */
 export const SCHEMA_PATH = join(import.meta.dirname, '..', 'schemas', 'pod.schema.json')
@@ -50,22 +58,15 @@ export const expandHome = (p: string): string => (p === '~' ? homedir() : p.star
 
 export interface Paths {
   dir: string
-  map: string
   state: string
   config: string
 }
 
-function firstExisting(candidates: string[], fallback: string): string {
-  return candidates.find((c) => existsSync(c)) ?? fallback
-}
-
-export function resolvePaths(values: { dir?: string; map?: string; state?: string; config?: string }, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Paths {
-  const explicitMap = values.map ?? env['HEAI_MAP']
-  const dir = resolve(cwd, values.dir ?? env['HEAI_DIR'] ?? (explicitMap ? dirname(resolve(cwd, explicitMap)) : cwd))
-  const map = resolve(cwd, explicitMap ?? firstExisting([join(dir, '.heai', 'architecture.yaml')], join(dir, 'architecture.yaml')))
+export function resolvePaths(values: { dir?: string; state?: string; config?: string }, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): Paths {
+  const dir = resolve(cwd, values.dir ?? env['HEAI_DIR'] ?? cwd)
   const state = resolve(cwd, values.state ?? env['HEAI_POD_STATE'] ?? join(dir, 'pod'))
   const config = resolve(cwd, values.config ?? join(dir, 'pod.yaml'))
-  return { dir, map, state, config }
+  return { dir, state, config }
 }
 
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -141,20 +142,25 @@ export function parseConfig(text: string, path = 'pod.yaml'): Config {
     if (typeof r['cpus'] === 'number') out.resources.cpus = r['cpus']
     if (r['memory'] !== undefined) out.resources.memory = String(r['memory'])
   }
+  if (typeof doc['workers'] === 'number') out.workers = doc['workers']
+  if (typeof doc['timeout'] === 'string') out.timeout = doc['timeout']
+  if (typeof doc['poll'] === 'string') out.poll = doc['poll']
   return out
 }
 
 export interface StateDirs {
   root: string
-  repos: string
-  worktrees: string
-  inbox: string
+  /** The queue: job directories at the top, .running/ and .done/ under it. */
+  queue: string
+  running: string
+  done: string
 }
 
-/** The state directory beside the map: repos/, worktrees/, inbox/ and a .gitignore of `*`, nothing else. */
+/** The state directory: work_queue/ with .running/ and .done/, and a .gitignore of `*`, nothing else. */
 export function ensureState(root: string): StateDirs {
-  const dirs = { root, repos: join(root, 'repos'), worktrees: join(root, 'worktrees'), inbox: join(root, 'inbox') }
-  for (const d of [dirs.repos, dirs.worktrees, dirs.inbox]) mkdirSync(d, { recursive: true })
+  const queue = join(root, 'work_queue')
+  const dirs = { root, queue, running: join(queue, '.running'), done: join(queue, '.done') }
+  for (const d of [dirs.running, dirs.done]) mkdirSync(d, { recursive: true })
   const ignore = join(root, '.gitignore')
   if (!existsSync(ignore)) writeFileSync(ignore, '*\n')
   return dirs
@@ -169,13 +175,16 @@ export function parseDuration(s: string): number | null {
   return n * (unit === 'h' ? 3_600_000 : unit === 'm' ? 60_000 : unit === 's' ? 1000 : 1)
 }
 
-/** `K=V` pairs into an object; a pair without `=` is a usage error. */
-export function parseEnv(pairs: string[]): Record<string, string> {
-  const out: Record<string, string> = {}
-  for (const p of pairs) {
-    const eq = p.indexOf('=')
-    if (eq <= 0) throw new UsageError(`--env takes KEY=VALUE, not ${JSON.stringify(p)}`)
-    out[p.slice(0, eq)] = p.slice(eq + 1)
-  }
-  return out
+/** A duration the worker reads: digits and one unit, `2h`, `30m`, `90s`, `500ms`, or `0` for none; a usage error otherwise. */
+export function workerDuration(raw: string, flag: string): string {
+  const s = raw.trim()
+  if (s === '0' || /^\d+(ms|s|m|h)$/.test(s)) return s
+  throw new UsageError(`${flag} takes a duration with a unit, like 30m or 2h, not ${JSON.stringify(raw)}`)
+}
+
+/** A positive whole number, or a usage error. */
+export function positiveInt(raw: string, flag: string): number {
+  const n = Number.parseInt(raw, 10)
+  if (!/^\d+$/.test(raw.trim()) || n < 1) throw new UsageError(`${flag} must be a positive number, not ${JSON.stringify(raw)}`)
+  return n
 }

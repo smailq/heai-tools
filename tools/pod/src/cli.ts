@@ -1,66 +1,49 @@
 #!/usr/bin/env node
 // The commands. Each is a thin call into one module; nothing here is
-// remembered between invocations, and every answer comes from the runtime,
-// from Herdr inside the container, or from git on the host.
+// remembered between invocations. The container commands ask the runtime;
+// the queue commands read and write files under the state directory and
+// never touch the container.
 
 import { parseArgs } from 'node:util'
-import { readFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { DEFAULT_BASE, DEFAULT_NAME, defaultRuntime, ensureState, expandHome, parseDuration, parseEnv, readConfig, resolvePaths, RefusedError, UsageError, type Config } from './config.ts'
+import { DEFAULT_BASE, DEFAULT_NAME, defaultRuntime, ensureState, expandHome, parseDuration, positiveInt, readConfig, resolvePaths, RefusedError, UsageError, workerDuration, type Config } from './config.ts'
 import { RuntimeError, type Runtime } from './runtime.ts'
 import { appleRuntime } from './runtimes/apple.ts'
 import { dockerRuntime } from './runtimes/docker.ts'
-import { createHerdr, HerdrError, isPaneId } from './herdr.ts'
 import { buildBase, buildImage, down, parseMount, status, up } from './box.ts'
-import { createRepos } from './repos.ts'
-import { closeWorkspace, getWorkspace, listWorkspaces, openWorkspace, type WorkspaceView } from './workspaces.ts'
-import { notify, promptAgent, readTarget, runCommand, sendKeys, settle, startAgent, waitArgs, type Box, type Settled } from './agents.ts'
-import { createPodGit, isWorkspaceId, parseSet, type WorkRef } from './git.ts'
+import { cancel, find, formatDuration, jobs, submit, tail, wait, type Job } from './queue.ts'
 
-const USAGE = `heai-pod - one persistent container running Herdr: a clone per repository, a worktree per piece of work, an agent or a command in it, a fact file when it settles
+const USAGE = `heai-pod - one container watching a work queue: a job is a directory with a run.sh, the worker runs it, the result lands in .done
 
-  heai-pod up    --image <tag> [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
-  heai-pod down  [--force]                          refused while an agent is working
-  heai-pod status [--json]
+  heai-pod up    --image <tag> [--workers n] [--timeout <duration>] [--poll <duration>] [--env-from <path>] [--mount <host>:<container>]... [--cpus n] [--memory m]
+  heai-pod down  [--force]                          refused while a job is running
+  heai-pod status [--json]                          the container, and the queue's counts
   heai-pod build                                    the base, then every image in the configuration's images:
   heai-pod build base [--tag <image>] [--image-dir <dir>]
   heai-pod build <image> [--image-dir <dir>]        one extended image, FROM the base
+  heai-pod shell                                    a shell in the container
 
-  heai-pod repo add <name> [<source>]               clone into <state>/repos/<name>; the source is the map's localPath, else remotePath
-  heai-pod repo list [--json]
-  heai-pod repo fetch [<name>]
-  heai-pod repo pull-branch <name> <branch> [--into <path>]   the branch from the clone into the source checkout
-
-  heai-pod open <repo> --branch <name> [--base <ref>] [--actor <name>] [--label <text>] [--set key=value]...   → prints the workspace id
-  heai-pod list [--json]
-  heai-pod diff  <workspace | repo branch> [--name-only|--stat|--patch] [--base <ref>] [--json]
-  heai-pod log   <workspace | repo branch> [-n <count>] [--json]
-  heai-pod show  <workspace | repo branch> [--json]
-  heai-pod close <workspace> [--keep-worktree] [--force]
-  heai-pod attach [<workspace>]                     the Herdr UI in this terminal
-
-  heai-pod start  <workspace> --agent <kind> [--name <name>] [--env K=V]... [--timeout <ms>] [-- <agent args>]   → prints the pane id
-  heai-pod prompt <target> <text> | --file <path> [--wait [--timeout <ms>]] [--notify <dir> [--event <name>] [--timeout <ms>]]
-  heai-pod run    <workspace> <command> | --file <path> [--env K=V]... [--wait [--timeout <ms>]] [--notify <dir> [--event <name>]]
-  heai-pod wait   <target> [--until <state>]... [--timeout <ms>] [--notify <dir> [--event <name>] [--every <duration>]]
-  heai-pod read   <target> [--lines N] [--ansi]
-  heai-pod keys   <target> <key>...
-  heai-pod herdr  -- <any herdr command>
+  heai-pod submit <dir> [--name <job>] [--timeout <duration>] [--move]   copy (or move) the directory into the queue; prints the job's name
+  heai-pod list [--json]                            every job: queued, running, done
+  heai-pod show <job> [--lines N] [--json]          the job's claim or result, and the tail of its logs
+  heai-pod wait <job> [--timeout <duration>] [--json]   block until it is done; prints the status
+  heai-pod cancel <job>                             a queued job is finished as canceled here; a running one is told to stop
 
 Options, on every command:
-  --dir <path>         the project directory (default: HEAI_DIR, else the map's directory, else the cwd)
-  --map <path>         the architecture map (default: <dir>/.heai/architecture.yaml, else <dir>/architecture.yaml; HEAI_MAP)
-  --state <dir>        repos, worktrees and inbox (default: <dir>/pod; HEAI_POD_STATE)
+  --dir <path>         the project directory (default: HEAI_DIR, else the cwd)
+  --state <dir>        holds work_queue/ (default: <dir>/pod; HEAI_POD_STATE)
   --config <path>      the configuration (default: <dir>/pod.yaml)
   --runtime <name>     apple, docker or podman (default: the configuration's, else apple on macOS and docker elsewhere)
-  --container <name>   the container (default: the configuration's name, else ${DEFAULT_NAME}); \`--name\` means the same on up, down and status
+  --container <name>   the container (default: the configuration's name, else ${DEFAULT_NAME})
   --json               print JSON
   --help
 
-Exit codes: 0 done, or settled well (idle, done, a command that exited 0); 1 settled badly (blocked, a failing command) or refused; 2 bad usage, a runtime or container that could not be asked, a workspace or pane that does not exist, a timeout.`
+Durations for the worker - --timeout on up and submit, --poll - are Go's: 30s, 5m, 2h, or 0 for no limit. wait's --timeout also takes milliseconds.
 
-const COMMANDS = ['up', 'down', 'status', 'build', 'repo', 'open', 'list', 'diff', 'log', 'show', 'close', 'attach', 'start', 'prompt', 'run', 'wait', 'read', 'keys', 'herdr'] as const
+Exit codes: 0 done, or a job that finished ok; 1 refused (a running job on down, a job that exists, a job already done) or a job that finished failed, timeout, canceled or crashed; 2 bad usage, a runtime that could not be asked, a job that does not exist, or wait's own timeout.`
+
+const COMMANDS = ['up', 'down', 'status', 'build', 'shell', 'submit', 'list', 'show', 'wait', 'cancel'] as const
 
 const TOOL_DIR = resolve(fileURLToPath(import.meta.url), '..', '..')
 
@@ -72,40 +55,45 @@ function makeRuntime(kind: string): Runtime {
 
 const pad = (s: string, n: number): string => (s.length >= n ? s : s + ' '.repeat(n - s.length))
 
-function duration(raw: string | undefined, flag: string): number | undefined {
-  if (raw === undefined) return undefined
-  const ms = parseDuration(raw)
-  if (ms === null) throw new UsageError(`${flag} takes milliseconds or a duration like 30s or 5m, not ${JSON.stringify(raw)}`)
-  return ms
-}
+const statusOf = (j: Job): string => (j.place === 'done' ? j.result?.status ?? 'no result' : j.place)
 
-function printWorkspaces(views: WorkspaceView[]): void {
-  if (!views.length) {
-    console.log('(no workspaces)')
+function printJobs(list: Job[]): void {
+  if (!list.length) {
+    console.log('(no jobs)')
     return
   }
-  const w = Math.max(3, ...views.map((v) => v.id.length))
-  const r = Math.max(4, ...views.map((v) => (v.repo ?? '-').length))
-  const b = Math.max(6, ...views.map((v) => (v.branch ?? '-').length))
-  for (const v of views) {
-    const agents = v.agents.map((a) => `${a.name ?? a.pane}:${a.kind ?? '?'}=${a.state}`).join(' ')
-    console.log(`${pad(v.id, w)}  ${pad(v.repo ?? '-', r)}  ${pad(v.branch ?? '-', b)}  ${pad(v.status, 8)}  ${pad(v.actor ?? '-', 12)}  ${agents || (v.linked ? '(no agent)' : '(the clone)')}`.trimEnd())
+  const w = Math.max(4, ...list.map((j) => j.name.length))
+  for (const j of list) {
+    const when = j.result?.started ?? j.claim?.started ?? ''
+    const took = j.result ? formatDuration(j.result.duration_ms) : ''
+    const exit = j.result ? String(j.result.exit) : ''
+    console.log(`${pad(j.name, w)}  ${pad(j.place, 8)}  ${pad(statusOf(j), 9)}  ${pad(exit, 4)}  ${pad(took, 8)}  ${when}`.trimEnd())
   }
 }
 
-function printSettled(s: Settled, command: boolean): void {
-  console.log(command && s.state === 'exited' ? String(s.exitCode) : s.state)
+function printJob(j: Job, lines: number): void {
+  const rows: [string, string][] = [['job', j.name], ['place', j.place], ['status', statusOf(j)]]
+  const r = j.result
+  if (r) {
+    rows.push(['exit', String(r.exit)])
+    if (r.signal) rows.push(['signal', r.signal])
+    if (r.error) rows.push(['error', r.error])
+    rows.push(['started', r.started], ['finished', r.finished], ['duration', formatDuration(r.duration_ms)], ['worker', r.worker])
+  } else if (j.claim) rows.push(['started', j.claim.started], ['worker', j.claim.worker])
+  rows.push(['path', j.path])
+  for (const [k, v] of rows) console.log(`${pad(k, 9)} ${v}`)
+  for (const log of ['stdout', 'stderr']) {
+    const text = tail(join(j.path, 'log', log), lines)
+    if (text) process.stdout.write(`--- log/${log} (last ${lines} lines)\n${text}`)
+  }
 }
 
 async function main(argv: string[]): Promise<number> {
-  const dd = argv.indexOf('--')
-  const passthrough = dd >= 0 ? argv.slice(dd + 1) : []
   const { values, positionals } = parseArgs({
-    args: dd >= 0 ? argv.slice(0, dd) : argv,
+    args: argv,
     allowPositionals: true,
     options: {
       dir: { type: 'string' },
-      map: { type: 'string' },
       state: { type: 'string' },
       config: { type: 'string' },
       runtime: { type: 'string' },
@@ -115,31 +103,14 @@ async function main(argv: string[]): Promise<number> {
       mount: { type: 'string', multiple: true },
       cpus: { type: 'string' },
       memory: { type: 'string' },
+      workers: { type: 'string' },
+      timeout: { type: 'string' },
+      poll: { type: 'string' },
       tag: { type: 'string' },
       image: { type: 'string' },
       'image-dir': { type: 'string' },
-      into: { type: 'string' },
-      branch: { type: 'string' },
-      base: { type: 'string' },
-      n: { type: 'string' },
-      actor: { type: 'string' },
-      label: { type: 'string' },
-      set: { type: 'string', multiple: true },
-      env: { type: 'string', multiple: true },
-      agent: { type: 'string' },
-      file: { type: 'string' },
-      notify: { type: 'string' },
-      event: { type: 'string' },
-      every: { type: 'string' },
-      timeout: { type: 'string' },
-      until: { type: 'string', multiple: true },
       lines: { type: 'string' },
-      'name-only': { type: 'boolean', default: false },
-      stat: { type: 'boolean', default: false },
-      patch: { type: 'boolean', default: false },
-      ansi: { type: 'boolean', default: false },
-      wait: { type: 'boolean', default: false },
-      'keep-worktree': { type: 'boolean', default: false },
+      move: { type: 'boolean', default: false },
       force: { type: 'boolean', default: false },
       json: { type: 'boolean', default: false },
       help: { type: 'boolean', default: false }
@@ -151,45 +122,18 @@ async function main(argv: string[]): Promise<number> {
   }
   const command = positionals[0] as (typeof COMMANDS)[number]
   if (!COMMANDS.includes(command)) throw new UsageError(`unknown command ${JSON.stringify(command)}`)
-  const paths = resolvePaths({ dir: values.dir, map: values.map, state: values.state, config: values.config })
+  const paths = resolvePaths({ dir: values.dir, state: values.state, config: values.config })
   const config: Config = readConfig(paths.config)
   const state = ensureState(paths.state)
-  const runtime = makeRuntime(values.runtime ?? config.runtime ?? defaultRuntime())
-  const container = values.container ?? (command !== 'start' ? values.name : undefined) ?? config.name ?? DEFAULT_NAME
-  const box: Box = { runtime, container, herdr: createHerdr(runtime, container) }
   const json = (v: unknown) => process.stdout.write(JSON.stringify(v, null, 2) + '\n')
-  const timeout = duration(values.timeout, '--timeout')
-  const podGit = createPodGit({ reposDir: state.repos })
   const arg = (i: number, what: string): string => {
     const v = positionals[i]
     if (!v) throw new UsageError(`${command} needs ${what}`)
     return v
   }
-
-  const resolveWork = async (start = 1): Promise<WorkRef> => {
-    const first = arg(start, 'a workspace id, or <repo> <branch>')
-    const second = positionals[start + 1]
-    if (second && !second.startsWith('--')) return { repo: first, branch: second }
-    if (!isWorkspaceId(first)) throw new UsageError('use a workspace id, or <repo> <branch>')
-    const ws = await getWorkspace(box.herdr, first)
-    const repo = ws.tokens['repo']
-    const branch = ws.tokens['branch']
-    if (!repo || !branch) throw new UsageError(`workspace ${first} has no repo/branch metadata`)
-    return { repo, branch, workspace: first }
-  }
-
-  const withGit = async (views: WorkspaceView[]): Promise<WorkspaceView[]> => {
-    return Promise.all(
-      views.map(async (v) => {
-        if (!v.repo || !v.branch) return v
-        try {
-          return { ...v, git: await podGit.summary({ repo: v.repo, branch: v.branch }) }
-        } catch {
-          return v
-        }
-      })
-    )
-  }
+  // the queue commands never need a runtime, so a machine without one can still submit and wait
+  const runtime = (): Runtime => makeRuntime(values.runtime ?? config.runtime ?? defaultRuntime())
+  const container = (): string => values.container ?? config.name ?? DEFAULT_NAME
 
   switch (command) {
     case 'up': {
@@ -197,35 +141,44 @@ async function main(argv: string[]): Promise<number> {
       if (cpus !== undefined && !Number.isFinite(cpus)) throw new UsageError('--cpus must be a number')
       const image = values.image
       if (!image) throw new UsageError('up needs --image <tag>')
-      const result = await up(runtime, {
-        name: container,
+      const name = container()
+      const result = await up(runtime(), {
+        name,
         image,
         state,
         envFile: values['env-from'] !== undefined ? expandHome(values['env-from']) : config.envFile,
         mounts: [...(config.mounts ?? []), ...(values.mount ?? [])].map(parseMount),
         cpus,
-        memory: values.memory ?? config.resources?.memory
+        memory: values.memory ?? config.resources?.memory,
+        workers: values.workers !== undefined ? positiveInt(values.workers, '--workers') : config.workers,
+        timeout: values.timeout !== undefined ? workerDuration(values.timeout, '--timeout') : config.timeout,
+        poll: values.poll !== undefined ? workerDuration(values.poll, '--poll') : config.poll
       })
-      console.log(result === 'running' ? `${container} is already running` : result === 'started' ? `Started ${container}` : `Created and started ${container} from ${image}`)
+      console.log(result === 'running' ? `${name} is already running` : result === 'started' ? `Started ${name}` : `Created and started ${name} from ${image}`)
       return 0
     }
 
     case 'down': {
-      const result = await down(runtime, container, values.force)
-      console.log(result === 'stopped' ? `Stopped ${container}` : result === 'absent' ? `${container} does not exist` : `${container} is already stopped`)
+      const name = container()
+      const result = await down(runtime(), name, state, values.force)
+      console.log(result === 'stopped' ? `Stopped ${name}` : result === 'absent' ? `${name} does not exist` : `${name} is already stopped`)
       return 0
     }
 
     case 'status': {
-      const s = await status(runtime, container)
+      const name = container()
+      const s = await status(runtime(), name, state)
       if (values.json) json(s)
       else {
-        console.log(`container   ${container}  ${s.container ? `${s.container.state}  ${s.container.image}` : 'does not exist'}`)
-        if (s.herdr) console.log(`herdr       ${s.herdr.running ? `running${s.herdr.version ? `  ${s.herdr.version}` : ''}` : 'not running'}`)
-        if (s.workspaces !== null) console.log(`workspaces  ${s.workspaces}`)
-        if (s.agents) console.log(`agents      ${Object.entries(s.agents).map(([k, n]) => `${n} ${k}`).join(', ') || '0'}`)
+        console.log(`container  ${name}  ${s.container ? `${s.container.state}  ${s.container.image}` : 'does not exist'}`)
+        const by = Object.entries(s.queue.byStatus)
+          .sort()
+          .map(([k, n]) => `${n} ${k}`)
+          .join(', ')
+        console.log(`queue      ${s.queue.queued} queued, ${s.queue.running} running, ${s.queue.done} done${by ? ` (${by})` : ''}`)
+        console.log(`           ${state.queue}`)
       }
-      return s.container?.running && s.herdr?.running ? 0 : 1
+      return s.container?.running ? 0 : 1
     }
 
     case 'build': {
@@ -233,12 +186,13 @@ async function main(argv: string[]): Promise<number> {
       const baseDir = resolve(paths.dir, values['image-dir'] ?? config.baseDir ?? join(TOOL_DIR, 'image'))
       const images = config.images ?? {}
       const which = positionals[1]
+      const rt = runtime()
       const doBase = async (tag: string) => {
-        const r = await buildBase(runtime, tag, baseDir)
-        console.log(`Built ${tag} from ${r.file}${r.herdrVersion ? ` with herdr ${r.herdrVersion}` : ''}`)
+        const r = await buildBase(rt, tag, baseDir)
+        console.log(`Built ${tag} from ${r.file}`)
       }
       const doImage = async (tag: string, dir: string) => {
-        const r = await buildImage(runtime, tag, resolve(paths.dir, dir), base)
+        const r = await buildImage(rt, tag, resolve(paths.dir, dir), base)
         console.log(`Built ${tag} from ${r.file} on ${base}`)
       }
       if (which === undefined) {
@@ -253,174 +207,57 @@ async function main(argv: string[]): Promise<number> {
       return 0
     }
 
-    case 'repo': {
-      const repos = createRepos({ reposDir: state.repos, mapPath: paths.map })
-      const sub = arg(1, 'add, list, fetch or pull-branch')
-      switch (sub) {
-        case 'add': {
-          const r = await repos.add(arg(2, 'a repository name'), positionals[3])
-          console.log(`Cloned ${r.source ?? '?'} into ${r.path}${r.branch ? ` (${r.branch} at ${r.head})` : ''}`)
-          return 0
-        }
-        case 'list': {
-          const list = await repos.list()
-          if (values.json) json(list)
-          else if (!list.length) console.log(`(no clones under ${state.repos})`)
-          else for (const r of list) console.log(`${pad(r.name, 16)}  ${pad(r.branch ?? '-', 20)}  ${pad(r.head ?? '-', 8)}  ${r.source ?? '-'}`)
-          return 0
-        }
-        case 'fetch': {
-          for (const n of await repos.fetch(positionals[2])) console.log(n)
-          return 0
-        }
-        case 'pull-branch': {
-          const r = await repos.pullBranch(arg(2, 'a repository name'), arg(3, 'a branch'), values.into)
-          console.log(`Pulled ${r.branch} into ${r.into}`)
-          return 0
-        }
-        default:
-          throw new UsageError(`repo ${sub} is not a command; add, list, fetch or pull-branch`)
-      }
-    }
+    case 'shell':
+      return runtime().execInteractive(container(), ['bash', '-l'], true)
 
-    case 'open': {
-      if (!values.branch) throw new UsageError('open needs --branch <name>')
-      const o = await openWorkspace(box.herdr, state.repos, { repo: arg(1, 'a repository'), branch: values.branch, base: values.base, actor: values.actor, label: values.label, set: parseSet(values.set ?? []) })
-      if (values.json) json(o)
-      else console.log(o.workspace)
+    case 'submit': {
+      const dir = arg(1, 'a directory')
+      const name = submit(state, dir, { name: values.name, timeout: values.timeout !== undefined ? workerDuration(values.timeout, '--timeout') : undefined, move: values.move })
+      if (values.json) json(find(state, name))
+      else console.log(name)
       return 0
     }
 
     case 'list': {
-      const views = await withGit(await listWorkspaces(box.herdr))
-      if (values.json) json(views)
-      else printWorkspaces(views)
-      return 0
-    }
-
-    case 'diff': {
-      const work = await resolveWork()
-      const picks = [values['name-only'], values.stat, values.patch].filter(Boolean).length
-      if (picks > 1) throw new UsageError('diff takes one of --name-only, --stat or --patch')
-      const mode = values.patch ? 'patch' : values.stat ? 'stat' : 'name-only'
-      const out = await podGit.diff(work, { base: values.base, mode })
-      if (values.json) json({ ...work, base: values.base ?? (await podGit.branchFact(work.repo, work.branch, 'base')), mode, output: out })
-      else process.stdout.write(out)
-      return 0
-    }
-
-    case 'log': {
-      const work = await resolveWork()
-      const n = values.n !== undefined ? Number.parseInt(values.n, 10) : 20
-      if (!Number.isFinite(n) || n <= 0) throw new UsageError('-n must be a positive number')
-      const entries = await podGit.log(work, n)
-      if (values.json) json({ ...work, entries })
-      else for (const e of entries) console.log(`${e.sha}  ${e.date}  ${e.author}  ${e.subject}`)
+      const list = jobs(state)
+      if (values.json) json(list)
+      else printJobs(list)
       return 0
     }
 
     case 'show': {
-      const work = await resolveWork()
-      const entry = await podGit.show(work)
-      if (values.json) json({ ...work, ...entry })
-      else if (entry.sha) console.log(`${entry.sha}\n${entry.committedAt ?? ''}\n${entry.author ?? ''}\n${entry.subject ?? ''}`.trim())
-      return 0
-    }
-
-    case 'close': {
-      const id = arg(1, 'a workspace id')
-      const r = await closeWorkspace(box.herdr, id, { keepWorktree: values['keep-worktree'], force: values.force })
-      console.log(r === 'closed' ? `Closed ${id}; its worktree is kept` : `Closed ${id} and removed its worktree`)
-      return 0
-    }
-
-    case 'attach': {
-      if (positionals[1]) await box.herdr.call(['workspace', 'focus', positionals[1]])
-      return runtime.execInteractive(container, ['herdr'], true)
-    }
-
-    case 'start': {
-      if (!values.agent) throw new UsageError('start needs --agent <kind>')
-      const r = await startAgent(box, arg(1, 'a workspace id'), { kind: values.agent, name: values.name, env: parseEnv(values.env ?? []), timeout, args: passthrough })
-      if (values.json) json(r)
-      else console.log(r.pane)
-      return 0
-    }
-
-    case 'prompt': {
-      const target = arg(1, 'a pane id or agent name')
-      const text = values.file !== undefined ? readFileSync(values.file, 'utf8') : positionals[2]
-      if (!text) throw new UsageError('prompt needs text, or --file <path>')
-      if (values.wait && values.notify) throw new UsageError('prompt takes --wait or --notify, not both')
-      if (values.notify) {
-        await notify(box, values.notify, values.event ?? 'settled', undefined, ['prompt', target, text, ...(timeout !== undefined ? ['--timeout', String(timeout)] : [])])
-        console.log(`Prompted ${target}; ${values.event ?? 'settled'} will be written to ${values.notify}`)
-        return 0
-      }
-      if (values.wait) {
-        const s = await settle(box, ['prompt', target, text, ...(timeout !== undefined ? ['--timeout', String(timeout)] : [])])
-        if (values.json) json(s)
-        else printSettled(s, false)
-        return s.exitCode
-      }
-      const r = await promptAgent(box, target, text)
-      console.log(`Prompted ${target} (${r.state})`)
-      return 0
-    }
-
-    case 'run': {
-      const ws = arg(1, 'a workspace id')
-      const command_ = values.file !== undefined ? readFileSync(values.file, 'utf8') : positionals.slice(2).join(' ')
-      if (!command_.trim()) throw new UsageError('run needs a command, or --file <path>')
-      if (values.wait && values.notify) throw new UsageError('run takes --wait or --notify, not both')
-      const r = await runCommand(box, ws, command_, parseEnv(values.env ?? []))
-      const settledArgs = ['run', r.pane, r.sentinel, ...(timeout !== undefined ? ['--timeout', String(timeout)] : [])]
-      if (values.notify) {
-        await notify(box, values.notify, values.event ?? 'settled', undefined, settledArgs)
-        console.log(r.pane)
-        return 0
-      }
-      if (values.wait) {
-        const s = await settle(box, settledArgs)
-        if (values.json) json({ ...s, pane: r.pane })
-        else printSettled(s, true)
-        return s.exitCode
-      }
-      console.log(r.pane)
+      const name = arg(1, 'a job name')
+      const job = find(state, name)
+      if (!job) throw new UsageError(`no job named ${name}`)
+      const lines = values.lines !== undefined ? positiveInt(values.lines, '--lines') : 20
+      if (values.json) json({ ...job, log: { stdout: tail(join(job.path, 'log', 'stdout'), lines), stderr: tail(join(job.path, 'log', 'stderr'), lines) } })
+      else printJob(job, lines)
       return 0
     }
 
     case 'wait': {
-      const target = arg(1, 'a pane id or agent name')
-      const args = waitArgs(target, values.until ?? [], timeout)
-      if (values.notify) {
-        const every = duration(values.every, '--every')
-        await notify(box, values.notify, values.event ?? (every !== undefined ? 'touch' : 'settled'), every, args)
-        console.log(`Waiting on ${target} in the container; ${values.event ?? (every !== undefined ? 'touch' : 'settled')} will be written to ${values.notify}`)
-        return 0
+      const name = arg(1, 'a job name')
+      let timeout: number | undefined
+      if (values.timeout !== undefined) {
+        const ms = parseDuration(values.timeout)
+        if (ms === null) throw new UsageError(`--timeout takes milliseconds or a duration like 30s or 5m, not ${JSON.stringify(values.timeout)}`)
+        timeout = ms
       }
-      if (values.every !== undefined) throw new UsageError('--every goes with --notify')
-      const s = await settle(box, args)
-      if (values.json) json(s)
-      else printSettled(s, isPaneId(target) && s.state === 'exited')
-      return s.exitCode
+      const job = await wait(state, name, timeout)
+      if (!job) {
+        process.stderr.write(`pod: ${name} is not done after ${values.timeout}\n`)
+        return 2
+      }
+      if (values.json) json(job)
+      else console.log(job.result?.status ?? 'no result')
+      return job.result?.status === 'ok' ? 0 : 1
     }
 
-    case 'read': {
-      const lines = values.lines !== undefined ? Number.parseInt(values.lines, 10) : undefined
-      if (lines !== undefined && !Number.isFinite(lines)) throw new UsageError('--lines must be a number')
-      process.stdout.write(await readTarget(box, arg(1, 'a pane id or agent name'), lines, values.ansi))
+    case 'cancel': {
+      const name = arg(1, 'a job name')
+      const r = cancel(state, name)
+      console.log(r === 'canceled' ? `Canceled ${name}; it never ran` : `Asked the worker to stop ${name}`)
       return 0
-    }
-
-    case 'keys': {
-      await sendKeys(box, arg(1, 'a pane id or agent name'), positionals.slice(2))
-      return 0
-    }
-
-    case 'herdr': {
-      if (!passthrough.length) throw new UsageError('herdr -- <command>: nothing after --')
-      return runtime.execInteractive(container, ['herdr', ...passthrough], false)
     }
   }
 }
@@ -437,9 +274,6 @@ main(process.argv.slice(2)).then(
     } else if (e instanceof RefusedError) {
       say(e.message)
       process.exitCode = 1
-    } else if (e instanceof HerdrError) {
-      say(`herdr: ${e.code}: ${e.message}`)
-      process.exitCode = e.exit
     } else if (e instanceof Error && ((e as NodeJS.ErrnoException).code?.startsWith('ERR_PARSE_ARGS') || (e as NodeJS.ErrnoException).code === 'ENOENT')) {
       say(e.message)
       process.exitCode = 2

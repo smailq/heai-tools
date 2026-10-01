@@ -2,7 +2,7 @@
 # Re-records the pod and reactor fixtures from the tools' own sources, so the
 # format contracts this tool reads are the tools' output and not a drawing.
 #   pod:      `heai-pod status --json` and `heai-pod list --json` against pod's fake runtime,
-#             with a world of one clone and three worktrees in three agent states
+#             with a queue of five jobs: one queued, one running, three done
 #   reactor:  `heai-reactor status --json` and `heai-reactor events --since 1h --json` against
 #             a temporary project: five sources, four rules, one emit, one dropped fact, two ticks
 # Only the temporary project's path is rewritten, to /repo. Times are the recording's.

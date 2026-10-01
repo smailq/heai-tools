@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:heai-tools:schemas:pod:1",
+  "$id": "urn:heai-tools:schemas:pod:2",
   "title": "heai-tools pod configuration",
-  "description": "pod.yaml, in the project directory: the runtime, the container's default name, the base image and the extended images built on it, and what every `up` mounts and grants. Every key is optional and an absent file is an empty configuration. tools/pod/README.md is the specification.",
+  "description": "pod.yaml, in the project directory: the runtime, the container's default name, the base image and the extended images built on it, what every `up` mounts and grants, and how the worker runs. Every key is optional and an absent file is an empty configuration. tools/pod/README.md is the specification.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -73,6 +73,24 @@
           "pattern": "^[0-9]+[KMGkmg]?[Bb]?$"
         }
       }
+    },
+    "workers": {
+      "title": "a positive whole number",
+      "description": "How many jobs the worker runs at once. Default: 1.",
+      "type": "integer",
+      "minimum": 1
+    },
+    "timeout": {
+      "title": "a duration like 1h, or 0",
+      "description": "The timeout for a job whose job.json names none; 0 for no limit. Default: 1h.",
+      "type": "string",
+      "pattern": "^(0|[0-9]+(ms|s|m|h))$"
+    },
+    "poll": {
+      "title": "a duration like 2s",
+      "description": "How often the worker looks at the queue and at cancel files. Default: 2s.",
+      "type": "string",
+      "pattern": "^[0-9]+(ms|s|m|h)$"
     }
   }
 }

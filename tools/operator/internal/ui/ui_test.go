@@ -64,7 +64,7 @@ func fixture(t *testing.T) Model {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, err := pod.ParseList(readFixture(t, "pod", "list.json"))
+	jobs, err := pod.ParseList(readFixture(t, "pod", "list.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func fixture(t *testing.T) Model {
 	opts := Options{TasksDir: filepath.Join("/repo", "tasks"), Interval: 2 * time.Second, Plain: true, Now: func() time.Time { return now }}
 	m := New(opts).WithSnapshot(snap)
 	m = m.WithFlows(flows.Result{Definitions: defs, Flows: list, Stuck: stuck, At: now.Add(-4 * time.Second)})
-	m = m.WithPod(pod.Result{Status: podStatus, Workspaces: ws, At: now.Add(-4 * time.Second)})
+	m = m.WithPod(pod.Result{Status: podStatus, Jobs: jobs, At: now.Add(-4 * time.Second)})
 	m = m.WithReactor(reactor.Result{Status: reactorStatus, Events: events, At: now.Add(-5 * time.Second)})
 	m.slowStarted = true
 	return m
@@ -388,7 +388,7 @@ func TestPaneKeysSwitchTheTableAndResetTheCursor(t *testing.T) {
 	if m.split() {
 		t.Error("only the tasks and flows panes split")
 	}
-	if m.pane != panePod || m.rowCount() != 4 {
+	if m.pane != panePod || m.rowCount() != 5 {
 		t.Errorf("3 selects pod: pane %d rows %d", m.pane, m.rowCount())
 	}
 	if m = press(m, "1"); m.pane != paneTasks {
@@ -611,7 +611,7 @@ func TestPHidesTheFlowPaneAndTabFocusesIt(t *testing.T) {
 
 func TestGoldenPod120(t *testing.T) {
 	m := press(fixture(t).WithSize(120, 20), "3", "down")
-	if m.pane != panePod || m.rowCount() != 4 || m.cursor != 1 {
+	if m.pane != panePod || m.rowCount() != 5 || m.cursor != 1 {
 		t.Fatalf("pane %d rows %d cursor %d", m.pane, m.rowCount(), m.cursor)
 	}
 	golden(t, "pod-120x20", m.Render())
@@ -621,20 +621,42 @@ func TestGoldenPod80(t *testing.T) {
 	golden(t, "pod-80x18", press(fixture(t).WithSize(80, 18), "3").Render())
 }
 
-func TestEnterOnAWorkspaceOpensIt(t *testing.T) {
-	m := press(fixture(t).WithSize(100, 20), "3", "down", "enter")
-	if m.wsDetail == nil || m.wsDetail.ID != "w3" {
-		t.Fatalf("detail: %+v", m.wsDetail)
+func TestEnterOnAJobOpensIt(t *testing.T) {
+	m := press(fixture(t).WithSize(100, 20), "3", "down", "down", "down", "enter")
+	if m.jobDetail == nil || m.jobDetail.Name != "core-reviewer-merge-two-entities" {
+		t.Fatalf("detail: %+v", m.jobDetail)
 	}
 	out := m.Render()
-	for _, want := range []string{"workspace ── w3 · desktop-owner/add-place-entity", "agent/desktop-owner/add-place-entity", "w3:p2", "/worktrees/app/agent-desktop-owner-add-place-entity"} {
+	for _, want := range []string{"job ── core-reviewer-merge-two-entities", "heai-pod show core-reviewer-merge-two-entities", "exit        3", "took        1m31s", "/repo/pod/work_queue/.done/core-reviewer-merge-two-entities", "log/stdout", "(empty)"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q:\n%s", want, out)
 		}
 	}
-	golden(t, "workspace-100x20", out)
-	if m = press(m, "esc"); m.wsDetail != nil {
+	golden(t, "job-100x20", out)
+	if m = press(m, "esc"); m.jobDetail != nil {
 		t.Error("esc closes it")
+	}
+	m = press(fixture(t).WithSize(100, 20), "3", "down", "enter")
+	if out := m.Render(); !strings.Contains(out, "state       running") || !strings.Contains(out, "worker      w1") || strings.Contains(out, "exit") {
+		t.Errorf("a running job shows its claim and no result:\n%s", out)
+	}
+}
+
+func TestAJobsLogsAreReadFromTheHost(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "log"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "log", "stderr"), []byte("one\ntwo\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	job := pod.Job{Name: "j", Place: "done", Path: dir, Result: &pod.JobResult{Status: "failed", Exit: 2, Error: "job.json: timeout \"soon\" is not a duration like 2h"}}
+	m := fixture(t).WithSize(100, 20).WithPod(pod.Result{Status: &pod.Status{Container: &pod.Container{Name: "x", State: "running", Running: true}}, Jobs: []pod.Job{job}, At: now})
+	out := press(m, "3", "enter").Render()
+	for _, want := range []string{"error       job.json: timeout", "── log/stderr", " one", " two"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -662,7 +684,7 @@ func TestPodKeepsTheLastAnswerWhenAPollFails(t *testing.T) {
 	m.slowPending = 1
 	next, _ := m.Update(podMsg(pod.Result{Note: "pod: timed out after 10s", Failed: true, At: now}))
 	m = next.(Model)
-	if len(m.pod.Workspaces) != 4 || !m.pod.Failed || !strings.Contains(m.Render(), "⚠ pod: timed out") {
+	if len(m.pod.Jobs) != 5 || !m.pod.Failed || !strings.Contains(m.Render(), "⚠ pod: timed out") {
 		t.Errorf("the last answer stays, marked stale:\n%s", m.Render())
 	}
 }

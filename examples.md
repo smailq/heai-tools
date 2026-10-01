@@ -12,6 +12,7 @@ project/
   scripts/*.sh             the mechanics, calling the tools
   reactor.yaml             what starts each move                 reactor
   pod.yaml                 the container the agent works in      pod
+  images/workshop/         the image: FROM the base, with claude installed
 ```
 
 **1. Divide the code and name the experts.** The map gives the API to an agent and keeps CI and the map itself with a human.
@@ -44,7 +45,7 @@ name: session
 states: [queued, running, exited, review, landed, refused]
 initial: queued
 terminal: [landed, refused]
-links: { task: { required: true }, actor: { required: true }, workspace: { required: false } }
+links: { task: { required: true }, actor: { required: true }, job: { required: false } }
 transitions:
   - { from: queued,  to: running, on: started }
   - { from: running, to: exited,  on: exited }
@@ -57,17 +58,15 @@ hooks:
   exited: { run: scripts/gate.sh }
 ```
 
-**4. Wire the triggers.** A new task starts a session, a fact file from the container ends one, and a clock settles what is waiting.
+**4. Wire the triggers.** A new task starts a session, and a clock settles what is waiting.
 
 ```yaml
 # reactor.yaml
 sources:
   clock:     { type: schedule, cron: "* * * * *" }
   tasks_cli: { type: cli, kinds: [task.todo] }
-  inbox:     { type: dir, path: pod/inbox }
 rules:
   - { name: dispatch, on: { source: tasks_cli, kind: task.todo }, run: scripts/dispatch.sh {{ slug }} }
-  - { name: exited,   on: { source: inbox, kind: exited },         run: scripts/exited.sh {{ file }} }
   - { name: settle,   on: { source: clock },                       run: heai-flow settle }
 ```
 
@@ -79,21 +78,22 @@ actor=$(heai-architect owner "src/api" --json | jq -r .owner)
 heai-tasks set "$1" --status in-progress
 heai-flow start session --link task="$1" --link actor="$actor" --by dispatch.sh
 
-# scripts/start.sh: a worktree, an agent, a prompt, and a fact file when it settles
-ws=$(heai-pod open app --branch "agent/$HEAI_LINK_ACTOR/$HEAI_LINK_TASK" --actor "$HEAI_LINK_ACTOR")
-heai-flow link "$HEAI_FLOW" workspace="$ws"
-{ heai-architect context "$HEAI_LINK_ACTOR"; heai-tasks show "$HEAI_LINK_TASK"; } > prompt.md
-heai-pod start "$ws" --agent claude
-heai-pod prompt "$ws" --file prompt.md --notify /heai/inbox --event exited
+# scripts/start.sh: a job holding a clone and the prompt, submitted; the hook is detached, so it waits for the result itself
+name="$HEAI_LINK_ACTOR-$HEAI_LINK_TASK"
+job=$(mktemp -d) && mkdir "$job/repos"
+git clone -q ../app "$job/repos/app" && git -C "$job/repos/app" checkout -q -b "agent/$name"
+{ heai-architect context "$HEAI_LINK_ACTOR"; heai-tasks show "$HEAI_LINK_TASK"; } > "$job/prompt.md"
+echo 'cd repos/app && claude -p < ../../prompt.md' > "$job/run.sh"
+heai-pod submit "$job" --name "$name" --move --timeout 2h
+heai-flow link "$HEAI_FLOW" job="$name"
 heai-flow advance "$HEAI_FLOW" started --by start.sh
+status=$(heai-pod wait "$name")
+heai-flow advance "$HEAI_FLOW" exited --data "{\"status\":\"$status\"}" --by start.sh
 
-# scripts/exited.sh <fact>: the fact names the workspace; advance the session linked to it
-ws=$(jq -r .workspace "$1")
-heai-flow advance "$(ls flow/by-link/workspace/$ws)" exited --by exited.sh
-
-# scripts/gate.sh: judge the branch against the map, from the clone pod keeps on the host
-branch="agent/$HEAI_LINK_ACTOR/$HEAI_LINK_TASK"
-if git -C pod/repos/app diff --name-only "main...$branch" | heai-architect gate --actor "$HEAI_LINK_ACTOR"
+# scripts/gate.sh: fetch the branch home from the finished job's clone, then judge it against the map
+branch="agent/$HEAI_LINK_JOB"
+git -C ../app fetch -q "pod/work_queue/.done/$HEAI_LINK_JOB/repos/app" "$branch:$branch"
+if git -C ../app diff --name-only "main...$branch" | heai-architect gate --actor "$HEAI_LINK_ACTOR"
 then heai-flow advance "$HEAI_FLOW" gated --data '{"verdict":"clean"}' --by gate.sh
 else heai-flow advance "$HEAI_FLOW" gated --data '{"verdict":"violation"}' --by gate.sh
 fi```
@@ -101,7 +101,7 @@ fi```
 **6. Run it and watch.**
 
 ```sh
-heai-pod up --image app/workshop      # the container, with Herdr inside
+heai-pod up --image app/workshop      # the container, the worker inside
 heai-reactor serve                    # the one daemon
 heai-operator                         # the screen
 ```
@@ -114,5 +114,5 @@ heai-flow advance <id> landed
 heai-tasks set cache-the-index --status done
 ```
 
-Every step above is a file in the project directory: the map, the task, the definition, the journal, the event, the fact.
+Every step above is a file in the project directory: the map, the task, the definition, the journal, the event, the job.
 Change the process by editing the definition and the scripts; no tool needs to know.

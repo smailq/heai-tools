@@ -146,9 +146,9 @@ type Model struct {
 	// detail is a task opened full width; detailOff scrolls its body, the split pane's, and a trace.
 	detail    *tracker.Task
 	detailOff int
-	// wsDetail is a workspace opened full width; evDetail an event with the actions it caused.
-	wsDetail *pod.Workspace
-	evDetail *reactor.Event
+	// jobDetail is a job opened full width; evDetail an event with the actions it caused.
+	jobDetail *pod.Job
+	evDetail  *reactor.Event
 	// trace is a flow's timeline opened full width, from `flow trace <id>`.
 	trace *traceView
 	// panelTrace is the same timeline for the flow under the cursor, shown in the flow
@@ -388,9 +388,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		} else {
 			m.pod = r
 		}
-		if m.wsDetail != nil {
-			// Keep the open workspace current, or close it if it went away.
-			m.wsDetail = m.workspaceByID(m.wsDetail.ID)
+		if m.jobDetail != nil {
+			// Keep the open job current, or close it if it went away.
+			m.jobDetail = m.jobByName(m.jobDetail.Name)
 		}
 		m.clamp()
 		return m, nil
@@ -588,10 +588,10 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 }
 
 // inDetail reports whether something is open full width: a task, a workspace or an event.
-func (m Model) inDetail() bool { return m.detail != nil || m.wsDetail != nil || m.evDetail != nil }
+func (m Model) inDetail() bool { return m.detail != nil || m.jobDetail != nil || m.evDetail != nil }
 
 func (m *Model) closeDetail() {
-	m.detail, m.wsDetail, m.evDetail, m.detailOff = nil, nil, nil, 0
+	m.detail, m.jobDetail, m.evDetail, m.detailOff = nil, nil, nil, 0
 }
 
 // scrollKey moves a body: a task's, the split pane's, a workspace's, an event's, or a trace's.
@@ -620,7 +620,7 @@ func (m *Model) switchPane(p pane) {
 	m.focus = focusLeft
 }
 
-// open is Enter: a task full width, a flow's trace, a workspace, or an event with its actions.
+// open is Enter: a task full width, a flow's trace, a job, or an event with its actions.
 func (m Model) open() (tea.Model, tea.Cmd) {
 	switch m.pane {
 	case paneTasks:
@@ -630,8 +630,8 @@ func (m Model) open() (tea.Model, tea.Cmd) {
 		}
 	case panePod:
 		if rows := m.podRows(); len(rows) > 0 {
-			w := rows[m.cursor]
-			m.wsDetail, m.detailOff = &w, 0
+			j := rows[m.cursor]
+			m.jobDetail, m.detailOff = &j, 0
 		}
 	case paneReactor:
 		if rows := m.eventRows(); len(rows) > 0 {
@@ -700,26 +700,26 @@ func (m Model) flowRows() []flows.Flow {
 	return list
 }
 
-// podRows is what the pod table shows: the workspaces as pod lists them, filtered.
-func (m Model) podRows() []pod.Workspace {
+// podRows is what the pod table shows: the jobs as pod lists them, queued then running then done, filtered.
+func (m Model) podRows() []pod.Job {
 	needle := strings.ToLower(m.filter)
 	if needle == "" {
-		return m.pod.Workspaces
+		return m.pod.Jobs
 	}
-	var out []pod.Workspace
-	for _, w := range m.pod.Workspaces {
-		hay := strings.ToLower(strings.Join([]string{w.ID, w.Label, w.Repo, w.Branch, w.Actor, w.Status, w.AgentText()}, " "))
+	var out []pod.Job
+	for _, j := range m.pod.Jobs {
+		hay := strings.ToLower(strings.Join([]string{j.Name, j.Place, j.State(), j.Worker()}, " "))
 		if strings.Contains(hay, needle) {
-			out = append(out, w)
+			out = append(out, j)
 		}
 	}
 	return out
 }
 
-func (m Model) workspaceByID(id string) *pod.Workspace {
-	for i := range m.pod.Workspaces {
-		if m.pod.Workspaces[i].ID == id {
-			return &m.pod.Workspaces[i]
+func (m Model) jobByName(name string) *pod.Job {
+	for i := range m.pod.Jobs {
+		if m.pod.Jobs[i].Name == name {
+			return &m.pod.Jobs[i]
 		}
 	}
 	return nil

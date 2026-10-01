@@ -52,3 +52,19 @@ jobs:
       - run: go test ./...
       - run: go build -trimpath -o heai-operator ./cmd/heai-operator
       - run: ./heai-operator --help
+
+  worker:
+    name: pod worker
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: tools/pod/image/worker
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: tools/pod/image/worker/go.mod
+          cache: false
+      - run: test -z "$(gofmt -l .)"
+      - run: go vet ./...
+      - run: go test ./...

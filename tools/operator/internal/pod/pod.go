@@ -1,8 +1,10 @@
-// Package pod asks pod what the container is doing: `heai-pod status --json`
-// for the container and the Herdr server in it, and when both run,
-// `heai-pod list --json` for every workspace and the agent in it. The shapes
-// read here are the tool's own, recorded under testdata/pod/ at the root of
-// this tool, and the pane dims when the command is absent, unconfigured, or fails.
+// Package pod asks pod what the container and its queue are doing:
+// `heai-pod status --json` for the container and the queue's counts, then
+// `heai-pod list --json` for every job - queued, running and done. The list
+// is files on the host, so it is asked whether or not the container is up.
+// The shapes read here are the tool's own, recorded under testdata/pod/ at
+// the root of this tool, and the pane dims when the command is absent,
+// unconfigured, or fails.
 package pod
 
 import (
@@ -26,91 +28,138 @@ type Container struct {
 	Image   string `json:"image"`
 }
 
-// Herdr is the server's word on itself.
-type Herdr struct {
-	Running bool   `json:"running"`
-	Version string `json:"version"`
+// Counts is the queue as `status` counted it from the host's side.
+type Counts struct {
+	Queued   int            `json:"queued"`
+	Running  int            `json:"running"`
+	Done     int            `json:"done"`
+	ByStatus map[string]int `json:"byStatus"`
 }
 
-// Status is `heai-pod status --json`: null fields stay nil when what they describe is not running.
+// Status is `heai-pod status --json`: the container is null when it does not exist.
 type Status struct {
-	Container  *Container     `json:"container"`
-	Herdr      *Herdr         `json:"herdr"`
-	Workspaces *int           `json:"workspaces"`
-	Agents     map[string]int `json:"agents"`
+	Container *Container `json:"container"`
+	Queue     Counts     `json:"queue"`
 }
 
-// Up reports whether both the container and Herdr are running, which is when `list` can be asked.
+// Up reports whether the container is running.
 func (s *Status) Up() bool {
-	return s != nil && s.Container != nil && s.Container.Running && s.Herdr != nil && s.Herdr.Running
+	return s != nil && s.Container != nil && s.Container.Running
 }
 
-// Summary is the one phrase for the container: "heai-workshop running · herdr 0.9.0", "heai-workshop stopped", "no container".
+// Summary is the one phrase for the container: "heai-workshop running", "heai-workshop stopped", "no container".
 func (s *Status) Summary() string {
 	if s == nil || s.Container == nil {
 		return "no container"
 	}
-	out := s.Container.Name + " " + s.Container.State
-	switch {
-	case !s.Container.Running:
-	case s.Herdr == nil || !s.Herdr.Running:
-		out += " · herdr not running"
-	case s.Herdr.Version != "":
-		out += " · herdr " + s.Herdr.Version
-	default:
-		out += " · herdr running"
-	}
-	return out
+	return s.Container.Name + " " + s.Container.State
 }
 
-// AgentCounts is the agents by state, most first then by name, as `status` counted them.
-func (s *Status) AgentCounts() []StateCount {
+// QueueText is the queue in one phrase: "1 running · 2 queued · 3 done".
+func (s *Status) QueueText() string {
+	if s == nil {
+		return ""
+	}
+	q := s.Queue
+	return fmt.Sprintf("%d running · %d queued · %d done", q.Running, q.Queued, q.Done)
+}
+
+// DoneCounts is the finished jobs by status, most first then by name, as `status` counted them.
+func (s *Status) DoneCounts() []StateCount {
 	if s == nil {
 		return nil
 	}
-	return sortCounts(s.Agents)
+	return sortCounts(s.Queue.ByStatus)
 }
 
-// Agent is one agent Herdr runs in a workspace.
-type Agent struct {
+// Claim is .running/<job>/claim.json, the worker's.
+type Claim struct {
+	Worker  string `json:"worker"`
+	Started string `json:"started"`
+}
+
+// Result is .done/<job>/result.json, the worker's.
+type JobResult struct {
+	Job        string `json:"job"`
+	Status     string `json:"status"`
+	Exit       int    `json:"exit"`
+	Signal     string `json:"signal,omitempty"`
+	Error      string `json:"error,omitempty"`
+	Started    string `json:"started"`
+	Finished   string `json:"finished"`
+	DurationMS int64  `json:"duration_ms"`
+	Worker     string `json:"worker"`
+}
+
+// Job is one entry of `heai-pod list --json`: queued, running with its claim, or done with its result.
+type Job struct {
 	Name  string `json:"name"`
-	Kind  string `json:"kind"`
-	Pane  string `json:"pane"`
-	State string `json:"state"`
+	Place string `json:"place"`
+	// Path is the job's directory on the host.
+	Path   string     `json:"path"`
+	Claim  *Claim     `json:"claim,omitempty"`
+	Result *JobResult `json:"result,omitempty"`
 }
 
-// Pane is one pane of a workspace.
-type Pane struct {
-	ID    string `json:"id"`
-	Agent string `json:"agent"`
-	State string `json:"state"`
-	Cwd   string `json:"cwd"`
-}
-
-// Workspace is one entry of `heai-pod list --json`.
-type Workspace struct {
-	ID     string `json:"id"`
-	Label  string `json:"label"`
-	Repo   string `json:"repo"`
-	Branch string `json:"branch"`
-	Actor  string `json:"actor"`
-	Path   string `json:"path"`
-	// Linked is false for the clone itself, which Herdr opens as a workspace when the first worktree is created.
-	Linked bool `json:"linked"`
-	// Status is the rolled-up agent status Herdr keeps per workspace.
-	Status string            `json:"status"`
-	Tokens map[string]string `json:"tokens"`
-	Agents []Agent           `json:"agents"`
-	Panes  []Pane            `json:"panes"`
-}
-
-// AgentText names what runs in the workspace: "claude w3", or two agents' names, or "".
-func (w Workspace) AgentText() string {
-	var parts []string
-	for _, a := range w.Agents {
-		parts = append(parts, strings.TrimSpace(a.Kind+" "+a.Name))
+// State is what the state column shows: the result's status once done, else the place.
+func (j Job) State() string {
+	if j.Place == "done" {
+		if j.Result == nil {
+			return "no result"
+		}
+		return j.Result.Status
 	}
-	return strings.Join(parts, ", ")
+	return j.Place
+}
+
+// Worker is who has or had the job, or "".
+func (j Job) Worker() string {
+	switch {
+	case j.Result != nil:
+		return j.Result.Worker
+	case j.Claim != nil:
+		return j.Claim.Worker
+	}
+	return ""
+}
+
+// Started is when the job was claimed, or "".
+func (j Job) Started() string {
+	switch {
+	case j.Result != nil:
+		return j.Result.Started
+	case j.Claim != nil:
+		return j.Claim.Started
+	}
+	return ""
+}
+
+// Exit is the result's exit code as text, or "".
+func (j Job) Exit() string {
+	if j.Result == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d", j.Result.Exit)
+}
+
+// Duration is how long the job ran, "1m31s" or "4.2s", or "".
+func (j Job) Duration() string {
+	if j.Result == nil {
+		return ""
+	}
+	return FormatDuration(time.Duration(j.Result.DurationMS) * time.Millisecond)
+}
+
+// FormatDuration is pod's own shape: seconds with one decimal under a minute, then 1m31s, then 1h2m.
+func FormatDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%.1fs", d.Seconds())
+	}
+	s := int(d.Round(time.Second).Seconds())
+	if s < 3600 {
+		return fmt.Sprintf("%dm%ds", s/60, s%60)
+	}
+	return fmt.Sprintf("%dh%dm", s/3600, (s%3600)/60)
 }
 
 // StateCount is one state's count.
@@ -119,14 +168,11 @@ type StateCount struct {
 	Count int
 }
 
-// CountByStatus counts the linked workspaces by their rolled-up status.
-func CountByStatus(list []Workspace) []StateCount {
+// CountByState counts the jobs by what their state column shows.
+func CountByState(list []Job) []StateCount {
 	counts := map[string]int{}
-	for _, w := range list {
-		if !w.Linked {
-			continue
-		}
-		counts[w.Status]++
+	for _, j := range list {
+		counts[j.State()]++
 	}
 	return sortCounts(counts)
 }
@@ -145,10 +191,23 @@ func sortCounts(counts map[string]int) []StateCount {
 	return out
 }
 
+// Tail is the last n lines of a file under the job's directory, "" when it is missing or empty.
+func Tail(path string, n int) string {
+	raw, err := os.ReadFile(path)
+	if err != nil || len(raw) == 0 {
+		return ""
+	}
+	lines := strings.Split(strings.TrimSuffix(string(raw), "\n"), "\n")
+	if len(lines) > n {
+		lines = lines[len(lines)-n:]
+	}
+	return strings.Join(lines, "\n")
+}
+
 // Result is one poll of pod.
 type Result struct {
-	Status     *Status     `json:"status"`
-	Workspaces []Workspace `json:"workspaces"`
+	Status *Status `json:"status"`
+	Jobs   []Job   `json:"jobs"`
 	// Note says why there is nothing, or why it is old: not on PATH, not configured here, or the command's last line.
 	Note   string    `json:"note,omitempty"`
 	Failed bool      `json:"failed,omitempty"`
@@ -183,7 +242,7 @@ func Configured(project string) (bool, string) {
 	return false, "not configured here (no pod.yaml or pod/ in the project)"
 }
 
-// Poll runs `heai-pod status --json`, then `heai-pod list --json` when the container and Herdr are up.
+// Poll runs `heai-pod status --json`, then `heai-pod list --json`.
 func Poll(project string, now time.Time) Result {
 	r := Result{At: now}
 	if !Installed() {
@@ -205,9 +264,6 @@ func Poll(project string, now time.Time) Result {
 		return r
 	}
 	r.Status = st
-	if !st.Up() {
-		return r
-	}
 	out, err = run(project, false, "list", "--json")
 	if err != nil {
 		r.Note, r.Failed = err.Error(), true
@@ -218,7 +274,7 @@ func Poll(project string, now time.Time) Result {
 		r.Note, r.Failed = "pod: "+err.Error(), true
 		return r
 	}
-	r.Workspaces = list
+	r.Jobs = list
 	return r
 }
 
@@ -232,8 +288,8 @@ func ParseStatus(raw []byte) (*Status, error) {
 }
 
 // ParseList reads the array `heai-pod list --json` prints.
-func ParseList(raw []byte) ([]Workspace, error) {
-	var list []Workspace
+func ParseList(raw []byte) ([]Job, error) {
+	var list []Job
 	if err := json.Unmarshal(raw, &list); err != nil {
 		return nil, fmt.Errorf("unexpected list output: %v", err)
 	}
@@ -241,8 +297,8 @@ func ParseList(raw []byte) ([]Workspace, error) {
 }
 
 // run executes heai-pod in the project directory. `status` exits 1 with its
-// JSON on stdout when the container or Herdr is down, which is an answer,
-// not a failure: exit1OK keeps that stdout.
+// JSON on stdout when the container is down, which is an answer, not a
+// failure: exit1OK keeps that stdout.
 func run(project string, exit1OK bool, args ...string) ([]byte, error) {
 	bin, err := exec.LookPath("heai-pod")
 	if err != nil {

@@ -61,11 +61,11 @@ async function exercise(rt: Runtime): Promise<void> {
   await rt.start('heai-workshop')
   await rt.stop('heai-workshop')
   await rt.delete('heai-workshop', true)
-  await rt.exec('heai-workshop', ['herdr', 'agent', 'list'], { workdir: '/repos', env: { X: 'y' } })
+  await rt.exec('heai-workshop', ['ls', '-a', '.running'], { workdir: '/work_queue', env: { X: 'y' } })
   await rt.execDetached('heai-workshop', ['notify', '/heai/inbox', 'exited'])
-  await rt.execInteractive('heai-workshop', ['herdr'], true)
-  await rt.execInteractive('heai-workshop', ['herdr', 'agent', 'list'], false)
-  await rt.build('heai/pod', '/tool/image', '/tool/image/Containerfile', { HERDR_VERSION: '0.9.0' })
+  await rt.execInteractive('heai-workshop', ['bash', '-l'], true)
+  await rt.execInteractive('heai-workshop', ['ls', '-a', '.running'], false)
+  await rt.build('heai/pod', '/tool/image', '/tool/image/Containerfile', { BASE: 'heai/pod-base' })
 }
 
 test('apple: every operation is the argv Apple\'s CLI takes', async () => {
@@ -77,11 +77,11 @@ test('apple: every operation is the argv Apple\'s CLI takes', async () => {
     ['container', 'start', 'heai-workshop'],
     ['container', 'stop', 'heai-workshop'],
     ['container', 'delete', '-f', 'heai-workshop'],
-    ['container', 'exec', '-w', '/repos', '-e', 'X=y', 'heai-workshop', 'herdr', 'agent', 'list'],
+    ['container', 'exec', '-w', '/work_queue', '-e', 'X=y', 'heai-workshop', 'ls', '-a', '.running'],
     ['container', 'exec', '-d', 'heai-workshop', 'notify', '/heai/inbox', 'exited'],
-    ['container', 'exec', '-it', 'heai-workshop', 'herdr'],
-    ['container', 'exec', 'heai-workshop', 'herdr', 'agent', 'list'],
-    ['container', 'build', '-t', 'heai/pod', '-f', '/tool/image/Containerfile', '--build-arg', 'HERDR_VERSION=0.9.0', '/tool/image']
+    ['container', 'exec', '-it', 'heai-workshop', 'bash', '-l'],
+    ['container', 'exec', 'heai-workshop', 'ls', '-a', '.running'],
+    ['container', 'build', '-t', 'heai/pod', '-f', '/tool/image/Containerfile', '--build-arg', 'BASE=heai/pod-base', '/tool/image']
   ])
 })
 
@@ -94,11 +94,11 @@ test('docker: the same operations as docker or podman argv', async () => {
     ['podman', 'start', 'heai-workshop'],
     ['podman', 'stop', 'heai-workshop'],
     ['podman', 'rm', '-f', 'heai-workshop'],
-    ['podman', 'exec', '-w', '/repos', '-e', 'X=y', 'heai-workshop', 'herdr', 'agent', 'list'],
+    ['podman', 'exec', '-w', '/work_queue', '-e', 'X=y', 'heai-workshop', 'ls', '-a', '.running'],
     ['podman', 'exec', '-d', 'heai-workshop', 'notify', '/heai/inbox', 'exited'],
-    ['podman', 'exec', '-it', 'heai-workshop', 'herdr'],
-    ['podman', 'exec', 'heai-workshop', 'herdr', 'agent', 'list'],
-    ['podman', 'build', '-t', 'heai/pod', '-f', '/tool/image/Containerfile', '--build-arg', 'HERDR_VERSION=0.9.0', '/tool/image']
+    ['podman', 'exec', '-it', 'heai-workshop', 'bash', '-l'],
+    ['podman', 'exec', 'heai-workshop', 'ls', '-a', '.running'],
+    ['podman', 'build', '-t', 'heai/pod', '-f', '/tool/image/Containerfile', '--build-arg', 'BASE=heai/pod-base', '/tool/image']
   ])
 })
 
@@ -106,6 +106,6 @@ test('a failing runtime command is a RuntimeError with its stderr, and Apple\'s 
   const failing: Spawner = async () => ({ code: 1, stdout: '', stderr: 'XPC connection error' })
   await assert.rejects(appleRuntime(failing).start('x'), (e: unknown) => e instanceof RuntimeError && /container start failed \(exit 1\): XPC connection error\nEnsure the container system service/.test(e.message))
   await assert.rejects(dockerRuntime('docker', failing).stop('x'), (e: unknown) => e instanceof RuntimeError && /docker stop failed/.test(e.message))
-  const r = await appleRuntime(failing).exec('x', ['herdr'])
-  assert.equal(r.code, 1, 'exec passes the exit code through so herdr\'s own error can be read')
+  const r = await appleRuntime(failing).exec('x', ['false'])
+  assert.equal(r.code, 1, 'exec passes the exit code through')
 })

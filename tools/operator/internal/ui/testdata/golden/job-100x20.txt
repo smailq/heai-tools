@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4            2s  13:41:00
+ job ── core-reviewer-merge-two-entities ──────────── heai-pod show core-reviewer-merge-two-entities
+ place       done
+ state       failed
+ exit        3
+ started     2026-09-25T10:00:00.000Z
+ finished    2026-09-25T10:01:31.234Z
+ took        1m31s
+ worker      w1
+ path        /repo/pod/work_queue/.done/core-reviewer-merge-two-entities
+ ── log/stdout ─────────────────────────────────────────────────────────────────────────────────────
+ (empty)
+ ── log/stderr ─────────────────────────────────────────────────────────────────────────────────────
+ (empty)
+
+
+
+
+
+ ↑↓ scroll  esc back  q quit

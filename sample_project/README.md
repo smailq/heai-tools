@@ -43,7 +43,7 @@ tasks/                    the tracker; items/ are the ten tasks, INDEX.md is bui
 flows/                    session, request and landing definitions (landing is templates/software/flows/landing.yaml)
 scripts/                  what the hooks and rules run; session/cancel.sh cancels one session through flow
 reactor.yaml              five sources, five rules
-pod.yaml                  the container name and one image, never built; images/dev/Containerfile is pod's example
+pod.yaml                  the container name and one image, never built; images/dev/ is pod's example image
 bin/                      shims to the tools' sources, and the operator binary run.sh builds
 flow/ reactor/ drops/     state, made by setup.sh; the first two ignore themselves
 ```

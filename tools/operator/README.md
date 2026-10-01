@@ -2,7 +2,7 @@
 
 An `htop`-shaped terminal view of what the heai tools are doing: one screen, refreshed on its own clocks, that reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing: every key on it moves, opens, filters or reloads, and every change to a task, a flow or the reactor is made at the shell with that tool's own command.
 
-Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every workspace in it; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
+Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
 One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
 The name is the Matrix's: the one at the console watching the crew inside.
@@ -18,7 +18,7 @@ It is the first tool in this repository not written in TypeScript, for the reaso
 ## The screen
 
 ```
- operator  aw3-operator  tasks 91:  prog 2  review 1  blocked 3  todo 4  flows 19 ⚠2  pod ●3  reactor 12/1h ⚠1   2s  14:02:11
+ operator  aw3-operator  tasks 91:  prog 2  review 1  blocked 3  todo 4  flows 19 ⚠2  pod ●2+1  reactor 12/1h ⚠1   2s  14:02:11
  tasks ── all 91 of 91 ─────────────────────────────────────────────────────────────── items/ changed 3m ago
  status       pri     slug                           territory       routes to         age
  in-progress  high    add-place-entity               core,desktop    desktop-owner     2d
@@ -26,12 +26,12 @@ It is the first tool in this repository not written in TypeScript, for the reaso
  blocked      -       multiple-workspaces            core,desktop    desktop-owner     6d     ← ontology-entity-identity (blocker canceled)
  todo         -       add-command-line-shortcut      -               (untriaged)       11d
  flows    ⚠ 2 stuck > 1h   session 14 (running 2 · blocked 1 · clean 10)   request 2 (todo 2)          flow 4s ago
- pod      ● heai-workshop running · herdr 0.9.0   workspaces 3 (working 2 · idle 1)                       pod 4s ago
+ pod      ● heai-workshop running   jobs 6 (ok 3 · running 2 · queued 1)                                  pod 4s ago
  reactor  ● clock  ● drops  ● tasks_cli  ○ github   12 events/1h · 4 rules                            reactor 5s ago
  ↑↓ move  ⏎ open  b active  S sort  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
 ```
 
-**The header** carries the project's name, the task count, the counts that matter in pick-up order - in progress, in review, blocked, to do - each coloured when it is not zero, the open flows with the stuck count beside them, the container with its workspace count or `○` when it is down, the reactor's events in the last hour with `✗` for a rule that failed or `⚠` for a source with a problem, then the tracker's refresh interval and the clock.
+**The header** carries the project's name, the task count, the counts that matter in pick-up order - in progress, in review, blocked, to do - each coloured when it is not zero, the open flows with the stuck count beside them, the container with its running jobs, `+n` queued and `✗n` finished badly, or `○` when it is down, the reactor's events in the last hour with `✗` for a rule that failed or `⚠` for a source with a problem, then the tracker's refresh interval and the clock.
 On a narrow terminal the meters leave from the right before the clock is cut.
 
 **`1` to `4`** give the table to the tasks, the flows, the pod or the reactor; the other three panes stay as one line each, above or below the table in the same order.
@@ -116,24 +116,23 @@ Nothing here knows what a session or a landing is: the definitions are the proje
 ### pod
 
 ```
- pod ── heai-workshop running · herdr 0.9.0 · 3 workspaces · agents working 1 · idle 1 · blocked 1 ──────── pod 4s ago
- id    actor           repo      branch                                    agent         state     label
- w1    -               app       main                                      -             unknown   app  (the clone)
- w3    desktop-owner   app       agent/desktop-owner/add-place-entity      claude w3     working   desktop-owner/add-place-entity
- w4    web-ui          app       agent/web-ui/document-tabs                claude w4     idle      web-ui/document-tabs
- w2    core-reviewer   app       agent/core-reviewer/merge-two-entities    claude w2     blocked   core-reviewer/merge-two-entities
+ pod ── ● heai-workshop running · 2 running · 1 queued · 3 done (ok 3) ──────────────────────────────── pod 4s ago
+ job                                     place    state     exit  took     started                   worker
+ web-ui-document-tabs                    queued   queued    -     -        -                         -
+ desktop-owner-add-place-entity          running  running   -     -        2026-09-25T10:00:00.000Z  a1b2c3
+ core-reviewer-merge-two-entities        running  running   -     -        2026-09-25T10:00:04.100Z  a1b2c3
+ api-owner-cache-the-index               done     ok        0     1m31s    2026-09-25T09:58:11.020Z  a1b2c3
 ```
 
-**The line** is the container's word first - `●` running with Herdr's version, `○` in amber when the container is stopped, absent, or up without Herdr - then the worktree workspaces by their agent's state.
+**The line** is the container's word first - `●` running, `○` in amber when it is stopped or absent - then every job in the queue by its state: `queued`, `running`, or the result's `ok`, `failed`, `timeout`, `canceled` or `crashed`.
 
-**The table** is `heai-pod status --json` on the title and `heai-pod list --json` under it: every workspace Herdr has, in the order pod lists them, with the actor, repository and branch pod recorded when it opened it, the agent running in it, the rolled-up agent state, and Herdr's label.
-The clone itself is a row too, dimmed and marked `(the clone)`, because Herdr opens the source repository as a workspace when the first worktree is created and a person attaching sees it.
-While the container is down the table is one amber line saying so; `list` is not asked, since there is nothing to list.
+**The table** is `heai-pod status --json` on the title - the container, then the queue's counts and the finished jobs by status - and `heai-pod list --json` under it: every job in the order pod lists them, queued first in name order, then running, then done, with where it sits, its state, the exit code, how long it ran, when it was claimed and by which worker.
+The queue is files on the host, so the table is listed whether or not the container is up; an amber title over queued jobs is work waiting for a container.
 
-**Enter** opens the workspace full width: its status, actor, repository, branch and path, the metadata tokens pod wrote, every agent with its pane and state, and every pane with what runs in it and where.
+**Enter** opens the job full width: its place and state, the result's exit, signal and error when it has one, when it started and finished, the worker, the job's directory on the host, and the last twenty lines of `log/stdout` and `log/stderr`, read from that directory.
 `↑` `↓` scroll it, `esc` returns.
 
-Nothing here is a write: opening, starting, prompting and closing are the project's scripts, and `heai-pod attach` wants a terminal of its own.
+Nothing here is a write: submitting, canceling and reading the result are the project's scripts, through `heai-pod submit`, `cancel` and `show`.
 
 ### reactor
 
@@ -175,7 +174,7 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 | --- | --- |
 | `1` to `4` | the pane with the table: tasks, flows, pod, reactor |
 | `↑` `↓` `j` `k`, `pgup` `pgdn`, `g` `G` | move, page, first and last |
-| `⏎` | open the row full width: a task, a flow's `heai-flow trace`, a workspace, or an event with its actions; `esc` back |
+| `⏎` | open the row full width: a task, a flow's `heai-flow trace`, a job, or an event with its actions; `esc` back |
 | `→` `l` | move to the pane beside the list - the task, or the flow with its trace; again from there, it opens full width |
 | `p` | show or hide the detail pane beside the tasks and flows lists |
 | `⇥` | focus the detail pane, to scroll it; `⇥` or `esc` back to the list |
@@ -188,7 +187,7 @@ A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 | `q`, `ctrl-c` | quit |
 
 Colour is the sixteen ANSI colours only, so the screen follows the terminal's theme: moving green, waiting yellow, gone wrong red, over dim, ready to move bold, and red for what is wrong.
-The tracker's statuses and pod's agent states are fixed vocabularies, so they are coloured; a flow's state is whatever its definition names, so it is not - colouring a project's own states is a later question.
+The tracker's statuses and pod's job states are fixed vocabularies, so they are coloured; a flow's state is whatever its definition names, so it is not - colouring a project's own states is a later question.
 
 ## Where the numbers come from
 
@@ -198,7 +197,7 @@ Everything on the screen is read fresh on its pane's clock; the process keeps on
 - **Owners and repositories** are asked of `heai-architect territories --json --map <path>` and `heai-architect check --format json --map <path>`, never read from the map itself, so this tool holds no second map reader or glob dialect. architect is asked again only when the map's mtime moves. Without architect on `PATH`, or without a map, the column shows `-` and the pane's title says why. [`internal/owners`](internal/owners) pins both outputs.
 - **The blocker** is the tracker's own convention - the `Blocked by` note - and its state is that slug's status in the same tracker.
 - **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. The table is the `list` answer; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. The flow pane's timeline is one more call, `heai-flow trace <id> --json`, made for the flow under the cursor when the cursor moves onto it and again after each flows poll; the recording is [`testdata/flow/trace.json`](testdata/flow/trace.json), and `⏎` asks again without `--json` for the printed form. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
-- **The pod** is `heai-pod status --json` and, when it says the container and Herdr are up, `heai-pod list --json`, both run with `--dir <project>` on the same clock. `status` exits `1` with its JSON when either is down, and that is read as an answer, not a failure. pod is asked only when `pod.yaml` or `pod/` sits in the project, or `HEAI_POD_STATE` is set, because `heai-pod status` creates `pod/` when it is absent. The outputs are recorded under [`testdata/pod/`](testdata/pod) through the tool against its fake runtime and pinned by [`internal/pod`](internal/pod).
+- **The pod** is `heai-pod status --json` and `heai-pod list --json`, both run with `--dir <project>` on the same clock; `list` reads the queue on the host, so it is asked whether or not the container is up. `status` exits `1` with its JSON when the container is down, and that is read as an answer, not a failure. A job's logs are read from the directory `list` names, the one file read here that is not a tool's output. pod is asked only when `pod.yaml` or `pod/` sits in the project, or `HEAI_POD_STATE` is set, because `heai-pod status` creates `pod/` when it is absent. The outputs are recorded under [`testdata/pod/`](testdata/pod) through the tool against its fake runtime and pinned by [`internal/pod`](internal/pod).
 - **The reactor** is `heai-reactor status --json` and `heai-reactor events --since 1h --json`, with `--dir <project>`, on the same clock, and asked only when `reactor.yaml`, `.heai/reactor.yaml` or `reactor/` sits in the project, or `HEAI_REACTOR_STATE` is set, for the same reason. Each event `events --json` prints carries the actions rules took on it, so nothing here reads reactor's files. [`testdata/reactor/`](testdata/reactor) records both from one emit, one dropped fact and two ticks, pinned by [`internal/reactor`](internal/reactor).
 - **The recordings** under `testdata/pod/` and `testdata/reactor/` are made by [`testdata/record.sh`](testdata/record.sh), which runs the two tools from their sources - pod against its fake runtime, reactor against a temporary project - and rewrites only the temporary path to `/repo`. When a tool's output changes, run it, then `go test ./internal/ui -update`, and read the goldens.
 - **A pane whose tool fails** keeps its last table and says `⚠ <reason> · as of <time>` on its title; a pane that never answered shows why: not on `PATH`, not configured here, or the command's last line.

@@ -1,9 +1,9 @@
- operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●3              2s  13:41:00
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●1+1 ✗1         2s  13:41:00
  help ────────────────────────────────────────────────────────────────────────────────────────────────────────
  1 2 3 4         the pane with the table: tasks, flows, pod, reactor
  ↑ ↓  j k        move
  pgup pgdn  g G  page, first, last
- enter           open: the task, the workspace or the event full width, or the flow's trace (flow trace <id>)
+ enter           open: the task, the job or the event full width, or the flow's trace (flow trace <id>)
  →  l            move to the pane beside the list; again from there, it opens full width
  p               show or hide the detail pane beside the tasks and flows lists
  tab             focus the detail pane, to scroll it
