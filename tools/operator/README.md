@@ -216,7 +216,7 @@ Flags first, then the specific environment variables, then the project directory
 | the tracker | `--tasks <dir>` | `HEAI_TASKS` | `$HEAI_DIR/tasks`, else `.heai/tasks` if it exists, else `tasks` |
 | the map | `--map <path>` | `HEAI_MAP` | `$HEAI_DIR/architecture.yaml`, else the tracker's `tasks.yaml` `map:`, else `.heai/architecture.yaml`, else `architecture.yaml` |
 
-The project directory is what pod and reactor are asked about; under `HEAI_DIR` the map, the tracker and every tool's state sit in it, which is what `project.md` describes.
+The project directory is what pod and reactor are asked about; under `HEAI_DIR` the map, the tracker and every tool's state sit in it.
 The tracker's own configuration sits between the environment and the convention because it is the tracker's statement of which map validates its territories, and this tool should agree with the tracker about who owns what.
 flow is given the map's directory as `--dir`, so it finds its state beside the same map this screen reads.
 

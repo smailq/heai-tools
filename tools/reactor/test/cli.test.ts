@@ -55,7 +55,10 @@ test('tick polls every source once, runs the rules, and prints what it decided; 
 
 test('events, status, test, retry and replay read the same files', () => {
   const w = makeWorld(YAML)
-  const emitted = cli(w, 'emit', 'tasks_cli', 'task.done', '--key', 'site-fix', '--payload', '{"slug":"site-fix","area":"website"}', '--at', '2026-09-01T09:00:00Z')
+  // The command reads the real clock, so the emitted event's time is relative to it:
+  // two days back is outside the default window of a day and inside --since 30d on any day.
+  const at = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
+  const emitted = cli(w, 'emit', 'tasks_cli', 'task.done', '--key', 'site-fix', '--payload', '{"slug":"site-fix","area":"website"}', '--at', at)
   assert.equal(emitted.code, 0, emitted.stderr)
   cli(w, 'tick')
   const events = cli(w, 'events', '--json', '--since', '30d')
@@ -79,7 +82,8 @@ test('events, status, test, retry and replay read the same files', () => {
   const status = cli(w, 'status')
   assert.equal(status.code, 0, status.stderr)
   assert.match(status.stdout, /clock\s+schedule\s+every 10s/)
-  assert.match(status.stdout, /tasks_cli\s+cli\s+from heai-reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 1, pending 0; last 2026-09-01T09:00:00\.000Z task\.done/)
+  assert.match(status.stdout, /tasks_cli\s+cli\s+from heai-reactor emit\s+last event -\s+kinds task\.todo, task\.done; emitted 1, pending 0; last \S+ task\.done/)
+  assert.ok(status.stdout.includes(`last ${at} task.done`), 'the cursor keeps the time the event carries')
   assert.match(status.stdout, /pick\s+on source=clock.*ok/)
   assert.match(status.stdout, /web\s+on source=tasks_cli area="website"\s+last .* ok/, 'the tick acted on the emitted event')
   assert.equal(readFileSync(join(w.dir, 'web.log'), 'utf8'), 'web-task-site-fix\n')

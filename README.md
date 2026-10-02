@@ -19,7 +19,7 @@ Each tool does one job:
 The tools share one project directory and know nothing about each other's process.
 The process is yours: flow definitions say which states a piece of work passes through, scripts say what each move does by calling the tools, and reactor rules say what starts a move.
 
-[`examples.md`](examples.md) walks through the smallest coding system that uses all of them: a human files a task, an agent does the work in a container, the architecture is enforced on the result, and a human lands it.
+[`.heai/`](.heai) is this repository's own project directory: heai-tools is developed with heai-tools, and its [README](.heai/README.md) says what is set up so far and how it is used.
 
 ## Installing
 

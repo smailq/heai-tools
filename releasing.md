@@ -20,7 +20,7 @@ The tool's directory name is the tool's name; the command it installs is `heai-<
    gh release create operator-v0.1.0 --title "operator 0.1.0" --generate-notes
    ```
 
-3. [`release.yml`](../.github/workflows/release.yml) runs on the published release: it typechecks and tests the tool, builds it, attaches the artifact to the release, and, when npm publishing is turned on, publishes the Node tool to npm with provenance.
+3. [`release.yml`](.github/workflows/release.yml) runs on the published release: it typechecks and tests the tool, builds it, attaches the artifact to the release, and, when npm publishing is turned on, publishes the Node tool to npm with provenance.
 
 A release for a tool the workflow does not know, or a tag that is not `<tool>-v<semver>`, fails at the first job with the reason.
 
