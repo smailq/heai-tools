@@ -1,0 +1,151 @@
+{
+  "state": "/repo/reactor",
+  "config": "/repo/reactor.yaml",
+  "sources": [
+    {
+      "name": "clock",
+      "type": "schedule",
+      "every": 10000,
+      "listens": null,
+      "emits": false,
+      "cursor": "cron * * * * *; last slot 2026-09-11T03:05:00.000Z",
+      "lastEvent": "2026-09-11T03:05:00.000Z",
+      "lastHour": 1
+    },
+    {
+      "name": "tasks_cli",
+      "type": "cli",
+      "every": null,
+      "listens": null,
+      "emits": true,
+      "cursor": "kinds task.todo, task.done; emitted 1, pending 0; last 2026-09-11T03:05:05.651Z task.todo",
+      "lastEvent": "2026-09-11T03:05:05.651Z",
+      "lastHour": 1
+    },
+    {
+      "name": "drops",
+      "type": "dir",
+      "every": 2000,
+      "listens": null,
+      "emits": false,
+      "cursor": "drops; 1 taken, last exited (exited.w2) at 2026-09-11T03:05:05.658Z",
+      "lastEvent": "2026-09-11T03:05:05.658Z",
+      "lastHour": 1
+    },
+    {
+      "name": "github",
+      "type": "webhook",
+      "every": null,
+      "listens": "/hook/github",
+      "emits": false,
+      "cursor": "/hook/github github; received 0, dropped 0; PROBLEM env:GITHUB_HOOK_SECRET is not set",
+      "lastEvent": null,
+      "lastHour": 0
+    },
+    {
+      "name": "health",
+      "type": "poll",
+      "every": 300000,
+      "listens": null,
+      "emits": false,
+      "cursor": "http://127.0.0.1:9/health watch status; checked 2026-09-11T03:05:12.238Z, value undefined; PROBLEM fetch failed",
+      "lastEvent": null,
+      "lastHour": 0
+    }
+  ],
+  "rules": [
+    {
+      "name": "sweep",
+      "on": "source=clock",
+      "run": "scripts/sweep.sh",
+      "debounce": null,
+      "limit": null,
+      "repeat": false,
+      "lastAction": {
+        "event": "20260911-030500-4da737",
+        "rule": "sweep",
+        "action": "run",
+        "at": "2026-09-11T03:05:06.015Z",
+        "ok": true,
+        "outcome": {
+          "command": "scripts/sweep.sh",
+          "exitCode": 0,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030500-4da737.sweep.log",
+          "timedOut": false
+        },
+        "error": null
+      },
+      "pending": null,
+      "window": null
+    },
+    {
+      "name": "pick-now",
+      "on": "source=tasks_cli kind=task.todo",
+      "run": "scripts/pick.sh",
+      "debounce": 5000,
+      "limit": null,
+      "repeat": false,
+      "lastAction": {
+        "event": "20260911-030505-73776c",
+        "rule": "pick-now",
+        "action": "run",
+        "at": "2026-09-11T03:05:12.451Z",
+        "ok": true,
+        "outcome": {
+          "command": "scripts/pick.sh",
+          "exitCode": 0,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030505-73776c.pick-now.log",
+          "timedOut": false
+        },
+        "error": null
+      },
+      "pending": null,
+      "window": null
+    },
+    {
+      "name": "session-exited",
+      "on": "source=drops kind=exited",
+      "run": "exit 3",
+      "debounce": null,
+      "limit": null,
+      "repeat": false,
+      "lastAction": {
+        "event": "20260911-030505-c23f53",
+        "rule": "session-exited",
+        "action": "run",
+        "at": "2026-09-11T03:05:05.820Z",
+        "ok": false,
+        "outcome": {
+          "command": "exit 3",
+          "exitCode": 3,
+          "signal": null,
+          "log": "/repo/reactor/actions/20260911-030505-c23f53.session-exited.log",
+          "timedOut": false
+        },
+        "error": "exited 3"
+      },
+      "pending": null,
+      "window": null
+    },
+    {
+      "name": "pr-merged",
+      "on": "source=github kind=pull_request.closed merged=true",
+      "run": "scripts/merged.sh",
+      "debounce": null,
+      "limit": {
+        "count": 10,
+        "windowMs": 3600000
+      },
+      "repeat": false,
+      "lastAction": null,
+      "pending": null,
+      "window": null
+    }
+  ],
+  "events": {
+    "lastHour": 3,
+    "lastDay": 3
+  }
+}

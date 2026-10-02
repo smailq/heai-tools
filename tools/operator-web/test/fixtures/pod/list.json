@@ -1,0 +1,59 @@
+[
+  {
+    "name": "web-ui-document-tabs",
+    "place": "queued",
+    "path": "/repo/pod/work_queue/web-ui-document-tabs"
+  },
+  {
+    "name": "desktop-owner-add-place-entity",
+    "place": "running",
+    "path": "/repo/pod/work_queue/.running/desktop-owner-add-place-entity",
+    "claim": {
+      "worker": "w1",
+      "started": "2026-09-25T10:00:00.000Z"
+    }
+  },
+  {
+    "name": "api-owner-cache-the-index",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/api-owner-cache-the-index",
+    "result": {
+      "job": "api-owner-cache-the-index",
+      "status": "ok",
+      "exit": 0,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:01:31.234Z",
+      "duration_ms": 91234,
+      "worker": "w1"
+    }
+  },
+  {
+    "name": "core-reviewer-merge-two-entities",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/core-reviewer-merge-two-entities",
+    "result": {
+      "job": "core-reviewer-merge-two-entities",
+      "status": "failed",
+      "exit": 3,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:01:31.234Z",
+      "duration_ms": 91234,
+      "worker": "w1"
+    }
+  },
+  {
+    "name": "ops-rotate-keys",
+    "place": "done",
+    "path": "/repo/pod/work_queue/.done/ops-rotate-keys",
+    "result": {
+      "job": "ops-rotate-keys",
+      "status": "canceled",
+      "exit": -1,
+      "started": "2026-09-25T10:00:00.000Z",
+      "finished": "2026-09-25T10:00:04.200Z",
+      "duration_ms": 4200,
+      "worker": "w1",
+      "signal": "TERMINATED"
+    }
+  }
+]

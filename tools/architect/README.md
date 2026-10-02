@@ -296,7 +296,7 @@ With `--json` a script routes a task from this one call: the territory's `owner`
 **context** prints what an actor is composed with - its own context, then each owned territory's chain, then each watched one marked as watched with its owner - or a territory's chain, ancestors outermost first.
 An agent definition generated from the map is a shell-out to it.
 
-**template** prints a starter map, the one `map-editor` seeds a new document with.
+**template** prints a starter map, the one [`operator-web`](../operator-web)'s map editor offers a new map from.
 
 ### Exit codes
 
@@ -428,7 +428,7 @@ if (result.map) {
 `ownerOf` takes a path and answers with the territory and its owner; `effectiveOwner` takes a territory and answers with its owner through the parent chain.
 `UsageError` is the one exit-`2` class: an unreadable map or schema, a map with errors, an unknown subject or repository.
 
-`map-editor` depends on this package by name, resolved locally by `file:../architect`, and validates on every keystroke through `createValidator`.
+No tool in this repository imports the library: [`operator-web`](../operator-web)'s map editor validates every edit through `heai-architect check --format json`, since tools meet through commands and files rather than each other's code.
 The package's exports point at `dist/`, which `npm install` builds here, so a dependent imports compiled JavaScript and never the TypeScript sources.
 
 `runGate` is handed a map object rather than a path, so a library caller may hand it one the validator has not seen.

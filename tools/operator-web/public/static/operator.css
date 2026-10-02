@@ -1,0 +1,84 @@
+/* The pages below the tabs; the tokens and the tabs themselves are nav.css. */
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg); font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+code { font: inherit; }
+h1 { font-size: 16px; margin: 0; font-weight: 700; }
+h2 { font-size: 13px; margin: 20px 0 6px; font-weight: 700; text-transform: lowercase; }
+/* A tab's own tabs: the flows, and the machines they run on. */
+.subtabs { display: flex; gap: 4px; margin: 0 0 12px; border-bottom: 1px solid var(--line); }
+.subtabs a { padding: 4px 12px 6px; color: var(--faint); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.subtabs a:hover { color: var(--fg); text-decoration: none; }
+.subtabs a.on { color: var(--fg); font-weight: 700; border-bottom-color: var(--accent); }
+main { padding: 12px 16px 24px; }
+.panehead { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.filter { font: inherit; padding: 3px 8px; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); color: var(--fg); width: 16ch; }
+.seg { color: var(--faint); }
+.seg a { padding: 2px 6px; border-radius: 3px; }
+.seg a.on { background: var(--accent); color: var(--bg); }
+.crumbs { margin: 0 0 8px; }
+.grid { border-collapse: collapse; width: 100%; }
+.grid th { text-align: left; font-weight: 400; color: var(--faint); border-bottom: 1px solid var(--line); padding: 4px 10px 4px 0; white-space: nowrap; }
+.grid td { padding: 3px 10px 3px 0; border-bottom: 1px solid var(--line); vertical-align: top; white-space: nowrap; }
+.grid td.wide, .grid td:last-child { white-space: normal; overflow-wrap: anywhere; }
+.scroll { overflow-x: auto; }
+.grid tbody tr:hover { background: var(--hover); }
+.kv { border-collapse: collapse; }
+.kv th { text-align: left; font-weight: 400; color: var(--faint); padding: 2px 16px 2px 0; vertical-align: top; white-space: nowrap; }
+.kv td { padding: 2px 0; overflow-wrap: anywhere; }
+pre.body { white-space: pre-wrap; overflow-wrap: anywhere; background: var(--head); border: 1px solid var(--line); padding: 10px 12px; border-radius: 4px; margin: 0; }
+.tag { display: inline-block; color: var(--faint); margin-right: 6px; }
+footer { padding: 12px 16px 20px; border-top: 1px solid var(--line); font-size: 12px; }
+.faint, .dim td { color: var(--faint); }
+.dim a { color: var(--faint); }
+.ok { color: var(--green); }
+.warn { color: var(--yellow); }
+.red, .bad td { color: var(--red); }
+.st-in-progress { color: var(--green); }
+.st-in-review { color: var(--cyan); }
+.st-blocked { color: var(--yellow); }
+.st-todo { font-weight: 700; }
+.st-backlog, .st-done, .st-canceled { color: var(--faint); }
+.pri-urgent { color: var(--red); font-weight: 700; }
+.pri-high { color: var(--yellow); }
+.pri-low, .pri- { color: var(--faint); }
+.ag-running, .ag-busy, .ag-working { color: var(--green); }
+.ag-blocked, .ag-waiting { color: var(--yellow); }
+.ag-failed, .ag-lost { color: var(--red); }
+.ag-idle, .ag-unknown, .ag-- { color: var(--faint); }
+/* The state-machine drawing: states neutral, as a flow's state names are the project's own. */
+.machine-wrap { margin: 6px 0 10px; padding: 4px 0; }
+svg.machine { display: block; font: 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+svg.machine .state rect { fill: var(--bg); stroke: var(--faint); stroke-width: 1.2; }
+svg.machine .state rect.inner { fill: none; stroke-width: 1; }
+svg.machine .state.occupied > rect:first-of-type { stroke: var(--accent); stroke-width: 2; }
+svg.machine .state.visited > rect:first-of-type { fill: var(--head); }
+svg.machine .state.current > rect:first-of-type { stroke: var(--accent); stroke-width: 3; fill: var(--hover); }
+svg.machine .state .name { fill: var(--fg); font-weight: 700; }
+svg.machine .state.terminal .name { font-weight: 400; }
+svg.machine .state .sub { fill: var(--faint); font-size: 11px; }
+svg.machine a:hover .state > rect:first-of-type { stroke: var(--accent); }
+svg.machine .count rect { fill: var(--accent); stroke: none; }
+svg.machine .count text { fill: var(--bg); font-size: 11px; font-weight: 700; text-anchor: middle; }
+svg.machine .entry { fill: var(--fg); }
+svg.machine .edge path, svg.machine path.edge { fill: none; stroke: var(--faint); stroke-width: 1.3; }
+svg.machine .edge.taken path { stroke: var(--accent); stroke-width: 2.2; }
+svg.machine .arrow { fill: var(--faint); }
+svg.machine .arrow-taken { fill: var(--accent); }
+svg.machine .label { fill: var(--faint); font-size: 11px; paint-order: stroke; stroke: var(--bg); stroke-width: 3px; stroke-linejoin: round; }
+svg.machine .label.on { fill: var(--fg); }
+svg.machine .edge.taken .label.on { fill: var(--accent); font-weight: 700; }
+svg.machine .edge:hover path { stroke: var(--fg); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px; margin: 4px 0; }
+.legend .lg { display: inline-flex; align-items: center; gap: 6px; }
+.legend .entry { fill: var(--fg); }
+.legend .box { display: inline-block; width: 16px; height: 11px; border: 1.2px solid var(--faint); border-radius: 3px; }
+.legend .box.term { outline: 1px solid var(--faint); outline-offset: 2px; }
+.legend .box.occ { border: 2px solid var(--accent); }
+
+@media (max-width: 760px) {
+  .wide { display: none; }
+  .grid td, .grid td.wide, .grid td:last-child { white-space: normal; overflow-wrap: break-word; }
+}

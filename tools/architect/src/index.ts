@@ -1,5 +1,4 @@
-// The library surface: what map-editor and any other tool import by package
-// name. Everything here is also reachable from the `architect` command.
+// The library surface: what a TypeScript program imports by package name. Everything here is also reachable from the `architect` command.
 export { UsageError } from './errors.ts'
 export {
   claims,

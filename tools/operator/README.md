@@ -5,6 +5,7 @@ An `htop`-shaped terminal view of what the heai tools are doing: one screen, ref
 Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
 One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
+The same panes in a browser, with every flow definition drawn as its state machine and an editor for the architecture map, are [`operator-web`](../operator-web).
 The name is the Matrix's: the one at the console watching the crew inside.
 
 ```sh

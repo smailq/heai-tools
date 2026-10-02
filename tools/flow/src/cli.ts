@@ -288,7 +288,23 @@ async function main(argv: string[]): Promise<number> {
 
     case 'definitions': {
       const defs = store.definitions()
-      if (values.json) json(defs.map((d) => ({ name: d.name, path: d.path, problem: d.problem, states: d.definition?.states ?? null })))
+      // --json carries the whole machine, so a reader can draw it without reading the YAML: `from`
+      // lists already expanded to one transition each, `after` in milliseconds. Null when it has a problem.
+      if (values.json) {
+        json(
+          defs.map((d) => ({
+            name: d.name,
+            path: d.path,
+            problem: d.problem,
+            states: d.definition?.states ?? null,
+            initial: d.definition?.initial ?? null,
+            terminal: d.definition?.terminal ?? null,
+            links: d.definition?.links ?? null,
+            transitions: d.definition?.transitions ?? null,
+            hooks: d.definition?.hooks ?? null
+          }))
+        )
+      }
       else if (!defs.length) console.log(`(no definitions in ${store.flowsDir()})`)
       else for (const d of defs) console.log(`${pad(d.name, 12)} ${pad(d.path, 48)}  ${d.definition ? d.definition.states.join(' ') : `PROBLEM ${d.problem}`}`)
       return 0

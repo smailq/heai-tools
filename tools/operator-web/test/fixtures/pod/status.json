@@ -1,0 +1,18 @@
+{
+  "container": {
+    "name": "heai-workshop",
+    "state": "running",
+    "running": true,
+    "image": "docker.io/library/alpine:latest"
+  },
+  "queue": {
+    "queued": 1,
+    "running": 1,
+    "done": 3,
+    "byStatus": {
+      "ok": 1,
+      "failed": 1,
+      "canceled": 1
+    }
+  }
+}

@@ -31,9 +31,9 @@ jobs:
           fi
           tool="${BASH_REMATCH[1]}"; version="${BASH_REMATCH[2]}"
           case "$tool" in
-            architect|flow|pod|reactor|tasks) kind=node ;;
+            architect|flow|pod|reactor|tasks|operator-web) kind=node ;;
             operator) kind=go ;;
-            *) echo "::error::'$tool' is not a released tool (architect, flow, pod, reactor, tasks, operator)"; exit 1 ;;
+            *) echo "::error::'$tool' is not a released tool (architect, flow, pod, reactor, tasks, operator-web, operator)"; exit 1 ;;
           esac
           echo "tool=$tool" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
@@ -70,6 +70,9 @@ jobs:
           if [ "$name" != "@heai-tools/$TOOL" ] || [ "$bin" != "heai-$TOOL" ]; then
             echo "::error::expected package @heai-tools/$TOOL with bin heai-$TOOL, found $name with bin $bin"; exit 1
           fi
+      - if: needs.plan.outputs.tool == 'operator-web'
+        run: npm ci --ignore-scripts
+        working-directory: tools/architect
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

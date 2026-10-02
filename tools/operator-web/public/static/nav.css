@@ -1,0 +1,31 @@
+/* The header and the primary tabs, shared by every page - the map editor's too. Scoped
+   under .opnav, since the editor styles header, .tab and .st-* for its own controls. */
+:root {
+  /* One theme, dark: the page is watched all day beside a terminal. */
+  --bg: #15171a; --fg: #d8dadc; --faint: #7f8489; --line: #2b2f34; --head: #1d2024; --hover: #1f2730;
+  --accent: #6cb2ff; --green: #5cc27a; --yellow: #e0b341; --red: #ff6b6b; --cyan: #4fc3d9;
+  color-scheme: dark;
+}
+.opnav { font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--fg); background: var(--bg); }
+.opnav a { color: var(--accent); text-decoration: none; }
+.opnav .optop { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: baseline; padding: 8px 16px; background: var(--head); border-bottom: 1px solid var(--line); }
+.opnav .brand { font-weight: 700; }
+.opnav .project { color: var(--accent); }
+.opnav .spacer { flex: 1; }
+.opnav .optabs { display: flex; overflow-x: auto; border-bottom: 1px solid var(--line); padding: 0 8px; }
+.opnav .optab { display: flex; flex-direction: column; min-width: 0; padding: 8px 14px 6px; border-bottom: 2px solid transparent; color: var(--fg); white-space: nowrap; }
+.opnav .optab:hover { text-decoration: none; background: var(--hover); }
+.opnav .optab small { color: var(--faint); font-size: 12px; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
+.opnav .optab.on { border-bottom-color: var(--accent); }
+.opnav .faint { color: var(--faint); }
+.opnav .ok { color: var(--green); }
+.opnav .warn { color: var(--yellow); }
+.opnav .red { color: var(--red); }
+.opnav .st { background: none; padding: 0; border-radius: 0; font-weight: inherit; margin-left: 4px; }
+.opnav .st-in-progress { color: var(--green); }
+.opnav .st-in-review { color: var(--cyan); }
+.opnav .st-blocked { color: var(--yellow); }
+.opnav .st-todo { color: var(--fg); font-weight: 700; }
+@media (max-width: 760px) {
+  .opnav .optab small { display: none; }
+}
