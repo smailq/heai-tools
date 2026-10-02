@@ -3,7 +3,7 @@
 
 import { parseArgs } from 'node:util'
 import { envFromProcess, mapPath, tasksDir } from './discover.ts'
-import { Reader } from './reader.ts'
+import { Reader, TOOLS } from './reader.ts'
 import { createApp } from './server.ts'
 
 const USAGE = `heai-operator-web - what the heai tools are doing, as a web page, and an editor for the architecture map
@@ -22,9 +22,11 @@ const USAGE = `heai-operator-web - what the heai tools are doing, as a web page,
   --poll <s>           the clock for flow, pod and reactor in seconds (default 5)
 
 It asks the other tools by their released names: heai-architect, heai-flow, heai-pod and heai-reactor on PATH.
+A tab is on only for a tool the project has: the map for architect, tasks/items/ for tasks, flow.yaml or flow/
+for flows, pod.yaml or pod/ for pod, reactor.yaml or reactor/ for reactor. The rest are shown, and off.
 The panes only read; the architect tab, the map editor at /architect/, writes the architecture map and nothing else.
 
-exit codes: 0 stopped; 2 no tracker at the resolved directory, bad usage, or the port could not be bound.
+exit codes: 0 stopped; 2 none of the tools found in the project, bad usage, or the port could not be bound.
 `
 
 async function main(argv: string[]): Promise<number> {
@@ -97,6 +99,8 @@ async function main(argv: string[]): Promise<number> {
   const addr = server.address()
   const where = typeof addr === 'object' && addr ? `${addr.address.includes(':') ? `[${addr.address}]` : addr.address}:${addr.port}` : String(addr)
   process.stderr.write(`heai-operator-web: http://${where} - the panes read only, the map editable in the architect tab (ctrl-c to stop)\n`)
+  const off = TOOLS.filter((t) => reader.reading.absent[t])
+  if (off.length) process.stderr.write(`heai-operator-web: not found in ${reader.reading.project}, so their tabs are off: ${off.join(', ')}\n`)
   if (host !== '127.0.0.1' && host !== 'localhost' && host !== '::1') {
     process.stderr.write('heai-operator-web: WARNING - listening beyond loopback with no login: whoever reaches it sees the project and can edit the map\n')
   }

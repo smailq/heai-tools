@@ -9,10 +9,10 @@ import { moveKey, renderMachine } from './machine.ts'
 import { routesTo } from './owners.ts'
 import { countBy, jobDuration, jobExit, jobStarted, jobState, jobWorker, podSummary, podUp, queueText, type Job, type JobOutput } from './pod.ts'
 import { actionFailed, actionResult, cadence, command, failedActions, limited, logPath, problem, problems, reactorRed, ruleResult, type Event } from './reactor.ts'
-import type { Reading } from './reader.ts'
+import { TOOLS, type Reading, type Tool } from './reader.ts'
 import { blockerState, counts, STATUSES, trackerRed, valid, WORKING_SET, type Task } from './tracker.ts'
 
-export type Tab = 'architect' | 'tasks' | 'flows' | 'pod' | 'reactor'
+export type Tab = Tool
 
 export interface Ctx {
   r: Reading
@@ -33,12 +33,18 @@ const links = (l: Record<string, string>): Html[] => Object.entries(l).map(([k, 
 const enc = encodeURIComponent
 
 /** The primary tabs, in order; the number key for each is its place in this list. */
-export const TABS: Tab[] = ['architect', 'tasks', 'flows', 'pod', 'reactor']
+export const TABS: readonly Tab[] = TOOLS
+
+const HREF: Record<Tab, string> = { architect: '/architect/', tasks: '/tasks', flows: '/flows', pod: '/pod', reactor: '/reactor' }
+
+/** Where the root goes: the first tab whose tool the project has, else the architect, which can start a map. */
+export const firstTab = (r: Reading): string => HREF[TABS.find((t) => !r.absent[t]) ?? 'architect']
 
 /**
  * The header and the primary tabs, shared by every page - the map editor's too, which is why
  * its classes are its own (opnav, optab…) and not the page's: the editor styles header, .tab
- * and .st-* for its own controls. Each tab carries its pane's one-line summary.
+ * and .st-* for its own controls. Each tab carries its pane's one-line summary; the tab of a
+ * tool the project does not have is off - no link, and what was looked for in place of a summary.
  */
 export function nav(ctx: Ctx, tab: Tab): Html {
   const { r, now } = ctx
@@ -64,7 +70,12 @@ export function nav(ctx: Ctx, tab: Tab): Html {
       ? html`${r.reactor.events.length} events/1h · ${st.rules.length} rules${problems(st) ? html` · <span class="warn">⚠ ${problems(st)}</span>` : null}${failedN ? html` · <span class="red">✗ ${failedN} failed</span>` : null}`
       : orDash(r.reactor.note)
   }
-  const href: Record<Tab, string> = { architect: '/architect/', tasks: '/tasks', flows: '/flows', pod: '/pod', reactor: '/reactor' }
+  const one = (name: Tab): Html => {
+    const on = name === tab ? ' on' : ''
+    const why = r.absent[name]
+    if (why) return html`<span title="${why}" aria-disabled="true" class="optab off${on}"><b>${name}</b><small>${why}</small></span>`
+    return html`<a href="${HREF[name]}" class="optab${on}"><b>${name}</b><small>${sub[name]}</small></a>`
+  }
   return html`<div class="opnav">
 <div class="optop">
   <span class="brand">operator</span>
@@ -75,7 +86,7 @@ export function nav(ctx: Ctx, tab: Tab): Html {
   <span class="faint">every ${ctx.refresh}s · ${hms(now)} UTC</span>
 </div>
 <nav class="optabs" aria-label="tabs">
-${TABS.map((name) => html`<a href="${href[name]}" class="optab${name === tab ? ' on' : ''}"><b>${name}</b><small>${sub[name]}</small></a>`)}
+${TABS.map(one)}
 </nav>
 </div>`
 }

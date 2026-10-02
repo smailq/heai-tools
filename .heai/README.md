@@ -9,7 +9,7 @@ It is being set up one tool at a time.
 
 | file | tool | state |
 | --- | --- | --- |
-| [`architecture.yaml`](architecture.yaml) | architect | 9 territories, 10 actors; valid, no warnings |
+| [`architecture.yaml`](architecture.yaml) | architect | 9 territories, 12 actors, all llm-agents; valid, one warning: no human-owned territory |
 | `tasks/` | tasks | not set up |
 | `flows/`, `scripts/` | flow | not set up |
 | `reactor.yaml` | reactor | not set up |
@@ -19,8 +19,9 @@ It is being set up one tool at a time.
 
 The map says who may change what, and everything else follows from it.
 
-- **A person owns what decides.**
-  The root README and its design principles, CI and releases (`platform`), this directory (`process`), and what is shared across tools (`tool-source`) are `smailq`'s.
+- **An agent owns what decides.**
+  The root README and its design principles, CI and releases are `platform-owner`'s, this directory is `process-owner`'s, and what is shared across tools is `tool-source-owner`'s.
+  No territory is human-owned, so `heai-architect check` warns that the map does not protect itself; the warning is known and stands.
 - **An agent owns each tool.**
   `tools/flow/**` is `flow-owner`'s, `tools/pod/**` is `pod-owner`'s, and so on for all six.
   An agent working on a tool is prompted with `heai-architect context <actor>`, which composes its own context, the context every tool shares, and its tool's invariants.
@@ -48,9 +49,9 @@ One repository, `heai-tools`, at `..` from this directory.
 
 | territory | owner | claims |
 | --- | --- | --- |
-| `platform` | `smailq` | everything outside `tools/` and `.heai/` |
-| `process` | `smailq` | `.heai/**` |
-| `tool-source` | `smailq` | what is directly in `tools/`; parent of the six below, and its context layers onto each |
+| `platform` | `platform-owner` | `README.md`, `releasing.md`, `LICENSE`, `.gitignore`, `.github/workflows/ci.yml`, `.github/workflows/release.yml` |
+| `process` | `process-owner` | `.heai/**` |
+| `tool-source` | `tool-source-owner` | what is directly in `tools/`; parent of the six below, and its context layers onto each |
 | `architect` | `architect-owner` | `tools/architect/**` |
 | `tasks` | `tasks-owner` | `tools/tasks/**` |
 | `flow` | `flow-owner` | `tools/flow/**` |
@@ -58,9 +59,8 @@ One repository, `heai-tools`, at `..` from this directory.
 | `pod` | `pod-owner` | `tools/pod/**` |
 | `operator` | `operator-owner` | `tools/operator/**` |
 
-- `tools/_map-editor/` is parked: no territory claims it, and `unowned: allow` lets a change to it pass.
-  Picking it up again means giving it a territory and an owner.
-- The map falls inside `process`, so no agent may change the boundaries it works within.
+- `platform` names its files one by one, so a file added outside `tools/` and `.heai/` - a new workflow, a new root document - is unowned, and passes for anyone, until it is named there.
+- The map falls inside `process`, so only `process-owner` may change the boundaries the others work within.
 - Changing the map is an architectural decision: edit the file, run `heai-architect check`, and the review of that commit is the decision.
 
 ## How the tools find it

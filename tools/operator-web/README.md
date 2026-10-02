@@ -9,7 +9,7 @@ npm install -g @heai-tools/operator-web      # or, from this directory: npm inst
 heai-operator-web --dir path/to/project      # http://127.0.0.1:8790
 ```
 
-Requires Node 22.18 or newer. It asks the other tools by their released names: `heai-architect`, `heai-flow`, `heai-pod` and `heai-reactor` on PATH; a tool that is missing, or not configured in the project, leaves its tab saying so.
+Requires Node 22.18 or newer. It asks the other tools by their released names: `heai-architect`, `heai-flow`, `heai-pod` and `heai-reactor` on PATH; a tool that is missing from PATH leaves its tab saying so, and a tool the project has no files for has its tab [off](#which-tabs-are-on).
 The page has one theme, dark.
 
 There is no login. It binds to loopback by default, and it should stay there: an address anyone can reach shows them the project's tasks, branches and event payloads, lets them list directories through the map editor's file tree, and lets them edit the map.
@@ -18,7 +18,7 @@ There is no login. It binds to loopback by default, and it should stay there: an
 
 The same header and tab bar sit on every page, the map editor's included. Each tab carries its one-line summary - counts, `⚠` and `●` - so the tabs that are not open still say how things stand, as the terminal's one-line panes do.
 Pages refresh themselves in place every `--interval`, keeping the filter and the scroll; without JavaScript they reload. On the architect tab only the tab bar refreshes, so the editor keeps what you are doing.
-`/` reaches the filter; `1` to `5` are the tabs in order - architect, tasks, flows, pod, reactor - except while typing in a field. `/` itself opens the first tab, the architect.
+`/` reaches the filter; `1` to `5` are the tabs in order - architect, tasks, flows, pod, reactor - except while typing in a field. `/` itself opens the first tab that is on.
 
 | route | what it shows |
 | --- | --- |
@@ -30,7 +30,24 @@ Pages refresh themselves in place every `--interval`, keeping the filter and the
 | `/flows/machines`, `/flows/machines/<definition>` | the flows tab's second tab: a definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
 | `/pod`, `/pod/<job>` | the container and its work queue: every job, queued, running or done, with its state, exit, how long it took and its worker; a job's result and the last 40 lines of its stdout and stderr |
 | `/reactor`, `/reactor/<id>` | the sources, the rules and the last hour's events; an event with every action a rule took and its payload |
-| `/api/state` | the whole reading as JSON, with `red` true when anything shown is red |
+| `/api/state` | the whole reading as JSON, with `red` true when anything shown is red, and `absent` saying why each off tab is off |
+
+### Which tabs are on
+
+A tab is on only for a tool the project has, found by its files:
+
+| tab | on when |
+| --- | --- |
+| architect | the map file exists |
+| tasks | the tracker directory has `items/` |
+| flows | `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set |
+| pod | `pod.yaml` or `pod/` is in the project, or `HEAI_POD_STATE` is set |
+| reactor | `reactor.yaml`, `.heai/reactor.yaml`, `reactor/` or `.heai/reactor/` is in the project, or `HEAI_REACTOR_STATE` is set |
+
+The other tabs stay in the bar, in their places, so the number keys do not move; an off tab is dimmed, links nowhere, and says what was looked for where its summary would be - in full on hover. Its number key does nothing.
+The files are looked for every `--interval`, so a tab comes on within seconds of `heai-tasks init` or a first `heai-flow start`, with no restart.
+A project needs none of the tools in particular, the tracker included, but it needs one: with nothing found the server does not start.
+An off tab's page still answers at its address. That is how a project without a map gets one: `/architect/` opens the editor on the paste dialog or architect's template, Save creates the file, and the tab comes on.
 
 ### The machines
 
@@ -98,13 +115,13 @@ heai-operator-web [--dir <dir>] [--tasks <dir>] [--map <path>]
 | code | meaning |
 | --- | --- |
 | `0` | stopped by ctrl-c or SIGTERM |
-| `2` | no tracker at the resolved directory, bad usage, or the port could not be bound |
+| `2` | none of the tools found in the project, bad usage, or the port could not be bound |
 
 ## Layout
 
 ```
 src/cli.ts         flags, discovery, the listener
-src/reader.ts      the reading, on its two clocks
+src/reader.ts      the reading, on its two clocks, and which tools the project has
 src/tracker.ts     the tracker's files
 src/owners.ts      heai-architect territories and check
 src/flows.ts       heai-flow definitions, list, stuck, trace

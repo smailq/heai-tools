@@ -17,6 +17,9 @@
 .opnav .optab:hover { text-decoration: none; background: var(--hover); }
 .opnav .optab small { color: var(--faint); font-size: 12px; max-width: 32ch; overflow: hidden; text-overflow: ellipsis; }
 .opnav .optab.on { border-bottom-color: var(--accent); }
+/* A tool the project does not have: its tab is there, and goes nowhere. */
+.opnav .optab.off { color: var(--faint); cursor: not-allowed; opacity: .6; }
+.opnav .optab.off:hover { background: none; }
 .opnav .faint { color: var(--faint); }
 .opnav .ok { color: var(--green); }
 .opnav .warn { color: var(--yellow); }

@@ -1,16 +1,24 @@
 // The one reading every page is drawn from: the tracker on one clock, and flow,
 // pod and reactor on a slower one, as the terminal screen reads them. It holds
 // the last answer of each and nothing else; a tool that fails keeps its last
-// answer, marked old.
+// answer, marked old. Which tools the project has at all is looked for on the
+// tracker's clock, so a tab comes on soon after its tool's files appear.
 
 import { mapPath, projectDir, type Env } from './discover.ts'
-import { pollFlows, type FlowsResult } from './flows.ts'
+import { flowConfigured, pollFlows, type FlowsResult } from './flows.ts'
 import { resolveOwners, type Owners } from './owners.ts'
-import { pollPod, type PodResult } from './pod.ts'
-import { pollReactor, type ReactorResult } from './reactor.ts'
-import { loadTracker, type Tracker } from './tracker.ts'
+import { podConfigured, pollPod, type PodResult } from './pod.ts'
+import { pollReactor, reactorConfigured, type ReactorResult } from './reactor.ts'
+import { loadTracker, NotATracker, type Tracker } from './tracker.ts'
 import { message } from './run.ts'
 import { statSync } from 'node:fs'
+
+/** The tools, in the order of their tabs. */
+export const TOOLS = ['architect', 'tasks', 'flows', 'pod', 'reactor'] as const
+export type Tool = (typeof TOOLS)[number]
+
+/** Why each tool's tab is off: what was looked for in the project and not found; "" for a tool that is there. */
+export type Absent = Record<Tool, string>
 
 export interface Options {
   tasksDir: string
@@ -34,6 +42,7 @@ export interface Reading {
   flows: FlowsResult
   pod: PodResult
   reactor: ReactorResult
+  absent: Absent
   project: string
   at: number
 }
@@ -47,6 +56,7 @@ export function emptyReading(): Reading {
     flows: { definitions: [], flows: [], stuck: [], note: '', failed: false, at: 0 },
     pod: { status: null, jobs: [], note: '', failed: false, at: 0 },
     reactor: { status: null, events: [], note: '', failed: false, at: 0 },
+    absent: { architect: '', tasks: '', flows: '', pod: '', reactor: '' },
     project: '',
     at: 0
   }
@@ -67,10 +77,13 @@ export class Reader {
     return this.opts.now ? this.opts.now() : Date.now()
   }
 
-  /** Reads everything once, then keeps reading until stop. Rejects when there is no tracker at all. */
+  /** Reads everything once, then keeps reading until stop. Rejects when the project has none of the tools. */
   async start(): Promise<void> {
     await this.readTracker()
-    if (!this.reading.tracker) throw new Error(this.reading.trackerError)
+    const { absent, project } = this.reading
+    if (TOOLS.every((t) => absent[t])) {
+      throw new Error(`${project}: nothing to show here - no map, tasks/items/, flow/, pod/ or reactor/; name the project with --dir`)
+    }
     await this.readSlow()
     this.timers.push(setInterval(() => void this.readTracker(), this.opts.interval))
     this.timers.push(setInterval(() => void this.readSlow(), this.opts.poll))
@@ -89,24 +102,32 @@ export class Reader {
       const at = this.now()
       let tracker: Tracker | null = prev.tracker
       let trackerError = ''
+      let noTracker = ''
       try {
         tracker = loadTracker(this.opts.tasksDir)
       } catch (e) {
-        // Keep the last tracker, and say it is old.
         trackerError = message(e)
+        // A tracker that is not there is dropped; one that could not be read is kept, and said to be old.
+        if (e instanceof NotATracker) {
+          tracker = null
+          noTracker = `not configured here (no items/ in ${this.opts.tasksDir})`
+        }
       }
       const map = this.opts.mapOverride || mapPath(undefined, {}, tracker?.map ?? '', this.opts.cwd)
       let owners = prev.owners
       let mtime = 0
+      let noMap = map ? '' : 'not configured here (no architecture.yaml in the project)'
       try {
         mtime = map ? statSync(map).mtimeMs : 0
       } catch {
         mtime = 0
+        noMap = `not configured here (no map at ${map})`
       }
       // architect is asked again only when the map moved, since validation is not free.
       if (map !== prev.map || mtime !== prev.owners.mapMtime) owners = await resolveOwners(map)
       const project = projectDir(this.opts.env, map, this.opts.tasksDir, this.opts.cwd)
-      this.reading = { ...this.reading, tracker, trackerError, map, owners, project, at }
+      const absent: Absent = { architect: noMap, tasks: noTracker, flows: flowConfigured(map), pod: podConfigured(project), reactor: reactorConfigured(project) }
+      this.reading = { ...this.reading, tracker, trackerError, map, owners, absent, project, at }
     } finally {
       this.trackerBusy = false
     }

@@ -3,8 +3,10 @@
 # .heai/ is this repository's project directory, and this file is the first
 # thing in it: every tool run from the repository root finds it here.
 #
-# One human, one agent per tool, and three agents that own nothing and watch:
-# a reviewer, a verifier, and a watcher for the design principles.
+# Every owner is an agent: one per territory, and three agents that own nothing
+# and watch: a reviewer, a verifier, and a watcher for the design principles.
+# No territory is human-owned, so `heai-architect check` warns that the map
+# does not protect itself; that is this map's choice, and the warning stands.
 # Each tool in tools/ is a territory under one parent, because each tool is
 # released, versioned and tested on its own and must not import another's
 # source; the territory boundary is the same boundary the repository already
@@ -14,12 +16,30 @@
 # repositories: affaan-m/ECC (c) Affaan Mustafa, Yeachan-Heo/oh-my-claudecode
 # (c) Yeachan Heo, and DietrichGebert/ponytail (c) DietrichGebert.
 version: 1
-unowned: allow          # a path no territory claims passes; only the parked editor is one
+unowned: allow          # a path no territory claims passes: a root file platform does not name
 
 actors:
-  smailq:
-    type: human
-    identity: '@smailq'
+  platform-owner:
+    type: llm-agent
+    context: |
+      You own platform: the root README with the design principles, the
+      release machinery and CI, each file named in the territory. The principles
+      are what every tool answers to, so a change to one is a decision about
+      all of them: it is made deliberately, in a reviewed change of its own,
+      never as a side effect of work on a tool.
+  process-owner:
+    type: llm-agent
+    context: |
+      You own process: .heai/, the project directory - this map and what sits
+      beside it. The map decides what every agent may touch, yours included, so
+      a change to it is a reviewed diff of its own and never rides along with
+      other work.
+  tool-source-owner:
+    type: llm-agent
+    context: |
+      You own tool-source: what is directly in tools/ and belongs to no one
+      tool, tools/README.md above all. This territory's context layers onto
+      every tool's, so keep it to what is true of all of them.
 
   reviewer:
     type: llm-agent
@@ -98,8 +118,8 @@ actors:
 
       You own nothing and change nothing. A tool that starts importing another,
       growing a second interface, or inventing a private format is a task you
-      file for that tool's owner, or for smailq when the principle itself is
-      what needs to change.
+      file for that tool's owner, or for platform-owner when the principle
+      itself is what needs to change.
 
       Never invent behaviour. A tool's actual contract is what its callers rely
       on, not what its README claims; where the two disagree, that gap is the
@@ -145,17 +165,22 @@ repositories:
 
 territories:
 
-  # Everything in the repository outside tools/ and .heai/: the root README
-  # with the design principles, the release machinery and CI.
-  # These are where the system's decisions are made, so they stay with a
-  # person; the tools follow them.
+  # The files at the repository's root, each by name: the root README with the
+  # design principles, the release machinery and CI.
+  # These are where the system's decisions are made, so they have an owner of
+  # their own; the tools follow them.
+  # A file added outside tools/ and .heai/ is unowned until it is named here.
   platform:
-    owner: smailq
+    owner: platform-owner
     scope:
       - repository: heai-tools
-        globs: ['**']
-        exclude:
-          territories: [tool-source, process]
+        globs:
+          - README.md
+          - releasing.md
+          - LICENSE
+          - .gitignore
+          - .github/workflows/ci.yml
+          - .github/workflows/release.yml
     context: |
       README.md holds the design principles every tool answers to and says how
       the tools work together; releasing.md and .github/ cut the releases.
@@ -163,10 +188,10 @@ territories:
 
   # The project directory: this map, and beside it the tracker, the flow
   # definitions, the scripts and the rules as each is set up. It decides what
-  # every agent may touch and what happens to its work, so it stays with a
-  # person and a change to it is a reviewed diff.
+  # every agent may touch and what happens to its work, so it has an owner of
+  # its own and a change to it is a reviewed diff.
   process:
-    owner: smailq
+    owner: process-owner
     scope:
       - repository: heai-tools
         globs: ['.heai/**']
@@ -182,12 +207,10 @@ territories:
   # tools/ and not in one tool's directory, tools/README.md above all; what
   # matters more is that its context layers onto each tool's.
   tool-source:
-    owner: smailq
+    owner: tool-source-owner
     scope:
       - repository: heai-tools
         globs: ['tools/**']
-        exclude:
-          globs: ['tools/_map-editor/**']
     context: |
       True of every tool here. Each brings its own manifest, its own
       dependencies, and test and typecheck runnable from its own directory with
@@ -203,9 +226,6 @@ territories:
 
       A tool that must reach another asks for it by its released name on PATH.
       That is cooperation through the command line, not a dependency.
-
-      tools/_map-editor/ is parked: no territory claims it and no one owns it.
-      Picking it up again means giving it a territory and an owner here.
 
   architect:
     parent: tool-source

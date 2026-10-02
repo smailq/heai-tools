@@ -11,7 +11,7 @@ import { traceJSON, type Timeline } from './flows.ts'
 import { showJob, type JobOutput } from './pod.ts'
 import type { Html } from './html.ts'
 import * as mapeditor from './mapeditor.ts'
-import { architectPage, eventPane, firstDefinition, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, jobPane, type Ctx, type Tab } from './pages.ts'
+import { architectPage, eventPane, firstDefinition, firstTab, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, jobPane, type Ctx, type Tab } from './pages.ts'
 import type { Reader } from './reader.ts'
 import { message } from './run.ts'
 import { bySlug, counts } from './tracker.ts'
@@ -141,7 +141,7 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
     const r = reader.reading
     let m: RegExpExecArray | null
     if (path === '/') {
-      res.writeHead(302, { location: '/architect/' })
+      res.writeHead(302, { location: firstTab(r) })
       return void res.end()
     }
     if (path === '/tasks') return page(res, 'tasks', 'tasks', tasksPane(ctx(), url.searchParams.get('active') === '1', url.searchParams.get('sort') ?? ''))
@@ -204,6 +204,7 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
         flows: r.flows,
         pod: r.pod,
         reactor: r.reactor,
+        absent: r.absent,
         red: isRed(r),
         at: new Date(r.at).toISOString()
       })
