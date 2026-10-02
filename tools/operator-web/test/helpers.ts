@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os'
 import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Definition, Flow, Stuck, Timeline } from '../src/flows.ts'
-import type { PodStatus, Workspace } from '../src/pod.ts'
+import type { Job, JobOutput, PodStatus } from '../src/pod.ts'
 import { emptyReading, Reader, type Reading } from '../src/reader.ts'
 import { newestFirst, type Event, type ReactorStatus } from '../src/reactor.ts'
 import { createApp } from '../src/server.ts'
@@ -34,7 +34,7 @@ export function fixtureReading(): Reading {
       failed: false,
       at: NOW
     },
-    pod: { status: fixture<PodStatus>('pod', 'status.json'), workspaces: fixture<Workspace[]>('pod', 'list.json'), note: '', failed: false, at: NOW },
+    pod: { status: fixture<PodStatus>('pod', 'status.json'), jobs: fixture<Job[]>('pod', 'list.json'), note: '', failed: false, at: NOW },
     reactor: { status: fixture<ReactorStatus>('reactor', 'status.json'), events: newestFirst(fixture<Event[]>('reactor', 'events.json')), note: '', failed: false, at: NOW },
     project: '/repo',
     at: NOW
@@ -51,7 +51,12 @@ export interface Served {
 export async function serve(reading: Reading, opts: { allowHosts?: string[] } = {}): Promise<Served> {
   const reader = new Reader({ tasksDir: '/repo/tasks', mapOverride: reading.map, env: {}, cwd: '/repo', interval: 2000, poll: 5000, now: () => NOW })
   reader.reading = reading
-  const server = createApp(reader, { ...opts, trace: async (): Promise<Timeline> => fixture<Timeline>('flow', 'trace.json') })
+  const server = createApp(reader, {
+    ...opts,
+    trace: async (): Promise<Timeline> => fixture<Timeline>('flow', 'trace.json'),
+    // `heai-pod show <job> --json`: the job as list printed it, and its output's tail.
+    show: async (_project, name): Promise<JobOutput> => ({ ...fixture<Job[]>('pod', 'list.json').find((j) => j.name === name)!, stdout: 'merging two entities\n', stderr: 'exit 3: conflict in core\n' })
+  })
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
   const { port } = server.address() as AddressInfo
   return {

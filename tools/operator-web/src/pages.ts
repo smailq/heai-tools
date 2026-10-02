@@ -7,7 +7,7 @@ import { html, raw, type Html } from './html.ts'
 import { lineResult, move, openCount, stands, flowsRed, type Definition, type Flow, type Stuck, type Timeline } from './flows.ts'
 import { moveKey, renderMachine } from './machine.ts'
 import { routesTo } from './owners.ts'
-import { agentText, byStatus, podSummary, podUp, type Workspace } from './pod.ts'
+import { countBy, jobDuration, jobExit, jobStarted, jobState, jobWorker, podSummary, podUp, queueText, type Job, type JobOutput } from './pod.ts'
 import { actionFailed, actionResult, cadence, command, failedActions, limited, logPath, problem, problems, reactorRed, ruleResult, type Event } from './reactor.ts'
 import type { Reading } from './reader.ts'
 import { blockerState, counts, STATUSES, trackerRed, valid, WORKING_SET, type Task } from './tracker.ts'
@@ -55,7 +55,11 @@ export function nav(ctx: Ctx, tab: Tab): Html {
     flows: fl.flows.length || fl.definitions.length
       ? html`${openCount(fl.flows)} open${fl.stuck.length ? html` · <span class="warn">⚠ ${fl.stuck.length} stuck</span>` : null}${flowsRed(fl) ? html` <span class="red">●</span>` : null} · ${fl.definitions.length} machines`
       : orDash(fl.note),
-    pod: r.pod.status ? html`${podUp(r.pod.status) ? html`<span class="ok">●</span>` : html`<span class="warn">○</span>`} ${podSummary(r.pod.status)}` : orDash(r.pod.note),
+    pod: r.pod.status
+      ? html`${podUp(r.pod.status) ? html`<span class="ok">●</span>` : html`<span class="warn">○</span>`} ${podSummary(r.pod.status)} · ${queueText(r.pod.status)}`
+      : r.pod.jobs.length
+        ? html`<span class="warn">○</span> ${r.pod.jobs.length} jobs · ${orDash(r.pod.note)}`
+        : orDash(r.pod.note),
     reactor: st
       ? html`${r.reactor.events.length} events/1h · ${st.rules.length} rules${problems(st) ? html` · <span class="warn">⚠ ${problems(st)}</span>` : null}${failedN ? html` · <span class="red">✗ ${failedN} failed</span>` : null}`
       : orDash(r.reactor.note)
@@ -352,46 +356,47 @@ ${table(
 
 // ── pod ──
 
+/** A job's state coloured by what it means: moving green, waiting yellow, gone wrong red, over dim. */
+const JOB_CLASS: Record<string, string> = { running: 'ag-running', queued: 'ag-waiting', ok: 'ag-idle', failed: 'ag-failed', timeout: 'ag-failed', crashed: 'ag-failed', canceled: 'ag-idle', 'no result': 'ag-failed' }
+const jobStateCell = (j: Job): Html => html`<span class="ag ${JOB_CLASS[jobState(j)] ?? ''}">${jobState(j)}</span>`
+
 export function podPane(ctx: Ctx): Html {
   const { r, now } = ctx
   const p = r.pod
-  const row = (w: Workspace): Html => html`<tr class="${w.linked ? '' : 'dim'}">
-<td><a href="/pod/${enc(w.id)}">${w.id}</a></td><td>${orDash(w.actor)}</td><td>${orDash(w.repo)}</td><td class="wide">${orDash(w.branch)}</td>
-<td>${orDash(agentText(w))}</td><td><span class="ag ag-${orDash(w.status).toLowerCase()}">${orDash(w.status)}</span></td>
-<td class="wide">${w.label}${w.linked ? null : html` <span class="faint">(the clone)</span>`}</td></tr>`
+  const row = (j: Job): Html => html`<tr class="${j.place === 'done' && j.result?.status === 'ok' ? 'dim' : ''}">
+<td><a href="/pod/${enc(j.name)}">${j.name}</a></td><td>${j.place}</td><td>${jobStateCell(j)}</td><td>${orDash(jobExit(j))}</td><td>${orDash(jobDuration(j))}</td>
+<td>${jobStarted(j) ? clock(jobStarted(j), now) : '-'}</td><td>${orDash(jobWorker(j))}</td></tr>`
+  const done = p.status ? countBy(Object.entries(p.status.queue.byStatus).flatMap(([k, n]) => Array<string>(n).fill(k))) : []
   return html`<div class="panehead">
-  <h1>pod <span class="faint">── ${podSummary(p.status)} · ${p.workspaces.filter((w) => w.linked).length} workspaces${byStatus(p.workspaces).map(([s, n]) => ` · ${s} ${n}`)}</span></h1>
+  <h1>pod <span class="faint">── ${p.status ? html`${podUp(p.status) ? html`<span class="ok">●</span>` : html`<span class="warn">○</span>`} ${podSummary(p.status)} · ${queueText(p.status)}${done.length ? ` (${done.map(([s, n]) => `${s} ${n}`).join(' · ')})` : ''}` : `${p.jobs.length} jobs`}</span></h1>
   <div class="controls">${filterBox} ${age(`pod ${ago(p.at, now)}`)}</div>
 </div>
 ${noteLine(p.note, p.failed, p.at)}
-${p.status && !podUp(p.status) ? html`<p class="warn">○ ${podSummary(p.status)}: nothing to list while the container or Herdr is down</p>` : null}
+${p.status && !podUp(p.status) && p.jobs.some((j) => j.place === 'queued') ? html`<p class="warn">○ ${podSummary(p.status)}: the queued jobs wait for a container</p>` : null}
 ${table(
-  html`<th>id</th><th>actor</th><th>repo</th><th class="wide">branch</th><th>agent</th><th>state</th><th class="wide">label</th>`,
-  p.workspaces.length ? p.workspaces.map(row) : empty(7, p.at ? 'no workspaces' : 'asking pod…')
+  html`<th>job</th><th>place</th><th>state</th><th>exit</th><th>took</th><th>started</th><th>worker</th>`,
+  p.jobs.length ? p.jobs.map(row) : empty(7, p.at ? 'no jobs' : 'asking pod…')
 )}`
 }
 
-export function workspacePane(w: Workspace): Html {
+export function jobPane(ctx: Ctx, j: Job, out: JobOutput | null, err: string): Html {
+  const res = j.result
+  const tail = (name: string, text: string | undefined): Html => html`<h2>${name} <span class="faint">last 40 lines · heai-pod show ${j.name}</span></h2><pre class="body">${text?.trim() ? text : '(empty)'}</pre>`
   return html`<p class="crumbs"><a href="/pod">← pod</a></p>
-<h1>workspace ${w.id} <span class="ag ag-${orDash(w.status).toLowerCase()}">${orDash(w.status)}</span></h1>
+<h1>job ${j.name} ${jobStateCell(j)}</h1>
 <table class="kv">
-<tr><th>label</th><td>${w.label}${w.linked ? null : html` <span class="faint">(the clone)</span>`}</td></tr>
-<tr><th>actor</th><td>${orDash(w.actor)}</td></tr>
-<tr><th>repo</th><td>${orDash(w.repo)}</td></tr>
-<tr><th>branch</th><td>${orDash(w.branch)}</td></tr>
-<tr><th>path</th><td><code>${orDash(w.path)}</code></td></tr>
+<tr><th>place</th><td>${j.place}</td></tr>
+<tr><th>state</th><td>${jobState(j)}</td></tr>
+${res ? html`<tr><th>exit</th><td>${res.exit}${res.signal ? ` · ${res.signal}` : ''}</td></tr>` : null}
+${res?.error ? html`<tr><th>error</th><td class="red">${res.error}</td></tr>` : null}
+<tr><th>started</th><td>${orDash(jobStarted(j))}</td></tr>
+${res ? html`<tr><th>finished</th><td>${res.finished}</td></tr><tr><th>took</th><td>${jobDuration(j)}</td></tr>` : null}
+<tr><th>worker</th><td>${orDash(jobWorker(j))}</td></tr>
+<tr><th>path</th><td><code>${j.path}</code></td></tr>
 </table>
-${w.tokens && Object.keys(w.tokens).length ? html`<h2>tokens</h2><table class="kv">${Object.entries(w.tokens).map(([k, v]) => html`<tr><th>${k}</th><td>${v}</td></tr>`)}</table>` : null}
-<h2>agents</h2>
-${table(
-  html`<th>name</th><th>kind</th><th>pane</th><th>state</th>`,
-  w.agents?.length ? w.agents.map((a) => html`<tr><td>${a.name}</td><td>${a.kind}</td><td>${a.pane}</td><td><span class="ag ag-${a.state.toLowerCase()}">${a.state}</span></td></tr>`) : empty(4, 'none')
-)}
-<h2>panes</h2>
-${table(
-  html`<th>id</th><th>agent</th><th>state</th><th class="wide">cwd</th>`,
-  w.panes?.length ? w.panes.map((p) => html`<tr><td>${p.id}</td><td>${orDash(p.agent)}</td><td>${orDash(p.state)}</td><td class="wide"><code>${p.cwd}</code></td></tr>`) : empty(4, 'none')
-)}`
+${err ? html`<p class="warn">⚠ ${err}</p>` : null}
+${tail('stdout', out?.stdout)}
+${tail('stderr', out?.stderr)}`
 }
 
 // ── reactor ──

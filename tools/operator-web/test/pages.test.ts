@@ -17,7 +17,7 @@ test('each pane is a tab, and every page carries all of them', async () => {
     ['/flows', ['class="optab on"><b>flows', '20260906-024801-session-77f0', '<h2>stuck</h2>', '<h2>definitions</h2>']],
     ['/flows/machines', ['class="optab on"><b>flows', '<svg class="machine"', 'href="/flows/machines" class="on"']],
     ['/architect/', ['class="optab on"><b>architect', 'id="save-btn"']],
-    ['/pod', ['class="optab on"><b>pod', 'heai-workshop', '(the clone)', 'agent/desktop-owner/add-place-entity']],
+    ['/pod', ['class="optab on"><b>pod', 'heai-workshop running · 1 running · 1 queued · 3 done', 'web-ui-document-tabs', '>failed<', '1m31s', '4.2s']],
     ['/reactor', ['class="optab on"><b>reactor', '<h2>sources</h2>', '<h2>rules</h2>', 'exited 3']]
   ]
   for (const [path, want] of cases) {
@@ -42,14 +42,14 @@ test('a page per row, and a 404 for a row that is not there', async () => {
   for (const [path, want] of [
     ['/tasks/document-tabs', 'help-requested-by-web-ui'],
     ['/flows/20260906-024801-session-77f0', 'trace'],
-    ['/pod/w3', 'agent-desktop-owner-add-place-entity'],
+    ['/pod/core-reviewer-merge-two-entities', 'exit 3: conflict in core'],
     ['/reactor/20260911-030505-73776c', 'payload']
   ]) {
     const r = await get(s.url + path!)
     assert.equal(r.status, 200, path)
     assert.ok(r.body.includes(want!), `${path}: missing ${want}`)
   }
-  for (const path of ['/tasks/nope', '/flows/--help', '/pod/w9', '/reactor/nope', '/flows/machines/nope']) {
+  for (const path of ['/tasks/nope', '/flows/--help', '/pod/no-such-job', '/reactor/nope', '/flows/machines/nope']) {
     assert.equal((await get(s.url + path)).status, 404, path)
   }
 })
@@ -117,5 +117,18 @@ test('static files, and nothing outside them', async () => {
   }
   for (const p of ['/static/../src/cli.ts', '/static/%2e%2e/%2e%2e/package.json', '/architect/..%2f..%2fpackage.json']) {
     assert.equal((await get(s.url + p)).status, 404, p)
+  }
+})
+
+test('a runtime that cannot be asked still leaves the queue listed, with why', async () => {
+  const reading = fixtureReading()
+  reading.pod = { ...reading.pod, status: null, note: 'pod: docker ps failed (exit 1)' }
+  const t = await serve(reading)
+  try {
+    const page = (await get(`${t.url}/pod`)).body
+    assert.ok(page.includes('web-ui-document-tabs'), 'the jobs are listed')
+    assert.ok(page.includes('docker ps failed'), 'and the page says why the container is not')
+  } finally {
+    await t.close()
   }
 })

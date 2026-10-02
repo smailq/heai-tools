@@ -45,7 +45,7 @@ export function emptyReading(): Reading {
     map: '',
     owners: { owners: {}, repos: [], note: '', mapMtime: 0 },
     flows: { definitions: [], flows: [], stuck: [], note: '', failed: false, at: 0 },
-    pod: { status: null, workspaces: [], note: '', failed: false, at: 0 },
+    pod: { status: null, jobs: [], note: '', failed: false, at: 0 },
     reactor: { status: null, events: [], note: '', failed: false, at: 0 },
     project: '',
     at: 0

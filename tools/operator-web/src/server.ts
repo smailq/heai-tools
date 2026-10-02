@@ -8,9 +8,10 @@ import { isIP } from 'node:net'
 import { dirname, extname, join, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { traceJSON, type Timeline } from './flows.ts'
+import { showJob, type JobOutput } from './pod.ts'
 import type { Html } from './html.ts'
 import * as mapeditor from './mapeditor.ts'
-import { architectPage, eventPane, firstDefinition, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, workspacePane, type Ctx, type Tab } from './pages.ts'
+import { architectPage, eventPane, firstDefinition, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, jobPane, type Ctx, type Tab } from './pages.ts'
 import type { Reader } from './reader.ts'
 import { message } from './run.ts'
 import { bySlug, counts } from './tracker.ts'
@@ -34,6 +35,8 @@ export interface ServerOptions {
   allowHosts?: string[]
   /** How a flow's timeline is read for its page; tests replace it. */
   trace?: (map: string, id: string) => Promise<Timeline>
+  /** How a job's output is read for its page; tests replace it. */
+  show?: (project: string, name: string) => Promise<JobOutput>
 }
 
 class HttpError extends Error {
@@ -114,6 +117,7 @@ function serveFile(res: ServerResponse, root: string, rel: string): void {
 export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
   const allowed = new Set((opts.allowHosts ?? []).map((h) => h.trim().toLowerCase()).filter(Boolean))
   const trace = opts.trace ?? traceJSON
+  const show = opts.show ?? showJob
   const ctx = (): Ctx => ({ r: reader.reading, now: reader.now(), refresh: Math.max(1, Math.round(reader.opts.interval / 1000)) })
   const page = (res: ServerResponse, tab: Tab, title: string, pane: Html, code = 200): void => {
     const c = ctx()
@@ -171,8 +175,17 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
     if (path === '/pod') return page(res, 'pod', 'pod', podPane(ctx()))
     if ((m = /^\/pod\/([^/]+)$/.exec(path))) {
       const id = decodeURIComponent(m[1]!)
-      const w = r.pod.workspaces.find((x) => x.id === id)
-      return w ? page(res, 'pod', `workspace ${id}`, workspacePane(w)) : missing(res, 'pod', `no workspace ${id} in pod's last answer`)
+      // Only a job pod listed is asked about, so nothing from the URL reaches a command line unchecked.
+      const j = r.pod.jobs.find((x) => x.name === id)
+      if (!j) return missing(res, 'pod', `no job ${id} in pod's last answer`)
+      let out: JobOutput | null = null
+      let err = ''
+      try {
+        out = await show(r.project, id)
+      } catch (e) {
+        err = message(e)
+      }
+      return page(res, 'pod', `job ${id}`, jobPane(ctx(), j, out, err))
     }
     if (path === '/reactor') return page(res, 'reactor', 'reactor', reactorPane(ctx()))
     if ((m = /^\/reactor\/([^/]+)$/.exec(path))) {

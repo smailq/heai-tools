@@ -5,14 +5,14 @@
     "running": true,
     "image": "docker.io/library/alpine:latest"
   },
-  "herdr": {
-    "running": true,
-    "version": "0.9.0"
-  },
-  "workspaces": 4,
-  "agents": {
-    "working": 1,
-    "idle": 1,
-    "blocked": 1
+  "queue": {
+    "queued": 1,
+    "running": 1,
+    "done": 3,
+    "byStatus": {
+      "ok": 1,
+      "failed": 1,
+      "canceled": 1
+    }
   }
 }
