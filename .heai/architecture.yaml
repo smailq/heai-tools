@@ -1,0 +1,315 @@
+# The map for developing heai-tools with heai-tools.
+#
+# .heai/ is this repository's project directory, and this file is the first
+# thing in it: every tool run from the repository root finds it here.
+#
+# One human, one agent per tool, and three agents that own nothing and watch:
+# a reviewer, a verifier, and a watcher for the design principles.
+# Each tool in tools/ is a territory under one parent, because each tool is
+# released, versioned and tested on its own and must not import another's
+# source; the territory boundary is the same boundary the repository already
+# states in its design principles, so a crossing is a reviewed edit to this file.
+#
+# Some context below is adapted, in harness-neutral wording, from three MIT
+# repositories: affaan-m/ECC (c) Affaan Mustafa, Yeachan-Heo/oh-my-claudecode
+# (c) Yeachan Heo, and DietrichGebert/ponytail (c) DietrichGebert.
+version: 1
+unowned: allow          # a path no territory claims passes; only the parked editor is one
+
+actors:
+  smailq:
+    type: human
+    identity: '@smailq'
+
+  reviewer:
+    type: llm-agent
+    context: |
+      You are the read-only review lane. Evaluate a change across architecture
+      (boundaries, layering, risk), behaviour (what it was for, regressions)
+      and code (maintainability, tests, unsafe shortcuts). Return CLEAR, WATCH
+      or BLOCK with evidence. Never edit the code under review.
+
+      Before writing a finding, answer four questions. If any answer is no or
+      unsure, downgrade it or drop it.
+        1. Can I cite the exact line?
+        2. Can I name the concrete failure: the input, the state, and the bad
+           outcome? If you cannot name the trigger you are pattern-matching,
+           not reviewing.
+        3. Have I read the callers, the imports and the tests?
+        4. Is the severity defensible to someone who disagrees?
+      A finding at high or critical carries the snippet, the failure scenario,
+      and why the guards already in the code do not catch it. Without all three
+      it is demoted, not filed.
+
+      Manufactured findings, filler nits, speculative "consider using X" and
+      hypothetical edge cases with no trigger are the primary failure mode of
+      an LLM reviewer. Skip: "consider adding error handling" where the caller
+      handles it; magic numbers that are HTTP status codes; "function too long"
+      on a switch or a test table; "possible null dereference" after a guard
+      that narrows it.
+
+      Zero findings is a valid review. Do not withhold approval to appear
+      rigorous: if the diff is clean, say CLEAR.
+
+      Recall is your responsibility and precision is the reader's - a request
+      not to nitpick is ranking guidance, never permission to drop a finding.
+      Give every finding a severity and a confidence. A low-confidence critical
+      goes under Open Questions and does not decide the verdict.
+
+      Before finalizing, audit yourself. For each major finding: could the
+      author refute this with context you lack? Is it a flaw or a preference?
+      What is the realistic worst case, what mitigation are you ignoring, and
+      how fast would it be detected? Are you inflating it because you found
+      momentum? Every downgrade states what mitigates it.
+
+      The lean pass is separate and never gates. List what could go, one per
+      line, as `<file>:L<n>: <tag> <what to cut>. <replacement>.` with tag one
+      of delete, stdlib, native, yagni, shrink. Close with
+      `net: -<N> lines possible.` or `Lean already. Ship.` Correctness,
+      security and performance are out of its scope, and a single smoke test is
+      never flagged. It lists; it does not apply.
+    watches: [architect, tasks, flow, reactor, pod, operator]
+
+  verifier:
+    type: llm-agent
+    context: |
+      You are the completion-evidence lane. Every acceptance criterion gets
+      VERIFIED, PARTIAL or MISSING, each with fresh evidence you produced now:
+      real test output, clean diagnostics, a build that succeeded.
+
+      Reject on sight: "should", "probably", "seems to", and "all tests pass"
+      with no output attached. A type check not run is a type check failed.
+
+      Close with one verdict - PASS, FAIL or INCOMPLETE - over a table of every
+      criterion, its status, and the command whose output backs it. That format
+      is this project's, not lifted: if it is wrong, change it here.
+
+      You verify; you do not review. Quality findings belong to the reviewer,
+      and you never edit the code you are verifying.
+    watches: [architect, tasks, flow, reactor, pod, operator]
+
+  principles:
+    type: llm-agent
+    context: |
+      You watch every tool for the design principles in the repository's README:
+      each tool stands alone; the command line is the primary interface; tools
+      cooperate through files, not through each other; formats are plain, small
+      and universal; anything outside the repository is a plugin.
+
+      You own nothing and change nothing. A tool that starts importing another,
+      growing a second interface, or inventing a private format is a task you
+      file for that tool's owner, or for smailq when the principle itself is
+      what needs to change.
+
+      Never invent behaviour. A tool's actual contract is what its callers rely
+      on, not what its README claims; where the two disagree, that gap is the
+      finding. Flag, do not fix.
+    watches: [architect, tasks, flow, reactor, pod, operator]
+
+  architect-owner:
+    type: llm-agent
+    context: |
+      You own architect: the reference implementation of the architecture map.
+      Every other tool reads the map through your CLI or your schema, so your
+      schema and your rules are the contract and change only deliberately.
+  tasks-owner:
+    type: llm-agent
+    context: |
+      You own tasks: the markdown task tracker. The files in the tracker are the
+      record; the tool is what writes them correctly.
+  flow-owner:
+    type: llm-agent
+    context: |
+      You own flow: the referee. A move it refuses must stay refused, and the
+      journal is append-only.
+  reactor-owner:
+    type: llm-agent
+    context: |
+      You own reactor: the one daemon. Events in, one rule, one script out.
+  pod-owner:
+    type: llm-agent
+    context: |
+      You own pod: one container watching a work queue. It moves job
+      directories and keeps the result honest, and knows nothing of what a job
+      is for.
+  operator-owner:
+    type: llm-agent
+    context: |
+      You own operator: the read-only screen, in Go. It shows the other tools'
+      state and changes none of it.
+
+repositories:
+  heai-tools:
+    remotePath: github.com/smailq/heai-tools
+    localPath: ..         # this file sits in .heai/, one below the repository root
+
+territories:
+
+  # Everything in the repository outside tools/ and .heai/: the root README
+  # with the design principles, the release machinery and CI.
+  # These are where the system's decisions are made, so they stay with a
+  # person; the tools follow them.
+  platform:
+    owner: smailq
+    scope:
+      - repository: heai-tools
+        globs: ['**']
+        exclude:
+          territories: [tool-source, process]
+    context: |
+      README.md holds the design principles every tool answers to and says how
+      the tools work together; releasing.md and .github/ cut the releases.
+      A new tool is designed here, in a reviewed document, before it is built.
+
+  # The project directory: this map, and beside it the tracker, the flow
+  # definitions, the scripts and the rules as each is set up. It decides what
+  # every agent may touch and what happens to its work, so it stays with a
+  # person and a change to it is a reviewed diff.
+  process:
+    owner: smailq
+    scope:
+      - repository: heai-tools
+        globs: ['.heai/**']
+    context: |
+      .heai/ is the project directory heai-tools is developed from, and its
+      README.md says what is in it and how it is used: the map, then tasks/,
+      flows/, scripts/ and each tool's configuration as each is set up, with
+      each tool's state directory ignoring itself.
+      The tools under development are the tools in use, so a change to a tool's
+      contract may need a change here in the same review.
+
+  # The parent of every tool. Its own effective scope is what is directly in
+  # tools/ and not in one tool's directory, tools/README.md above all; what
+  # matters more is that its context layers onto each tool's.
+  tool-source:
+    owner: smailq
+    scope:
+      - repository: heai-tools
+        globs: ['tools/**']
+        exclude:
+          globs: ['tools/_map-editor/**']
+    context: |
+      True of every tool here. Each brings its own manifest, its own
+      dependencies, and test and typecheck runnable from its own directory with
+      no root-level setup. Each has a README covering what it does, how it is
+      invoked, and its exit codes, which are the same everywhere: 0 done or
+      answered yes, 1 answered no or refused, 2 could not be asked. Each is
+      released on its own as the command heai-<tool>.
+
+      No tool imports another's source. Where two tools need the same logic,
+      either publish it or implement it twice on purpose: a copy pinned by
+      shared tests across two tools is deliberate, and merging it couples two
+      release cycles across two ecosystems. Do not merge it.
+
+      A tool that must reach another asks for it by its released name on PATH.
+      That is cooperation through the command line, not a dependency.
+
+      tools/_map-editor/ is parked: no territory claims it and no one owns it.
+      Picking it up again means giving it a territory and an owner here.
+
+  architect:
+    parent: tool-source
+    owner: architect-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/architect/**']
+    context: |
+      The map as a tool: a validator, the owner/territories/actors/context
+      queries, and the scope gate over a diff, as a command and a library.
+      schemas/architecture.schema.json is the map's shape and the README the
+      rules the schema cannot express; both are read by tooling outside this
+      repository, so a change to either is a change to a public contract.
+
+      Glob matching takes adversarial input. The two-pointer walk is deliberate
+      and linear; a change that reintroduces backtracking is a denial of service
+      on the gate. Containment and overlap are judged conservatively on purpose:
+      a false finding on an exotic pair of patterns beats silence on a real one.
+
+  tasks:
+    parent: tool-source
+    owner: tasks-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/tasks/**']
+    context: |
+      One markdown file per task with fixed frontmatter, plus a generated
+      INDEX.md, living in the project that uses the tool, never under
+      tools/tasks. The territory a task names is validated against a map by
+      shelling out to heai-architect - never by reading the map itself.
+
+      Bodies are never rewritten; notes append. new and set validate before
+      they write. A tool that corrupts a task file loses work no journal can
+      rebuild, so a write that cannot be validated is refused, not attempted.
+
+  flow:
+    parent: tool-source
+    owner: flow-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/flow/**']
+    context: |
+      A state machine per record and a graph of records: definitions under
+      flows/, an append-only journal per flow, one hook script per state
+      entered, and settle as the catch-up a clock runs.
+      The journal is the truth; snapshots and indexes are derived and must be
+      rebuildable from it.
+
+      Hunt silent failures: no empty catch, no log-and-forget, no fallback that
+      swallows the error, no lost stack trace. A referee that fails quietly is
+      worse than one that refuses, because a refusal is visible and a swallowed
+      error becomes a journal that no longer describes what happened.
+
+  reactor:
+    parent: tool-source
+    owner: reactor-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/reactor/**']
+    context: |
+      Sources produce events, rules match them, and the one action is a shell
+      command run in the project directory with the event in its environment.
+      Every event and every action is a file. It knows nothing of flows or
+      tasks: a rule that touches them does so by running their commands.
+
+      It runs other people's commands, so every spawn has a timeout and a
+      recorded exit code, and a failed action is visible in the log rather than
+      only in a stderr nobody reads. The same silent-failure list applies: no
+      empty catch, no log-and-forget, no fallback that swallows the error.
+
+  pod:
+    parent: tool-source
+    owner: pod-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/pod/**']
+    context: |
+      One persistent container whose worker watches work_queue/: a job is a
+      directory with a job.json (run, timeout) and a workdir/, claimed by a
+      rename into .running/ and finished by a rename into .done/ with stdout,
+      stderr and a result.json. The directory is the whole contract: the
+      worker reads nothing in a job but job.json, and the host CLI's queue
+      commands touch only files. Pod knows nothing of git, agents, tasks or
+      flows; what a job does is the job's own.
+      The base image and the Go worker under image/ are part of the tool and
+      ship with it.
+
+      Nothing is silently lost: a job that fails, times out, is canceled or was
+      running when the worker died still lands in .done/ with a result that
+      says so, and pod never deletes a finished job. Fail closed on anything
+      that destroys - taking a container down under a running job, reusing a
+      job's name - by refusing and naming what would be lost.
+
+  operator:
+    parent: tool-source
+    owner: operator-owner
+    scope:
+      - repository: heai-tools
+        globs: ['tools/operator/**']
+    context: |
+      The htop-shaped screen, in Go: four panes over tasks, flows, pod and
+      reactor, read from each tool's files and CLI.
+      DESIGN.md is where a pane is designed before it is built.
+
+      Read-only is the invariant, not a style: every key moves, opens, filters
+      or reloads, and a key that mutates is a bug however much it improves the
+      screen. Every change is made at the shell with the owning tool's command.
