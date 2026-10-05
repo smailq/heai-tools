@@ -3,160 +3,22 @@
 # .heai/ is this repository's project directory, and this file is the first
 # thing in it: every tool run from the repository root finds it here.
 #
-# Every owner is an agent: one per territory, and three agents that own nothing
-# and watch: a reviewer, a verifier, and a watcher for the design principles.
-# No territory is human-owned, so `heai-architect check` warns that the map
-# does not protect itself; that is this map's choice, and the warning stands.
+# The map holds territories: where each area of the code is, what anyone
+# working or judging there must know, and the contracts between them. It
+# holds no actors. Who does a piece of work is the producer's choice when the
+# task is filed - a task names its territory and its agent - and the agents
+# are files under .heai/agents/. The scope gate takes the task's territory;
+# review, verification and approval are states in a flow; no owner is needed
+# for any of it, and no human is named here.
+#
 # Each tool in tools/ is a territory under one parent, because each tool is
 # released, versioned and tested on its own and must not import another's
 # source; the territory boundary is the same boundary the repository already
-# states in its design principles, so a crossing is a reviewed edit to this file.
-#
-# Some context below is adapted, in harness-neutral wording, from three MIT
-# repositories: affaan-m/ECC (c) Affaan Mustafa, Yeachan-Heo/oh-my-claudecode
-# (c) Yeachan Heo, and DietrichGebert/ponytail (c) DietrichGebert.
+# states in its design principles, so a crossing is either a task scoped to
+# both sides or a reviewed edit to this file.
+# A territory's context is written from the code as it stands, and a context
+# that no longer matches the code is a defect in this file.
 version: 1
-unowned: allow          # a path no territory claims passes: a root file platform does not name
-
-actors:
-  platform-owner:
-    type: llm-agent
-    context: |
-      You own platform: the root README with the design principles, the
-      release machinery and CI, each file named in the territory. The principles
-      are what every tool answers to, so a change to one is a decision about
-      all of them: it is made deliberately, in a reviewed change of its own,
-      never as a side effect of work on a tool.
-  process-owner:
-    type: llm-agent
-    context: |
-      You own process: .heai/, the project directory - this map and what sits
-      beside it. The map decides what every agent may touch, yours included, so
-      a change to it is a reviewed diff of its own and never rides along with
-      other work.
-  tool-source-owner:
-    type: llm-agent
-    context: |
-      You own tool-source: what is directly in tools/ and belongs to no one
-      tool, tools/README.md above all. This territory's context layers onto
-      every tool's, so keep it to what is true of all of them.
-
-  reviewer:
-    type: llm-agent
-    context: |
-      You are the read-only review lane. Evaluate a change across architecture
-      (boundaries, layering, risk), behaviour (what it was for, regressions)
-      and code (maintainability, tests, unsafe shortcuts). Return CLEAR, WATCH
-      or BLOCK with evidence. Never edit the code under review.
-
-      Before writing a finding, answer four questions. If any answer is no or
-      unsure, downgrade it or drop it.
-        1. Can I cite the exact line?
-        2. Can I name the concrete failure: the input, the state, and the bad
-           outcome? If you cannot name the trigger you are pattern-matching,
-           not reviewing.
-        3. Have I read the callers, the imports and the tests?
-        4. Is the severity defensible to someone who disagrees?
-      A finding at high or critical carries the snippet, the failure scenario,
-      and why the guards already in the code do not catch it. Without all three
-      it is demoted, not filed.
-
-      Manufactured findings, filler nits, speculative "consider using X" and
-      hypothetical edge cases with no trigger are the primary failure mode of
-      an LLM reviewer. Skip: "consider adding error handling" where the caller
-      handles it; magic numbers that are HTTP status codes; "function too long"
-      on a switch or a test table; "possible null dereference" after a guard
-      that narrows it.
-
-      Zero findings is a valid review. Do not withhold approval to appear
-      rigorous: if the diff is clean, say CLEAR.
-
-      Recall is your responsibility and precision is the reader's - a request
-      not to nitpick is ranking guidance, never permission to drop a finding.
-      Give every finding a severity and a confidence. A low-confidence critical
-      goes under Open Questions and does not decide the verdict.
-
-      Before finalizing, audit yourself. For each major finding: could the
-      author refute this with context you lack? Is it a flaw or a preference?
-      What is the realistic worst case, what mitigation are you ignoring, and
-      how fast would it be detected? Are you inflating it because you found
-      momentum? Every downgrade states what mitigates it.
-
-      The lean pass is separate and never gates. List what could go, one per
-      line, as `<file>:L<n>: <tag> <what to cut>. <replacement>.` with tag one
-      of delete, stdlib, native, yagni, shrink. Close with
-      `net: -<N> lines possible.` or `Lean already. Ship.` Correctness,
-      security and performance are out of its scope, and a single smoke test is
-      never flagged. It lists; it does not apply.
-    watches: [architect, tasks, flow, reactor, pod, operator]
-
-  verifier:
-    type: llm-agent
-    context: |
-      You are the completion-evidence lane. Every acceptance criterion gets
-      VERIFIED, PARTIAL or MISSING, each with fresh evidence you produced now:
-      real test output, clean diagnostics, a build that succeeded.
-
-      Reject on sight: "should", "probably", "seems to", and "all tests pass"
-      with no output attached. A type check not run is a type check failed.
-
-      Close with one verdict - PASS, FAIL or INCOMPLETE - over a table of every
-      criterion, its status, and the command whose output backs it. That format
-      is this project's, not lifted: if it is wrong, change it here.
-
-      You verify; you do not review. Quality findings belong to the reviewer,
-      and you never edit the code you are verifying.
-    watches: [architect, tasks, flow, reactor, pod, operator]
-
-  principles:
-    type: llm-agent
-    context: |
-      You watch every tool for the design principles in the repository's README:
-      each tool stands alone; the command line is the primary interface; tools
-      cooperate through files, not through each other; formats are plain, small
-      and universal; anything outside the repository is a plugin.
-
-      You own nothing and change nothing. A tool that starts importing another,
-      growing a second interface, or inventing a private format is a task you
-      file for that tool's owner, or for platform-owner when the principle
-      itself is what needs to change.
-
-      Never invent behaviour. A tool's actual contract is what its callers rely
-      on, not what its README claims; where the two disagree, that gap is the
-      finding. Flag, do not fix.
-    watches: [architect, tasks, flow, reactor, pod, operator]
-
-  architect-owner:
-    type: llm-agent
-    context: |
-      You own architect: the reference implementation of the architecture map.
-      Every other tool reads the map through your CLI or your schema, so your
-      schema and your rules are the contract and change only deliberately.
-  tasks-owner:
-    type: llm-agent
-    context: |
-      You own tasks: the markdown task tracker. The files in the tracker are the
-      record; the tool is what writes them correctly.
-  flow-owner:
-    type: llm-agent
-    context: |
-      You own flow: the referee. A move it refuses must stay refused, and the
-      journal is append-only.
-  reactor-owner:
-    type: llm-agent
-    context: |
-      You own reactor: the one daemon. Events in, one rule, one script out.
-  pod-owner:
-    type: llm-agent
-    context: |
-      You own pod: one container watching a work queue. It moves job
-      directories and keeps the result honest, and knows nothing of what a job
-      is for.
-  operator-owner:
-    type: llm-agent
-    context: |
-      You own operator: the read-only screen, in Go. It shows the other tools'
-      state and changes none of it.
 
 repositories:
   heai-tools:
@@ -164,14 +26,10 @@ repositories:
     localPath: ..         # this file sits in .heai/, one below the repository root
 
 territories:
-
   # The files at the repository's root, each by name: the root README with the
   # design principles, the release machinery and CI.
-  # These are where the system's decisions are made, so they have an owner of
-  # their own; the tools follow them.
   # A file added outside tools/ and .heai/ is unowned until it is named here.
   platform:
-    owner: platform-owner
     scope:
       - repository: heai-tools
         globs:
@@ -182,32 +40,93 @@ territories:
           - .github/workflows/ci.yml
           - .github/workflows/release.yml
     context: |
-      README.md holds the design principles every tool answers to and says how
-      the tools work together; releasing.md and .github/ cut the releases.
-      A new tool is designed here, in a reviewed document, before it is built.
+      What each file is for:
+        README.md      what the tools are, how each is installed, and the five
+                       design principles every tool answers to
+        releasing.md   how one tool is released, from a GitHub release tagged
+                       <tool>-v<version>; what a Node tool ships; turning npm on
+        ci.yml         on every push to main and every pull request: a job per
+                       Node tool on Node 22 and 24 (typecheck, test, the built
+                       command's --help, npm pack --dry-run); operator (go vet,
+                       go test, a build); pod's worker (gofmt, go vet, go test)
+        release.yml    on a published release: reads the tool and version off
+                       the tag, refuses a tool it does not know and a version
+                       that differs from package.json, tests, builds, attaches
+                       the artifact, and publishes to npm only when the
+                       repository variable NPM_PUBLISH is true
 
-  # The project directory: this map, and beside it the tracker, the flow
-  # definitions, the scripts and the rules as each is set up. It decides what
-  # every agent may touch and what happens to its work, so it has an owner of
-  # its own and a change to it is a reviewed diff.
+      The tools are named in five places that must agree: README.md's list,
+      releasing.md's table, ci.yml's matrix, release.yml's `case` with the
+      error beside it, and tools/README.md. Today architect, flow, pod,
+      reactor, tasks and operator-web are Node packages named
+      @heai-tools/<tool>, and operator is Go, released as binaries for linux
+      and darwin, amd64 and arm64.
+
+      Both workflows run every command from tools/<tool> with nothing set up
+      at the root, and that is the rule a new step must keep. The one
+      exception is written into both: operator-web's tests run architect from
+      its sources, so architect's dependencies are installed first for that
+      tool alone.
+
+      Nothing here is built or tested by itself. A workflow change is proved
+      by the run it produces; a document change by reading it against the
+      file it describes.
+  # The project directory: this map, the agents, and beside them the tracker,
+  # the flow definitions, the scripts and the rules as each is set up. It
+  # decides what every change is judged by, so a change to it is always
+  # architectural: judged, then approved by a human in the landing flow.
   process:
-    owner: process-owner
     scope:
       - repository: heai-tools
         globs: ['.heai/**']
     context: |
-      .heai/ is the project directory heai-tools is developed from, and its
-      README.md says what is in it and how it is used: the map, then tasks/,
-      flows/, scripts/ and each tool's configuration as each is set up, with
-      each tool's state directory ignoring itself.
-      The tools under development are the tools in use, so a change to a tool's
+      .heai/ is the project directory heai-tools is developed from, so the
+      tools under development are the tools in use, and a change to a tool's
       contract may need a change here in the same review.
 
+      Set up: this map; agents/, one file per agent - the workers cli,
+      systems, tui, web and release, and the gates judge, reviewer and
+      verifier - with its README naming the default worker per territory; and
+      README.md, whose tables restate the map and say how it is used; and the
+      tracker at .heai/tasks, initialised by heai-tasks and pointed at this
+      map by its tasks.yaml, with no tasks filed yet. Not set up, in the order
+      they are to come: the flow definitions for how a change to a tool is
+      built, gated, judged, reviewed, verified, approved and landed, and the
+      scripts they run; the pod agents work in; the reactor rules that start
+      a move.
+
+      Where things are said. The map holds territories and nothing about who
+      works in them: a fact about the code is written once, on the territory,
+      and a context that no longer matches the code is a defect in this file.
+      An agent's file holds its craft or its role, true across every task it
+      is handed, and never a fact about one tool. A task holds its territory
+      and its agent, and the producer who files it is responsible for both.
+
+      How each tool finds this directory differs, and a script here must get
+      it right:
+        heai-architect, heai-tasks, heai-operator and heai-operator-web look
+        for .heai/ in the current directory, so they run from the repository
+        root with no flags.
+        heai-flow, heai-reactor and heai-pod take --dir, else HEAI_DIR, else
+        the current directory, so they run with HEAI_DIR=.heai.
+      Each tool's state directory - flow/, reactor/, pod/ - writes its own
+      .gitignore of `*` and is never committed.
+
+      The commands that read the map:
+        heai-architect check                 valid, no warnings
+        heai-architect territories           every territory, its parent, its globs
+        heai-architect context <territory>   what a worker or a gate there is given
+        heai-architect territory <path>      which territory claims a path
+        git diff main... | heai-architect gate <territory>...
+      A map change is proved by `check`, by `context` for every territory
+      whose text moved, read through, and by `territory` on a path each moved
+      boundary was meant to catch. An agent change is proved by reading the
+      file as the prompt it is.
   # The parent of every tool. Its own effective scope is what is directly in
-  # tools/ and not in one tool's directory, tools/README.md above all; what
-  # matters more is that its context layers onto each tool's.
+  # tools/ and in no tool's territory: tools/README.md, and a new tool's
+  # directory until it is given a territory of its own. What matters more is
+  # that its context layers onto each tool's.
   tool-source:
-    owner: tool-source-owner
     scope:
       - repository: heai-tools
         globs: ['tools/**']
@@ -225,84 +144,286 @@ territories:
       release cycles across two ecosystems. Do not merge it.
 
       A tool that must reach another asks for it by its released name on PATH.
-      That is cooperation through the command line, not a dependency.
+      That is cooperation through the command line, not a dependency. An
+      output another tool reads is therefore a contract: the reader keeps a
+      recording of it as a fixture, and changing the output means changing the
+      README, and a task scoped to the reader's territory to re-record. A
+      change does not reach into the reader.
+
+      The README is the tool's contract and changes in the same change as the
+      behaviour it describes, its layout section included.
+
+      A Node tool: Node 22.18 or newer; `node src/cli.ts` runs the sources;
+      `npm install` builds dist/ through `prepare`, and the package's bin is
+      dist/cli.js; `npm test` is node's own test runner over test/*.test.ts;
+      `npm run typecheck` is tsc --noEmit. A configuration file has a JSON
+      Schema under schemas/, is validated when read, and reports every problem
+      at once, exit 2.
+
+      Where a tool looks: a flag first, then its own environment variable,
+      then HEAI_DIR, the project directory every tool shares. A tool's state
+      directory sits in the project and ignores itself with a .gitignore of
+      `*`.
 
   architect:
     parent: tool-source
-    owner: architect-owner
     scope:
       - repository: heai-tools
         globs: ['tools/architect/**']
     context: |
-      The map as a tool: a validator, the owner/territories/actors/context
-      queries, and the scope gate over a diff, as a command and a library.
-      schemas/architecture.schema.json is the map's shape and the README the
-      rules the schema cannot express; both are read by tooling outside this
-      repository, so a change to either is a change to a public contract.
+      @heai-tools/architect: the command heai-architect and a TypeScript
+      library, on yaml and ajv. Subcommands: check, gate, territory,
+      territories, context, template. The map is read once, by the validator;
+      `check` reports what it found, and every other subcommand refuses, exit
+      2, to answer over a map with errors. Warnings never refuse.
+
+      The map holds repositories and territories - scope, parent, dependsOn,
+      context, the postures - and no actors: who works in a territory is the
+      process's, and the gate's subject is the territory a change was scoped
+      to, several for a change scoped to cross a boundary. A path is inside,
+      outside, or unowned; outside always fails, unowned by the posture.
+
+        schemas/architecture.schema.json  the map's shape; its field
+                          descriptions are the reference for each key
+        src/validate.ts   the schema pass, then the rules it cannot express
+        src/glob.ts       the dialect: matching, intersection, containment
+        src/query.ts      territory, territories, context
+        src/gate.ts       each changed path: inside, outside or unowned
+        src/diff.ts       the changed paths of a unified diff or a path list
+        src/cli.ts        the subcommands and the exit codes
+        src/index.ts      the whole library surface; nothing else is contract
+        src/errors.ts     UsageError, the one exit-2 class
+
+      Who relies on what:
+        operator-web runs `territories --json --map <path>` for the names,
+        and its map editor runs `check <file> --format json` on every edit
+        and before every save, and `template` for a new map. operator asks
+        architect nothing.
+        tasks reads the map file itself, and only the keys of its
+        `territories` section.
+        The process gates a change with `gate <territory>...` and prompts an
+        agent from `context <territory>`.
+        Tooling outside this repository reads the schema and the README.
+      So the JSON of check, territories and gate, the exit codes, and the
+      shape of `territories` in the map are what a change must not move by
+      accident.
 
       Glob matching takes adversarial input. The two-pointer walk is deliberate
       and linear; a change that reintroduces backtracking is a denial of service
       on the gate. Containment and overlap are judged conservatively on purpose:
       a false finding on an exotic pair of patterns beats silence on a real one.
+      The diff parser errs toward reading more paths, since a path it misses is
+      a violation it permits. No flag overrides a posture or confinement.
+
+      Every rule is pinned: test/glob.test.ts the dialect, validate.test.ts
+      each rule under the README's Validation, gate.test.ts classification,
+      posture and the union of several territories, diff.test.ts renames and
+      quoting, cli.test.ts every exit code and both formats against a spawned
+      process. A new rule arrives with its
+      test and its line in the README.
+      Prove a change: npm run typecheck; npm test; then `heai-architect check`
+      from the repository root, since this repository's own map is the first
+      one a change can break.
 
   tasks:
     parent: tool-source
-    owner: tasks-owner
     scope:
       - repository: heai-tools
         globs: ['tools/tasks/**']
     context: |
-      One markdown file per task with fixed frontmatter, plus a generated
-      INDEX.md, living in the project that uses the tool, never under
-      tools/tasks. The territory a task names is validated against a map by
-      shelling out to heai-architect - never by reading the map itself.
+      @heai-tools/tasks: the command heai-tasks and a library, on yaml and
+      ajv. Commands: init, new, set, delete, list, show, build [--check].
+      A task names its territory - where the work is scoped to - and its
+      agent - who is meant to do it - and the producer who files it is
+      responsible for both; the tool checks a territory against the map it
+      is pointed at and an agent for being a name, and knows nothing more
+      about either.
+      A tracker is a directory in the project that uses the tool, never under
+      tools/tasks: items/<slug>.md, one file per task; tasks.yaml; README.md,
+      written once by init; INDEX.md, generated; deleted/, where delete moves
+      a file.
 
-      Bodies are never rewritten; notes append. new and set validate before
-      they write. A tool that corrupts a task file loses work no journal can
-      rebuild, so a write that cannot be validated is refused, not attempted.
+        src/model.ts    the format: seven frontmatter keys in a fixed order -
+                        title, status, priority, territory, agent, created_at,
+                        modified_at - the vocabularies, the parser, the run block
+        src/store.ts    reading a tracker directory; nothing is cached
+        src/config.ts   tasks.yaml and its schema; the territory names read
+                        from the map it names
+        src/edit.ts     new, set, delete
+        src/render.ts   INDEX.md
+        src/init.ts     the directory, its configuration, its contract
+        src/cli.ts      the commands
+        src/index.ts    the library: the parser, the store, the edits, the
+                        renderer, and what list and show are built on
+        agent/tasks.md  an agent definition a project copies in
+
+      What must stay true. Every edit is assembled in memory and parsed back
+      through the same parser a file on disk goes through, before anything is
+      written, and the view is regenerated as part of it. A body is never
+      rewritten; notes append. The slug never changes. Both dates are the
+      tool's, and an edit that changes nothing does not restamp. delete moves
+      a file and never unlinks one. A tool that corrupts a task file loses
+      work no journal can rebuild, so a write that cannot be validated is
+      refused, not attempted.
+
+      The territory vocabulary is the repository's: open without a `map:` in
+      tasks.yaml, and with one, a map that cannot be read is exit 2, never a
+      quiet fall back to open. The map is read as a file, for the keys of its
+      `territories` section and for nothing else: this tool does not validate
+      maps and must not grow a second validator or a glob dialect.
+
+      Who relies on what:
+        operator (Go, tools/operator/internal/tracker) and operator-web
+        (tools/operator-web/src/tracker.ts) read items/*.md and tasks.yaml's
+        `map:` with readers of their own, the body's first
+        `Blocked by [slug](slug.md)` included; test/model.test.ts's fixture
+        task is the one operator's reader is pinned by.
+        Scripts read `list --json` and `show --json`, whose `run` is the
+        body's first fenced `sh run` block.
+      A change to the format is made in the README's format section here and,
+      by tasks scoped to their territories, in both readers, or it is not made.
+
+      Prove a change: npm run typecheck; npm test.
 
   flow:
     parent: tool-source
-    owner: flow-owner
     scope:
       - repository: heai-tools
         globs: ['tools/flow/**']
     context: |
-      A state machine per record and a graph of records: definitions under
-      flows/, an append-only journal per flow, one hook script per state
-      entered, and settle as the catch-up a clock runs.
-      The journal is the truth; snapshots and indexes are derived and must be
-      rebuildable from it.
+      @heai-tools/flow: the command heai-flow, on yaml and ajv. Commands:
+      start, advance, touch, link, show, list, trace, stuck, settle, check,
+      reindex, definitions.
+
+      In a project: a definition per file under flows/, found by the `name` it
+      declares; an optional flow.yaml; and the state directory flow/:
+        flows/<id>/journal.jsonl      append-only, the truth
+        flows/<id>/definition.yaml    the copy the flow started under,
+                                      rewritten only by reindex --repin
+        flows/<id>/state.json, by-state/, by-link/   regenerated views
+        flows/<id>/actions/           what each state's script was started
+                                      with, its log, and its exit code
+
+        src/core.ts        the referee: start, advance, link, touch, repin,
+                           each under the flow's lock
+        src/definition.ts  parsing and validation: when, after, requires, by,
+                           the from list, hooks
+        src/journal.ts     lines, append, the torn tail, the snapshot, the
+                           touch file, the lock
+        src/settle.ts      the clock, the guards, the views; the settle lock
+        src/actions.ts     the script a state names: the environment, the
+                           detached start, the record
+        src/index.ts       the by-state and by-link indexes, not a library
+        src/trace.ts       the graph walk, the timeline, stuck
+        src/check.ts       replay every journal; report and rebuild the views
+        src/store.ts       the operations the CLI calls, and what the package
+                           exports
+        src/config.ts      flow.yaml, against schemas/flow.schema.json
+        src/errors.ts      UsageError, exit 2, and FlowError, exit 1
+
+      What must stay true. The journal is the truth; the snapshot and the two
+      indexes are derived and rebuildable from it. There is one writer, the
+      CLI, under the per-flow lock, and a move is checked against the flow's
+      pinned definition, not the file on disk. Every command but check settles
+      first. A state's script starts after the flow's lock and the settle lock
+      are released, detached, and is forgotten: nothing orders, retries, times
+      or waits for it. `flow` as a `by` is the clock's and the guards' name
+      and is refused from a caller. Every write is beside its target and
+      renamed into place. A torn last line is ignored by readers, reported by
+      check, and cut before the next append.
 
       Hunt silent failures: no empty catch, no log-and-forget, no fallback that
       swallows the error, no lost stack trace. A referee that fails quietly is
       worse than one that refuses, because a refusal is visible and a swallowed
       error becomes a journal that no longer describes what happened.
 
+      Who relies on what:
+        operator and operator-web run `definitions --json`, `list --json`,
+        `stuck --json` and `trace <id> --json`, with --dir; operator also
+        prints `trace <id>` as text. Their recordings are
+        tools/operator/testdata/flow and tools/operator-web/test/fixtures/flow.
+        Both ask only when flow.yaml or flow/ exists, because `list` creates
+        flow/.
+        A project's scripts and reactor rules call start, advance, link and
+        touch, and a state's script reads HEAI_FLOW, HEAI_DEFINITION,
+        HEAI_STATE, HEAI_EVENT, HEAI_SEQ, HEAI_LINK_<NAME> and HEAI_LINE.
+        test/fixtures/journal.jsonl is the journal's format, byte for byte.
+
+      Prove a change: npm run typecheck; npm test.
+
   reactor:
     parent: tool-source
-    owner: reactor-owner
     scope:
       - repository: heai-tools
         globs: ['tools/reactor/**']
     context: |
+      @heai-tools/reactor: the command heai-reactor, on yaml and ajv.
+      Commands: status, tick, serve, emit, events, retry, replay, test.
       Sources produce events, rules match them, and the one action is a shell
       command run in the project directory with the event in its environment.
-      Every event and every action is a file. It knows nothing of flows or
-      tasks: a rule that touches them does so by running their commands.
+      It knows nothing of flows or tasks: a rule that touches them does so by
+      running their commands.
 
-      It runs other people's commands, so every spawn has a timeout and a
-      recorded exit code, and a failed action is visible in the log rather than
-      only in a stderr nobody reads. The same silent-failure list applies: no
-      empty catch, no log-and-forget, no fallback that swallows the error.
+      In a project: reactor.yaml, an empty configuration when absent, and the
+      state directory reactor/: events/<date>.jsonl, one line per event;
+      actions/<event>.<rule>.json and .log; sources/<name>.json, each source's
+      cursor; rules/<name>.json; keys/, one file per key a rule has acted on.
+
+        src/reactor.ts   the engine: tick, serve, emit, retry, replay, test
+        src/source.ts    the source contract, and the loader for a source
+                         given as a module path
+        src/sources/     schedule, git, webhook, poll, cli, dir
+        src/providers/   github, sentry, vercel, generic; sign.ts, the HMACs
+        src/rules.ts     matching: source, kind, cron, paths into the payload
+        src/template.ts  {{ path | default | join }}, and nothing else
+        src/run.ts       the one action and its REACTOR_* environment
+        src/events.ts    the log, ids, keys, cursors, rule state, records
+        src/config.ts    the pass against schemas/reactor.schema.json, then
+                         what a schema cannot say; durations and limits
+        src/cron.ts, src/pool.ts, src/receiver.ts, src/paths.ts, src/errors.ts
+
+      What must stay true. An event is appended once, and its key makes two
+      deliveries of one thing one event; a rule acts once per key unless it
+      says `repeat`. An event over a rule's limit is recorded as limited, not
+      run and not deduped, so replay can act on it. A webhook post that is
+      unsigned or does not verify is answered 401, counted, and never an
+      event. The receiver binds loopback. Nothing runs unless serve or tick
+      does, except `emit --act`. An unknown key on a rule, or at the top of
+      reactor.yaml, is refused at load.
+
+      It runs other people's commands. Every run has a recorded exit code and
+      its output in a log beside the record, and a failed action shows in
+      `events` rather than only in a stderr nobody reads. A rule's `timeout`
+      is optional: without one, a command that hangs holds one of the
+      `concurrency` slots until it ends. The same silent-failure list applies:
+      no empty catch, no log-and-forget, no fallback that swallows the error.
+
+      Who relies on what:
+        operator and operator-web run `status --json` and
+        `events --since 1h --json`, where each event carries its `actions`,
+        and both read a source's problem as the text after `PROBLEM ` in its
+        cursor. operator's recordings, tools/operator/testdata/reactor, are
+        made by its record.sh running this tool from src/cli.ts.
+        A project's scripts read REACTOR_EVENT, REACTOR_ID, REACTOR_SOURCE,
+        REACTOR_KIND, REACTOR_KEY, REACTOR_AT, REACTOR_RULE and
+        REACTOR_<FIELD>.
+        test/config.test.ts validates every YAML block in the README against
+        the schema, so an example there is a test.
+
+      Prove a change: npm run typecheck; npm test.
 
   pod:
     parent: tool-source
-    owner: pod-owner
     scope:
       - repository: heai-tools
         globs: ['tools/pod/**']
     context: |
+      @heai-tools/pod: the command heai-pod, in TypeScript on yaml and ajv,
+      and the worker, a Go program with no dependencies that the base image's
+      build compiles. The container commands - up, down, status, build, shell
+      - ask the runtime; the queue commands - submit, list, show, wait, cancel
+      - touch only files and work on a machine with no runtime at all.
+
       One persistent container whose worker watches work_queue/: a job is a
       directory with a job.json (run, timeout) and a workdir/, claimed by a
       rename into .running/ and finished by a rename into .done/ with stdout,
@@ -310,8 +431,31 @@ territories:
       worker reads nothing in a job but job.json, and the host CLI's queue
       commands touch only files. Pod knows nothing of git, agents, tasks or
       flows; what a job does is the job's own.
-      The base image and the Go worker under image/ are part of the tool and
-      ship with it.
+
+        src/queue.ts       the protocol from the host: submit, list, find,
+                           wait, cancel
+        src/box.ts         up, down, status, build
+        src/runtime.ts     the runtime contract; src/runtimes/apple.ts for
+                           Apple's container, docker.ts for Docker and Podman
+        src/config.ts      paths, the state directory, pod.yaml against
+                           schemas/pod.schema.json
+        src/cli.ts         the commands
+        image/Containerfile        the base image, heai/pod-base: a Go stage
+                           compiles the worker; Debian with git, jq, ripgrep
+                           and curl; the worker is the entrypoint
+        image/worker/worker.go     the protocol from the worker's side
+        image/worker/main.go       flags, the environment up sets, signals
+        image/example/Containerfile  an extended image for a project to copy
+        test/fake/         a container and docker shim that replays fixtures
+
+      What must stay true. A dotted name at the top of the queue is never a
+      job, which is what makes a drop by rename safe. Claiming is one rename;
+      result.json is written by write-and-rename before the one rename into
+      .done/, so it is always there when the directory appears. Stopping a job
+      is SIGTERM to its process group, then SIGKILL five seconds later.
+      `status` exits 1 with its JSON when the container is down: an answer,
+      not a failure. No credential is in any image: the env file is handed to
+      the runtime unread.
 
       Nothing is silently lost: a job that fails, times out, is canceled or was
       running when the worker died still lands in .done/ with a result that
@@ -319,17 +463,123 @@ territories:
       that destroys - taking a container down under a running job, reusing a
       job's name - by refusing and naming what would be lost.
 
+      Who relies on what:
+        operator runs `status --json` and `list --json`, and reads stdout and
+        stderr from the directory `list` names. operator-web runs the same
+        two, and `show <job> --json --lines 40`. Both ask only when pod.yaml
+        or pod/ exists, because `status` creates pod/. operator's recordings,
+        tools/operator/testdata/pod, are made by its record.sh against
+        test/fake/.
+        A producer's script may speak the protocol with no command at all.
+
+      Prove a change: npm run typecheck and npm test here; and from
+      image/worker, gofmt -l . printing nothing, go vet ./... and go test ./...
+
   operator:
     parent: tool-source
-    owner: operator-owner
     scope:
       - repository: heai-tools
         globs: ['tools/operator/**']
     context: |
-      The htop-shaped screen, in Go: four panes over tasks, flows, pod and
-      reactor, read from each tool's files and CLI.
-      DESIGN.md is where a pane is designed before it is built.
+      The command heai-operator, in Go 1.26 on Bubble Tea v2, Lip Gloss v2 and
+      yaml.v3: the htop-shaped screen. Four panes - tasks, flows, pod, reactor,
+      on the keys 1 to 4 - of which one has the table and the other three are
+      a line each. `--once` and `--json` are the same reading without a
+      terminal, and exit 1 when something shown is red. The map pane is
+      designed in DESIGN.md and not built; DESIGN.md is where a pane is
+      designed before it is built.
+
+        cmd/heai-operator/main.go  flags, discovery, --once and --json, exits
+        internal/discover   the project directory, the tracker, the map
+        internal/tracker    this tool's own reader of task files, seven keys
+        internal/flows      heai-flow definitions, list and stuck --json, trace
+        internal/pod        heai-pod status --json and list --json
+        internal/reactor    heai-reactor status --json, events --since 1h --json
+        internal/ui         model.go and view.go; testdata/golden, the screen
+        testdata/           the other tools' recorded output, the contracts the
+                            readers are pinned by; record.sh re-records pod's
+                            and reactor's from those tools' sources
 
       Read-only is the invariant, not a style: every key moves, opens, filters
       or reloads, and a key that mutates is a bug however much it improves the
       screen. Every change is made at the shell with the owning tool's command.
+
+      What else must stay true. Each pane is read on its own clock and says
+      how old its data is; a poll that fails keeps the last table, marked with
+      the reason. Nothing is remembered but the last answer: no cache, no
+      state directory. flow, pod and reactor are asked only when their
+      configuration or state directory exists, because asking creates it.
+      Sixteen ANSI colours; a flow's state is a project's word and is not
+      coloured.
+
+      It asks heai-flow, heai-pod and heai-reactor by name on PATH, and
+      architect nothing: the tasks table shows each task's territory and
+      agent as the tracker writes them.
+
+      When a sibling tool's output changes: run testdata/record.sh, then
+      `go test ./internal/ui -update`, and read the goldens before keeping
+      them. operator-web draws the same panes in a browser from its own
+      readers, so a change to what a pane shows is a task scoped to
+      operator-web as well.
+
+      Prove a change: go vet ./...; go test ./...; go build ./cmd/heai-operator.
+
+  operator-web:
+    parent: tool-source
+    scope:
+      - repository: heai-tools
+        globs: ['tools/operator-web/**']
+    context: |
+      @heai-tools/operator-web: the command heai-operator-web, in TypeScript
+      on yaml alone; the map editor's graph library, cytoscape with fcose, is
+      vendored under public/architect/vendor. Five tabs, in order: architect
+      (the map editor), tasks, flows (with its machines), pod, reactor. A tab
+      is on only when its tool's files are in the project; the rest are shown,
+      and off.
+
+        src/cli.ts, src/discover.ts   flags; the project, the tracker, the map
+        src/reader.ts     the one reading every page is drawn from: the
+                          tracker and which tools are there on --interval;
+                          flow, pod and reactor on --poll
+        src/tracker.ts    this tool's own reader of task files, seven keys
+        src/territories.ts, src/flows.ts, src/pod.ts, src/reactor.ts
+                          each asks one tool's command, through src/run.ts:
+                          found on PATH, ten seconds, a failure as one line
+        src/server.ts     the routes and the guards
+        src/pages.ts      the pages, through src/html.ts
+        src/machine.ts    a flow definition laid out as its state machine,
+                          sent as SVG
+        src/mapeditor.ts  the editor's endpoints: validate, serialize keeping
+                          comments, the file tree, the save
+        public/static/    the tab bar, the panes, the script that refreshes
+        public/architect/ the editor's page and app
+        test/fixtures/    the other tools' recorded output, and a map with
+                          comments to round-trip
+
+      What must stay true. There is one write, the map, by PUT
+      /architect/api/file, and it holds four conditions: only a map
+      `heai-architect check` passes, so nothing saves without architect; only
+      over the version the page loaded, unless told to overwrite; only the
+      edited lines change, comments and layout kept; and never half-written,
+      by a rename that keeps the mode. Every other route is a read, and a
+      write to one is 405.
+
+      There is no login, and it binds loopback. The editor's API answers only
+      under a Host that is an address, localhost or a name given with
+      --allow-host, and a write must be JSON from the same origin. Every value
+      a tool reports reaches a page through html``, which escapes it; raw() is
+      for the SVG made here and nothing else. Every script is this server's
+      own, under a content security policy of 'self'; only the editor's pages
+      allow an inline style, which its graph library needs.
+
+      It holds nothing but the last reading; a tool that fails keeps its last
+      answer, marked old. flow, pod and reactor are asked only when their
+      files exist, because asking creates their state directory. A state of a
+      flow is a project's word and is not coloured. One theme, dark.
+
+      operator draws the same panes in a terminal from its own readers, so a
+      change to what a pane shows is a task scoped to operator as well.
+
+      Prove a change: npm run typecheck; npm test. The save and validate tests
+      run architect from ../architect and are skipped when its dependencies
+      are not installed, so install them before calling the editor verified.

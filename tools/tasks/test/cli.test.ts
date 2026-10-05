@@ -75,7 +75,7 @@ test('init scaffolds a tracker and builds its view', async () => {
 test('init records the map it was given, and never clobbers', async () => {
   const root = temp()
   const dir = join(root, 'tasks')
-  writeFileSync(join(root, 'architecture.yaml'), 'territories:\n  api:\n    owner: api-owner\n')
+  writeFileSync(join(root, 'architecture.yaml'), 'territories:\n  api:\n    scope: []\n')
   const created = await cli('init', '--dir', dir, '--map', '../architecture.yaml')
   assert.equal(created.code, 0)
   const config = readFileSync(join(dir, 'tasks.yaml'), 'utf8')

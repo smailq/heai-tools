@@ -1,7 +1,7 @@
 # @heai-tools/tasks
 
 A task tracker that is markdown files in the repository: one file per task, and one generated view.
-It is built for an llm-agent to own and orchestrate work from, which is why the format is a fixed key set, the view is derived, and every change to a task is a commit.
+It is built for an agent to own and orchestrate work from, which is why the format is a fixed key set, the view is derived, and every change to a task is a commit.
 
 ```sh
 npm install && npm link                                          # builds dist/ and puts `heai-tasks` on PATH

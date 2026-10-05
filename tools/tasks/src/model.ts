@@ -109,7 +109,7 @@ export function relativeDate(date: string, from: string = today()): string {
  * The field is a comma-separated list so that the frontmatter stays one line
  * per key and a file with a single territory reads exactly as it always has.
  * A task may sit in more than one territory when the work crosses a boundary;
- * each name still routes to its own owner.
+ * the scope gate then judges its change against their union.
  */
 export function territoriesOf(value: string): string[] {
   return value

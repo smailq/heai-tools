@@ -34,7 +34,7 @@ A single static binary that starts in milliseconds, which matters for a program 
 
 It is the first tool here not written in TypeScript.
 The root README says tools will target different languages, and this is the one whose job - a full-screen loop over a terminal - is what Go's TUI ecosystem was built for.
-What it costs is a second reader of the tracker's frontmatter, in Go, pinned by the same fixture the tasks tool's tests use: a copy on purpose, exactly principle 1's second clause.
+What it costs is a second reader of the tracker's frontmatter, in Go, pinned by the same fixture the tasks tool's tests use: a copy on purpose, as principle 1 allows.
 
 The two alternatives considered, kept here so the choice can be revisited:
 

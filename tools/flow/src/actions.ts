@@ -1,7 +1,7 @@
 // Actions: on every journal line that enters a state, the one script the
 // pinned definition names for that state, started detached in the project
 // directory and forgotten. flow records what it started; the script writes
-// its own exit code when it ends (principle 6). Nothing here waits, orders,
+// its own exit code when it ends. Nothing here waits, orders,
 // retries or times anything, and nothing here runs under a lock.
 
 import { spawn } from 'node:child_process'

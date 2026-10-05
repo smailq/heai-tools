@@ -1,4 +1,4 @@
-// The container runtime contract, principle 7: the tool's own code never
+// The container runtime contract (root README, principle 5): the tool's own code never
 // names a runtime. Two built-in implementations sit under runtimes/, each a
 // thin argv wrapper over one spawn seam so a fake on PATH can drive it, each
 // with its real `list` output recorded under test/fixtures/.

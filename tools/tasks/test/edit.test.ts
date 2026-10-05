@@ -121,7 +121,7 @@ test('a territory list is written canonically, and a reorder is not a change', (
 test('a territory is checked against the configured map', () => {
   const dir = tracker({
     'tasks.yaml': 'map: ./map.yaml\n',
-    'map.yaml': 'territories:\n  api:\n    owner: api-owner\n'
+    'map.yaml': 'territories:\n  api:\n    scope: []\n'
   })
   createTask(dir, 'one', { title: 'One', territory: 'api' }, 'Body.')
   assert.throws(() => updateTask(dir, 'one', { territory: 'ui' }), /territory "ui" not in \[api\]/)

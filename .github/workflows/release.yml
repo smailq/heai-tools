@@ -1,7 +1,7 @@
 # One tool per release. The release's tag names it: `<tool>-v<version>`, for
 # example `tasks-v0.2.0` or `operator-v0.1.0`. Publishing the release runs
 # this: the tool is built and tested, its artifact is attached to the release,
-# and - once npm is set up (docs/releasing.md) - a Node tool is published to
+# and - once npm is set up (releasing.md) - a Node tool is published to
 # the npm registry as @heai-tools/<tool>, whose command is `heai-<tool>`.
 name: release
 
@@ -85,7 +85,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$TAG" ../../dist/*.tgz --clobber
       - name: publish to npm
-        # Off until the registry side is ready; see docs/releasing.md. Flip the
+        # Off until the registry side is ready; see releasing.md. Flip the
         # repository variable NPM_PUBLISH to true to turn it on. A granular
         # NPM_TOKEN secret is used when present; otherwise trusted publishing.
         if: vars.NPM_PUBLISH == 'true'

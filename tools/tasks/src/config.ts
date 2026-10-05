@@ -7,8 +7,8 @@
 // definition of that file.
 //
 // Territories are not listed twice: a repository that has an architecture map
-// already names them there, together with the actor that owns each one, so the
-// config points at the map and the map stays the single source of ownership.
+// already names them there, so the config points at the map and the map stays
+// the single source of where things are.
 
 import { readFileSync } from 'node:fs'
 import { isAbsolute, join, resolve } from 'node:path'

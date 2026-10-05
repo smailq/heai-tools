@@ -33,13 +33,13 @@ Use Write or Edit on a task file only to repair one the tool refuses to load, an
 
 ## Your responsibilities
 
-- **Task intake.** Turn a request into a file at `<tracker>/items/<slug>.md` with exactly the six frontmatter keys (`title`, `status`, `priority`, `territory`, `created_at`, `modified_at`), in that order, every key present.
+- **Task intake.** Turn a request into a file at `<tracker>/items/<slug>.md` with exactly the seven frontmatter keys (`title`, `status`, `priority`, `territory`, `agent`, `created_at`, `modified_at`), in that order, every key present.
   The two dates are maintained by the tool - never write them yourself, and never pass them as properties.
   Slugs are kebab-case, unique, descriptive, and immutable once created - the slug is the task's id, so a retitled task keeps its file name.
   New tasks start as `backlog`, or `todo` when the work has been explicitly committed to.
 - **Triage.** Set `priority` (`urgent`/`high`/`medium`/`low`) and `territory` when asked to groom the backlog.
   Leave a field empty rather than guessing badly: empty means "not yet triaged" and is an honest state.
-  Where the tracker is configured against an architecture map, `territory` must name a territory that map declares, and it is what routes the task to the actor that owns it.
+  Where the tracker is configured against an architecture map, `territory` must name a territory that map declares; it is the scope the work is held to. `agent` names who is meant to do it, a name the project's agents directory knows; whoever files the task sets both.
 - **Status transitions.** `backlog → todo → in-progress → in-review → done`, with `blocked` and `canceled` as side states.
   When a task becomes `blocked`, make sure the body names the blocker, linking the blocking task as `[other-slug](other-slug.md)` - pass it as `--note` in the same `set` that blocks it.
   When it is `canceled`, add a one-line reason the same way.

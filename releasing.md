@@ -50,4 +50,4 @@ npm install -g @heai-tools/tasks        # puts heai-tasks on PATH
 go install github.com/smailq/heai-tools/tools/operator/cmd/heai-operator@latest
 ```
 
-`operator` shells out to `heai-architect`, `heai-flow`, `heai-pod`, `heai-reactor` and `heai-tasks` by those names, so they must be on PATH for their panes and actions to work.
+`operator` shells out to `heai-flow`, `heai-pod` and `heai-reactor` by those names, and `operator-web` to those three and `heai-architect`, so they must be on PATH for their panes to work.
