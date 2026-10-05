@@ -9,6 +9,7 @@ import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { Definition, Flow, Stuck, Timeline } from '../src/flows.ts'
 import type { Job, JobOutput, PodStatus } from '../src/pod.ts'
+import { loadAgents } from '../src/agents.ts'
 import { emptyReading, Reader, type Reading } from '../src/reader.ts'
 import { newestFirst, type Event, type ReactorStatus } from '../src/reactor.ts'
 import { createApp } from '../src/server.ts'
@@ -36,6 +37,7 @@ export function fixtureReading(): Reading {
     },
     pod: { status: fixture<PodStatus>('pod', 'status.json'), jobs: fixture<Job[]>('pod', 'list.json'), note: '', failed: false, at: NOW },
     reactor: { status: fixture<ReactorStatus>('reactor', 'status.json'), events: newestFirst(fixture<Event[]>('reactor', 'events.json')), note: '', failed: false, at: NOW },
+    agents: loadAgents(FIXTURES),
     project: '/repo',
     at: NOW
   }

@@ -1,6 +1,7 @@
 // heai-operator: an htop-shaped terminal view of what the heai tools are doing:
 // the tracker's tasks, the flows that are stuck or of one definition, the
-// container's workspaces, and what the reactor has seen and done.
+// container's workspaces, what the reactor has seen and done, and the agents
+// the project defines.
 package main
 
 import (
@@ -14,6 +15,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/smailq/heai-tools/tools/operator/internal/agents"
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
@@ -26,7 +28,7 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
 
   heai-operator                  the screen
   heai-operator --once           the screen, once, to stdout, then exit (every task; --active for the working set)
-  heai-operator --json           the tracker, the flows, the pod and the reactor as the screen read them, then exit
+  heai-operator --json           the tracker, the flows, the pod, the reactor and the agents as the screen read them, then exit
 
   --dir <dir>         the project directory: the map at its root, tasks/ and flow/ under it; or HEAI_DIR
   --tasks <dir>       the tracker; default $HEAI_DIR/tasks, else .heai/tasks, else tasks, or HEAI_TASKS
@@ -39,7 +41,8 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
 
 exit codes: 0 shown, and under --once/--json nothing red; 1 something is red - an invalid task file,
 a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that ended
-without done, or a reactor rule that ran and failed in the last hour; 2 no tracker, or bad usage.
+without done, a reactor rule that ran and failed in the last hour, or an agent file that misses
+its frontmatter; 2 no tracker, or bad usage.
 `
 
 func main() {
@@ -144,6 +147,11 @@ func printOnce(opts ui.Options, snap ui.Snapshot, fl flows.Result, po pod.Result
 }
 
 func printJSON(snap ui.Snapshot, fl flows.Result, po pod.Result, re reactor.Result) int {
+	// The agents are the list alone - name, kind, description, file, problems - not the prompts.
+	agentList := snap.Agents.Agents
+	if agentList == nil {
+		agentList = []agents.Agent{}
+	}
 	out := struct {
 		Tracker *tracker.Tracker `json:"tracker"`
 		Map     string           `json:"map,omitempty"`
@@ -151,9 +159,10 @@ func printJSON(snap ui.Snapshot, fl flows.Result, po pod.Result, re reactor.Resu
 		Flows   flows.Result     `json:"flows"`
 		Pod     pod.Result       `json:"pod"`
 		Reactor reactor.Result   `json:"reactor"`
+		Agents  []agents.Agent   `json:"agents"`
 		Red     bool             `json:"red"`
 		At      time.Time        `json:"at"`
-	}{snap.Tracker, snap.MapPath, snap.Tracker.Counts(), fl, po, re, snap.Tracker.Red() || fl.Red() || re.Red(), snap.At}
+	}{snap.Tracker, snap.MapPath, snap.Tracker.Counts(), fl, po, re, agentList, snap.Tracker.Red() || fl.Red() || re.Red() || snap.Agents.Red(), snap.At}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(out); err != nil {

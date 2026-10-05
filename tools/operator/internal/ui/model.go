@@ -1,6 +1,6 @@
 // Package ui is the screen: an htop-shaped view over the tracker, the flows,
-// the container and the reactor, each pane refreshed on its own clock, holding
-// nothing but the last thing it read.
+// the container, the reactor and the agents, each pane refreshed on its own
+// clock, holding nothing but the last thing it read.
 package ui
 
 import (
@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/smailq/heai-tools/tools/operator/internal/agents"
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
@@ -36,17 +37,20 @@ type Options struct {
 	Now     func() time.Time
 }
 
-// Snapshot is one reading of the tracker's files, with the map it resolved to.
+// Snapshot is one reading of the project's files: the tracker, with the map it
+// resolved to, and the agents under the project directory that map names.
 type Snapshot struct {
 	Tracker *tracker.Tracker
 	Err     error
 	// MapPath is the architecture map this screen reads beside; flow is asked about its directory.
 	MapPath string
-	At      time.Time
+	// Agents is the project's agents/ directory, read on the same clock since it is files too.
+	Agents agents.Result
+	At     time.Time
 }
 
-// Load takes a snapshot of the tracker. When the tracker cannot be read the
-// previous map stands, so the sibling panes keep asking about the same project.
+// Load takes a snapshot of the tracker and the agents. When the tracker cannot
+// be read the previous map stands, so the sibling panes keep asking about the same project.
 func Load(opts Options, prev Snapshot) Snapshot {
 	now := time.Now
 	if opts.Now != nil {
@@ -60,11 +64,20 @@ func Load(opts Options, prev Snapshot) Snapshot {
 		if s.MapPath == "" {
 			s.MapPath = discover.Map(opts.MapOverride, discover.Env{}, "", opts.Cwd)
 		}
-		return s
+	} else {
+		s.Tracker = t
+		s.MapPath = discover.Map(opts.MapOverride, discover.Env{}, t.MapPath, opts.Cwd)
 	}
-	s.Tracker = t
-	s.MapPath = discover.Map(opts.MapOverride, discover.Env{}, t.MapPath, opts.Cwd)
+	s.Agents = agents.Load(projectOf(opts, s.MapPath), s.At)
 	return s
+}
+
+// projectOf is the project directory for a snapshot: --dir or HEAI_DIR, else the map's directory, else the tracker's parent.
+func projectOf(opts Options, mapPath string) string {
+	if opts.Project != "" {
+		return opts.Project
+	}
+	return discover.Project(discover.Env{}, mapPath, opts.TasksDir, opts.Cwd)
 }
 
 // LoadFlows asks flow for everything open and everything stuck.
@@ -87,7 +100,7 @@ const (
 
 var sortNames = []string{"pick-up", "age", "slug", "territory"}
 
-// pane is which of the four has the table; the other three are one line each.
+// pane is which of the five has the table; the other four are one line each.
 type pane int
 
 const (
@@ -95,10 +108,11 @@ const (
 	paneFlows
 	panePod
 	paneReactor
+	paneAgents
 	paneCount
 )
 
-var paneNames = []string{"tasks", "flows", "pod", "reactor"}
+var paneNames = []string{"tasks", "flows", "pod", "reactor", "agents"}
 
 // Model is the Bubble Tea model.
 type Model struct {
@@ -132,9 +146,10 @@ type Model struct {
 	// detail is a task opened full width; detailOff scrolls its body, the split pane's, and a trace.
 	detail    *tracker.Task
 	detailOff int
-	// jobDetail is a job opened full width; evDetail an event with the actions it caused.
-	jobDetail *pod.Job
-	evDetail  *reactor.Event
+	// jobDetail is a job opened full width; evDetail an event with the actions it caused; agentDetail an agent with its prompt.
+	jobDetail   *pod.Job
+	evDetail    *reactor.Event
+	agentDetail *agents.Agent
 	// trace is a flow's timeline opened full width, from `flow trace <id>`.
 	trace *traceView
 	// panelTrace is the same timeline for the flow under the cursor, shown in the flow
@@ -196,15 +211,19 @@ func (m Model) Flows() flows.Result { return m.flows }
 // Project is the project directory pod and reactor are asked about, for --once and --json.
 func (m Model) Project() string { return m.project() }
 
+// Agents is the agents pane's last reading, for --json.
+func (m Model) Agents() agents.Result { return m.snap.Agents }
+
 // OnceHeight is tall enough for every task row: the header, the pane title, the
 // column header, the rows, the other panes' lines, and the key bar.
 func (m Model) OnceHeight() int { return len(m.rows()) + 4 + int(paneCount-1) }
 
 // Red reports whether anything on the screen is red: an invalid task, a blocker
-// that will never clear, a stuck flow whose wait stands at a dead end, or a
-// reactor rule that ran and failed in the last hour.
+// that will never clear, a stuck flow whose wait stands at a dead end, a
+// reactor rule that ran and failed in the last hour, or an agent file that
+// misses its contract.
 func (m Model) Red() bool {
-	return (m.snap.Tracker != nil && m.snap.Tracker.Red()) || m.flows.Red() || m.reactor.Red()
+	return (m.snap.Tracker != nil && m.snap.Tracker.Red()) || m.flows.Red() || m.reactor.Red() || m.snap.Agents.Red()
 }
 
 type tickMsg time.Time
@@ -273,13 +292,8 @@ func (m Model) loadPanelLines(id string) tea.Cmd {
 	}
 }
 
-// project is the project directory pod and reactor are asked about.
-func (m Model) project() string {
-	if m.opts.Project != "" {
-		return m.opts.Project
-	}
-	return discover.Project(discover.Env{}, m.snap.MapPath, m.opts.TasksDir, m.opts.Cwd)
-}
+// project is the project directory pod and reactor are asked about, and whose agents/ is read.
+func (m Model) project() string { return projectOf(m.opts, m.snap.MapPath) }
 
 // Init takes the first snapshot and starts both clocks; the sibling polls start once the map is known.
 func (m Model) Init() tea.Cmd {
@@ -347,6 +361,10 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.detail != nil && m.snap.Tracker != nil {
 			// Keep the open task current, or close it if it went away.
 			m.detail = m.snap.Tracker.BySlug(m.detail.Slug)
+		}
+		if m.agentDetail != nil {
+			// The same for an open agent: its file is read on this clock too.
+			m.agentDetail = m.snap.Agents.ByName(m.agentDetail.Name)
 		}
 		m.clamp()
 		if !m.slowStarted {
@@ -502,7 +520,7 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, tea.Quit
 	case "?":
 		m.help = true
-	case "1", "2", "3", "4":
+	case "1", "2", "3", "4", "5":
 		m.switchPane(pane(k[0] - '1'))
 	case "p":
 		if m.pane == paneTasks || m.pane == paneFlows {
@@ -573,14 +591,16 @@ func (m Model) key(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// inDetail reports whether something is open full width: a task, a workspace or an event.
-func (m Model) inDetail() bool { return m.detail != nil || m.jobDetail != nil || m.evDetail != nil }
-
-func (m *Model) closeDetail() {
-	m.detail, m.jobDetail, m.evDetail, m.detailOff = nil, nil, nil, 0
+// inDetail reports whether something is open full width: a task, a job, an event or an agent.
+func (m Model) inDetail() bool {
+	return m.detail != nil || m.jobDetail != nil || m.evDetail != nil || m.agentDetail != nil
 }
 
-// scrollKey moves a body: a task's, the split pane's, a workspace's, an event's, or a trace's.
+func (m *Model) closeDetail() {
+	m.detail, m.jobDetail, m.evDetail, m.agentDetail, m.detailOff = nil, nil, nil, nil, 0
+}
+
+// scrollKey moves a body: a task's, the split pane's, a job's, an event's, an agent's prompt, or a trace's.
 func (m *Model) scrollKey(k string) {
 	switch k {
 	case "up", "k":
@@ -606,7 +626,7 @@ func (m *Model) switchPane(p pane) {
 	m.focus = focusLeft
 }
 
-// open is Enter: a task full width, a flow's trace, a job, or an event with its actions.
+// open is Enter: a task full width, a flow's trace, a job, an event with its actions, or an agent with its prompt.
 func (m Model) open() (tea.Model, tea.Cmd) {
 	switch m.pane {
 	case paneTasks:
@@ -623,6 +643,11 @@ func (m Model) open() (tea.Model, tea.Cmd) {
 		if rows := m.eventRows(); len(rows) > 0 {
 			e := rows[m.cursor]
 			m.evDetail, m.detailOff = &e, 0
+		}
+	case paneAgents:
+		if rows := m.agentRows(); len(rows) > 0 {
+			a := rows[m.cursor]
+			m.agentDetail, m.detailOff = &a, 0
 		}
 	case paneFlows:
 		if rows := m.flowRows(); len(rows) > 0 {
@@ -739,6 +764,22 @@ func (m Model) eventByID(id string) *reactor.Event {
 	return nil
 }
 
+// agentRows is what the agents table shows: every agent by name, filtered by its name, kind, description and problems.
+func (m Model) agentRows() []agents.Agent {
+	needle := strings.ToLower(m.filter)
+	if needle == "" {
+		return m.snap.Agents.Agents
+	}
+	var out []agents.Agent
+	for _, a := range m.snap.Agents.Agents {
+		hay := strings.ToLower(strings.Join(append([]string{a.Name, a.Kind, a.Description}, a.Problems...), " "))
+		if strings.Contains(hay, needle) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
 func flowText(f flows.Flow) string {
 	parts := []string{f.ID, f.Definition, f.State}
 	for n, v := range f.Links {
@@ -756,6 +797,8 @@ func (m Model) rowCount() int {
 		return len(m.podRows())
 	case paneReactor:
 		return len(m.eventRows())
+	case paneAgents:
+		return len(m.agentRows())
 	}
 	return len(m.rows())
 }

@@ -482,9 +482,9 @@ territories:
         globs: ['tools/operator/**']
     context: |
       The command heai-operator, in Go 1.26 on Bubble Tea v2, Lip Gloss v2 and
-      yaml.v3: the htop-shaped screen. Four panes - tasks, flows, pod, reactor,
-      on the keys 1 to 4 - of which one has the table and the other three are
-      a line each. `--once` and `--json` are the same reading without a
+      yaml.v3: the htop-shaped screen. Five panes - tasks, flows, pod,
+      reactor, agents, on the keys 1 to 5 - of which one has the table and
+      the other four are a line each. `--once` and `--json` are the same reading without a
       terminal, and exit 1 when something shown is red. The map pane is
       designed in DESIGN.md and not built; DESIGN.md is where a pane is
       designed before it is built.
@@ -492,6 +492,8 @@ territories:
         cmd/heai-operator/main.go  flags, discovery, --once and --json, exits
         internal/discover   the project directory, the tracker, the map
         internal/tracker    this tool's own reader of task files, seven keys
+        internal/agents     the project's agents/, from its files, under the
+                            shape .heai/agents/README.md states
         internal/flows      heai-flow definitions, list and stuck --json, trace
         internal/pod        heai-pod status --json and list --json
         internal/reactor    heai-reactor status --json, events --since 1h --json
@@ -514,7 +516,8 @@ territories:
 
       It asks heai-flow, heai-pod and heai-reactor by name on PATH, and
       architect nothing: the tasks table shows each task's territory and
-      agent as the tracker writes them.
+      agent as the tracker writes them, and the agents pane lists the files
+      that name is looked up in.
 
       When a sibling tool's output changes: run testdata/record.sh, then
       `go test ./internal/ui -update`, and read the goldens before keeping
@@ -532,16 +535,19 @@ territories:
     context: |
       @heai-tools/operator-web: the command heai-operator-web, in TypeScript
       on yaml alone; the map editor's graph library, cytoscape with fcose, is
-      vendored under public/architect/vendor. Five tabs, in order: architect
-      (the map editor), tasks, flows (with its machines), pod, reactor. A tab
-      is on only when its tool's files are in the project; the rest are shown,
-      and off.
+      vendored under public/architect/vendor. Six tabs, in order: architect
+      (the map editor), tasks, flows (with its machines), pod, reactor, and
+      agents, the project's agent files. A tab is on only when its tool's
+      files are in the project; the rest are shown, and off.
 
         src/cli.ts, src/discover.ts   flags; the project, the tracker, the map
         src/reader.ts     the one reading every page is drawn from: the
                           tracker and which tools are there on --interval;
                           flow, pod and reactor on --poll
         src/tracker.ts    this tool's own reader of task files, seven keys
+        src/agents.ts     the project's agents/, from its files: name, kind,
+                          description and the prompt, under the shape
+                          .heai/agents/README.md states
         src/territories.ts, src/flows.ts, src/pod.ts, src/reactor.ts
                           each asks one tool's command, through src/run.ts:
                           found on PATH, ten seconds, a failure as one line

@@ -10,11 +10,11 @@
  ── rules 4 ────────────────────────────────────────────────────────────────────
  rule              on                                        last   result      
  sweep             source=clock                              03:05  ok          
- pick-now          source=tasks_cli kind=task.todo           03:05  ok          
- … and 2 more rules
+ … and 3 more rules
  ── events, newest first · heai-reactor events --since 1h ──────────────────────
  at     source      kind              key                           rule → resu…
  03:05  drops       exited            exited.w2@1789095905658.761…  session-exi…
  03:05  tasks_cli   task.todo         fetch-company-favicon@todo    pick-now → …
  03:05  clock       tick              clock@2026-09-11T03:05:00.0…  sweep → ok  
- ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ agents   4   worker 2 · gate 1 · broken 1               agents/ changed 2d ago
+ ↑↓ move  ⏎ open  1-5 pane  / filter  +/- interval  r reload  ? help  q quit

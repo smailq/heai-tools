@@ -20,11 +20,12 @@ const off = (r: Reader): string[] => Object.entries(r.reading.absent).filter(([,
 
 test('a tool is found by its files in the project, and only then is its tab on', async () => {
   const cases: Array<[string[], string[]]> = [
-    [['architecture.yaml', 'tasks/items/', 'flow/', 'pod/', 'reactor/'], []],
-    [['architecture.yaml', 'flow.yaml', 'pod.yaml', 'reactor.yaml'], ['tasks']],
-    [['tasks/items/'], ['architect', 'flows', 'pod', 'reactor']],
-    [['pod/'], ['architect', 'tasks', 'flows', 'reactor']],
-    [['tasks/', 'reactor/'], ['architect', 'tasks', 'flows', 'pod']]
+    [['architecture.yaml', 'tasks/items/', 'flow/', 'pod/', 'reactor/', 'agents/'], []],
+    [['architecture.yaml', 'flow.yaml', 'pod.yaml', 'reactor.yaml'], ['tasks', 'agents']],
+    [['tasks/items/'], ['architect', 'flows', 'pod', 'reactor', 'agents']],
+    [['pod/'], ['architect', 'tasks', 'flows', 'reactor', 'agents']],
+    [['tasks/', 'reactor/'], ['architect', 'tasks', 'flows', 'pod', 'agents']],
+    [['agents/'], ['architect', 'tasks', 'flows', 'pod', 'reactor']]
   ]
   for (const [have, want] of cases) {
     const r = project(...have)
@@ -50,9 +51,9 @@ test('the tab of a tool that is not there is off: no link, and why in its place'
       const body = (await get(s.url + path)).body
       assert.ok(!body.includes('href="/pod"') && !body.includes('href="/architect/"'), `${path}: an off tab links nowhere`)
       assert.match(body, /<span title="not configured here \(no pod\.yaml or pod\/ in the project\)" aria-disabled="true" class="optab off"><b>pod<\/b><small>not configured here/, path)
-      for (const on of ['href="/tasks"', 'href="/flows"', 'href="/reactor"']) assert.ok(body.includes(on), `${path}: missing ${on}`)
+      for (const on of ['href="/tasks"', 'href="/flows"', 'href="/reactor"', 'href="/agents"']) assert.ok(body.includes(on), `${path}: missing ${on}`)
       const order = [...body.matchAll(/class="optab[^"]*"><b>([a-z]+)<\/b>/g)].map((m) => m[1])
-      assert.deepEqual(order, ['architect', 'tasks', 'flows', 'pod', 'reactor'], `${path}: every tab is still shown, in order`)
+      assert.deepEqual(order, ['architect', 'tasks', 'flows', 'pod', 'reactor', 'agents'], `${path}: every tab is still shown, in order`)
     }
     const root = await get(s.url + '/')
     assert.equal(root.headers.get('location'), '/tasks', 'the root goes to the first tab that is on')

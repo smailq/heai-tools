@@ -2,6 +2,7 @@
 // on them passes through html``, so what the tools report is always text.
 
 import { basename } from 'node:path'
+import { agentValid, kindCounts, type Agent } from './agents.ts'
 import { ageDays, ago, clock, hms, orDash, short, since } from './format.ts'
 import { html, raw, type Html } from './html.ts'
 import { lineResult, move, openCount, stands, flowsRed, type Definition, type Flow, type Stuck, type Timeline } from './flows.ts'
@@ -34,7 +35,7 @@ const enc = encodeURIComponent
 /** The primary tabs, in order; the number key for each is its place in this list. */
 export const TABS: readonly Tab[] = TOOLS
 
-const HREF: Record<Tab, string> = { architect: '/architect/', tasks: '/tasks', flows: '/flows', pod: '/pod', reactor: '/reactor' }
+const HREF: Record<Tab, string> = { architect: '/architect/', tasks: '/tasks', flows: '/flows', pod: '/pod', reactor: '/reactor', agents: '/agents' }
 
 /** Where the root goes: the first tab whose tool the project has, else the architect, which can start a map. */
 export const firstTab = (r: Reading): string => HREF[TABS.find((t) => !r.absent[t]) ?? 'architect']
@@ -67,7 +68,8 @@ export function nav(ctx: Ctx, tab: Tab): Html {
         : orDash(r.pod.note),
     reactor: st
       ? html`${r.reactor.events.length} events/1h · ${st.rules.length} rules${problems(st) ? html` · <span class="warn">⚠ ${problems(st)}</span>` : null}${failedN ? html` · <span class="red">✗ ${failedN} failed</span>` : null}`
-      : orDash(r.reactor.note)
+      : orDash(r.reactor.note),
+    agents: r.agents ? agentsSummary(r.agents.agents) : html`<span class="red">⚠ ${orDash(r.agentsError)}</span>`
   }
   const one = (name: Tab): Html => {
     const on = name === tab ? ' on' : ''
@@ -470,6 +472,43 @@ ${table(
 )}
 <h2>payload</h2>
 <pre class="body">${JSON.stringify(e.payload, null, 2)}</pre>`
+}
+
+// ── agents ──
+
+/** "8 · worker 5 · gate 3", with the broken ones counted in red. */
+function agentsSummary(list: Agent[]): Html {
+  const broken = list.filter((a) => !agentValid(a)).length
+  return html`${list.length}${kindCounts(list).map(([k, n]) => ` · ${k} ${n}`).join('')}${broken ? html` · <span class="red">⚠ ${broken} broken</span>` : null}`
+}
+
+export function agentsPane(ctx: Ctx): Html {
+  const { r } = ctx
+  const list = r.agents?.agents ?? []
+  const row = (a: Agent): Html =>
+    agentValid(a)
+      ? html`<tr><td><a href="/agents/${enc(a.name)}">${a.name}</a></td><td>${a.kind}</td><td class="wide">${a.description}</td></tr>`
+      : html`<tr class="bad"><td><a href="/agents/${enc(a.name)}">${a.name}</a></td><td class="red">invalid</td><td class="wide red">${a.problems[0]}</td></tr>`
+  return html`<div class="panehead">
+  <h1>agents <span class="faint">── ${r.agents ? agentsSummary(list) : 'none'}</span></h1>
+  <div class="controls">${filterBox}</div>
+</div>
+${r.agentsError ? html`<p class="warn">⚠ ${r.agentsError}</p>` : null}
+${r.agents ? html`<p class="faint">one file per agent under <code>${r.agents.dir}</code>; a task names one of them as its <code>agent</code></p>` : null}
+${table(html`<th>name</th><th>kind</th><th class="wide">description</th>`, list.length ? list.map(row) : empty(3, r.agents ? 'no agents' : 'no agents directory'))}`
+}
+
+export function agentPane(a: Agent): Html {
+  return html`<p class="crumbs"><a href="/agents">← agents</a></p>
+<h1>${a.name} ${agentValid(a) ? html`<span class="faint">${a.kind}</span>` : html`<span class="red">invalid</span>`}</h1>
+${a.problems.length ? html`<ul class="red">${a.problems.map((p) => html`<li>${p}</li>`)}</ul>` : null}
+<table class="kv">
+<tr><th>kind</th><td>${orDash(a.kind)}</td></tr>
+<tr><th>description</th><td>${orDash(a.description)}</td></tr>
+<tr><th>file</th><td><code>${a.path}</code></td></tr>
+</table>
+<h2>prompt <span class="faint">what the agent is given first; the territory's context and the task follow</span></h2>
+<pre class="body">${a.body || '(empty)'}</pre>`
 }
 
 export function missingPane(tab: Tab, what: string): Html {

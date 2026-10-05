@@ -1,6 +1,11 @@
 # agents
 
 One file per agent, and nothing else: a name, a kind, and the prompt the agent starts from.
+
+A file is `<name>.md`, opening with a frontmatter block between two `---` lines that holds exactly `name`, `kind` and `description`, one per line; the prompt is everything after it.
+`name` is the file's name without `.md`, `kind` is `worker` or `gate`, and `description` is one line saying what the agent is for.
+This is the one shape the directory has, and `operator` and `operator-web` list the agents from it: a file without the frontmatter, or whose `name` is not its file name, is listed with that problem.
+This README is not an agent.
 An agent here is not in the architecture map. The map says where each territory is and what anyone working or judging there must know; these files say who does the work and who judges it; and a task says which of each it gets.
 
 | kind | files | how it is prompted |

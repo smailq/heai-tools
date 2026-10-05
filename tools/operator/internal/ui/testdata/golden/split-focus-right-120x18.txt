@@ -9,10 +9,10 @@
  todo         high    do-the-thing                                ┃ modified    2026-09-06
  todo         -       help-requested-by-w…                        ┃ blocked by  help-requested-by-web-ui  (todo)
  backlog      -       receipts-rollup-view                        ┃ file        ../tracker/testdata/tracker/items/docu…
- done         low     old-and-done                                ┃ ── body ─────────────────── lines 3-4 of 5 · 1 more 
+ done         low     old-and-done                                ┃ ── body ─────────────────── lines 3-3 of 5 · 2 more 
  canceled     -       ontology-entity-ide…                        ┃ Blocked by [help-requested-by-web-ui](help-
- shipping     soon    broken                invalid: missing fron…┃ requested-by-web-ui.md), requested by `web-ui` in
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
  pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 · ok 1 · queued 1 · running 1)             pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
+ agents   4   worker 2 · gate 1 · broken 1                                                       agents/ changed 2d ago
  ↑↓ scroll  ⇥ list  ⏎ expand  p hide  esc list  ? help  q quit

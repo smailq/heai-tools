@@ -11,7 +11,7 @@ import { traceJSON, type Timeline } from './flows.ts'
 import { showJob, type JobOutput } from './pod.ts'
 import type { Html } from './html.ts'
 import * as mapeditor from './mapeditor.ts'
-import { architectPage, eventPane, firstDefinition, firstTab, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, jobPane, type Ctx, type Tab } from './pages.ts'
+import { agentPane, agentsPane, architectPage, eventPane, firstDefinition, firstTab, flowPane, flowsPane, isRed, layout, machinesPane, missingPane, podPane, reactorPane, taskPane, tasksPane, jobPane, type Ctx, type Tab } from './pages.ts'
 import type { Reader } from './reader.ts'
 import { message } from './run.ts'
 import { bySlug, counts } from './tracker.ts'
@@ -193,6 +193,12 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
       const e = r.reactor.events.find((x) => x.id === id)
       return e ? page(res, 'reactor', `event ${id}`, eventPane(ctx(), e)) : missing(res, 'reactor', `no event ${id} in the last hour`)
     }
+    if (path === '/agents') return page(res, 'agents', 'agents', agentsPane(ctx()))
+    if ((m = /^\/agents\/([^/]+)$/.exec(path))) {
+      const name = decodeURIComponent(m[1]!)
+      const a = r.agents?.agents.find((x) => x.name === name)
+      return a ? page(res, 'agents', `agent ${name}`, agentPane(a)) : missing(res, 'agents', `no agent ${name} in the project's agents/`)
+    }
     if (path === '/api/state') {
       return sendJSON(res, 200, {
         tracker: r.tracker,
@@ -203,6 +209,8 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
         flows: r.flows,
         pod: r.pod,
         reactor: r.reactor,
+        agents: r.agents ? r.agents.agents.map(({ body: _body, ...a }) => a) : null,
+        agentsError: r.agentsError || undefined,
         absent: r.absent,
         red: isRed(r),
         at: new Date(r.at).toISOString()

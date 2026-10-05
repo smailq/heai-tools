@@ -53,7 +53,7 @@
       .then(function () { setTimeout(refresh, every); });
   }
 
-  // "/" focuses the filter, as it does on the terminal screen; 1-5 are the tabs in order,
+  // "/" focuses the filter, as it does on the terminal screen; 1-6 are the tabs in order,
   // and the key of a tab that is off - a tool the project does not have - does nothing.
   document.addEventListener("keydown", function (e) {
     var t = e.target;
@@ -61,7 +61,7 @@
     if (e.key === "/") {
       var box = document.querySelector(".filter");
       if (box) { e.preventDefault(); box.focus(); }
-    } else if (e.key >= "1" && e.key <= "5") {
+    } else if (e.key >= "1" && e.key <= "6") {
       var tab = document.querySelectorAll(".opnav .optab")[+e.key - 1];
       if (tab && tab.href) location.href = tab.href;
     }

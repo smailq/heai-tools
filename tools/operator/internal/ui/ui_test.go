@@ -10,6 +10,7 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/smailq/heai-tools/tools/operator/internal/agents"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
 	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
@@ -38,7 +39,13 @@ func fixture(t *testing.T) Model {
 		t.Fatal(err)
 	}
 	tr.Changed = now.Add(-3 * time.Minute)
-	snap := Snapshot{Tracker: tr, MapPath: "/repo/architecture.yaml", At: now}
+	// The agents fixture is the reader's own: two workers, a gate, a broken file, and a README that is not an agent.
+	ag := agents.Load(filepath.Join("..", "agents", "testdata"), now)
+	if ag.Note != "" || len(ag.Agents) != 4 {
+		t.Fatalf("agents fixture: %q %d", ag.Note, len(ag.Agents))
+	}
+	ag.Changed = now.Add(-2 * 24 * time.Hour)
+	snap := Snapshot{Tracker: tr, MapPath: "/repo/architecture.yaml", Agents: ag, At: now}
 	list, err := flows.ParseList(readFixture(t, "flow", "list.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -241,7 +248,7 @@ func TestGoldenHelp(t *testing.T) {
 }
 
 func TestEveryLineFitsTheWidth(t *testing.T) {
-	for _, p := range []string{"1", "2", "3", "4"} {
+	for _, p := range []string{"1", "2", "3", "4", "5"} {
 		for _, w := range []int{50, 60, 80, 95, 99, 100, 110, 120, 160, 200} {
 			m := press(fixture(t).WithSize(w, 20), p, "down")
 			for i, line := range strings.Split(m.Render(), "\n") {
@@ -737,5 +744,104 @@ func TestReactorAbsentIsOneDimLine(t *testing.T) {
 	}
 	if m = press(m, "4"); m.rowCount() != 0 || !strings.Contains(m.Render(), "heai-reactor not on PATH") {
 		t.Error("the table form says the same")
+	}
+}
+
+// ---- the agents pane --------------------------------------------------------
+
+func TestAgentsLineCountsByKind(t *testing.T) {
+	out := fixture(t).WithSize(120, 20).Render()
+	if !strings.Contains(out, "agents   4   worker 2 · gate 1 · broken 1") || !strings.Contains(out, "agents/ changed 2d ago") {
+		t.Errorf("the line:\n%s", out)
+	}
+	lines := strings.Split(out, "\n")
+	if !strings.HasPrefix(lines[len(lines)-2], " agents") {
+		t.Errorf("the agents line sits last, under the reactor's:\n%s", out)
+	}
+}
+
+func TestGoldenAgents120(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "5", "down")
+	if m.pane != paneAgents || m.rowCount() != 4 || m.cursor != 1 {
+		t.Fatalf("pane %d rows %d cursor %d", m.pane, m.rowCount(), m.cursor)
+	}
+	out := m.Render()
+	if !strings.Contains(out, "agents ── 4 agents · worker 2 · gate 1 · 1 broken") || !strings.Contains(out, "invalid: missing frontmatter opening") {
+		t.Errorf("the table carries the counts and a broken file's first problem:\n%s", out)
+	}
+	golden(t, "agents-120x20", out)
+}
+
+func TestGoldenAgents80(t *testing.T) {
+	golden(t, "agents-80x18", press(fixture(t).WithSize(80, 18), "5").Render())
+}
+
+func TestEnterOnAnAgentOpensItsPrompt(t *testing.T) {
+	m := press(fixture(t).WithSize(100, 20), "5", "down", "enter") // by name: broken, cli, judge, tui
+	if m.agentDetail == nil || m.agentDetail.Name != "cli" {
+		t.Fatalf("detail: %+v", m.agentDetail)
+	}
+	out := m.Render()
+	for _, want := range []string{"agent ── cli · worker", "cli.md", "description A command-line tool in TypeScript on Node", "file        ../agents/testdata/agents/cli.md", "── prompt", "The command is the interface."} {
+		if !strings.Contains(out, want) {
+			t.Errorf("missing %q:\n%s", want, out)
+		}
+	}
+	golden(t, "agent-100x20", out)
+	first := out
+	m = press(m, "down", "down")
+	if m.detailOff != 2 || m.Render() == first || !strings.Contains(m.Render(), "── prompt") {
+		t.Error("the movement keys scroll the prompt under the rule")
+	}
+	if m = press(m, "esc"); m.agentDetail != nil {
+		t.Error("esc closes it")
+	}
+	m = press(fixture(t).WithSize(100, 20), "5", "enter")
+	if out := m.Render(); !strings.Contains(out, "problems    missing frontmatter opening") || !strings.Contains(out, "kind        -") {
+		t.Errorf("a broken agent shows its problems:\n%s", out)
+	}
+}
+
+func TestAgentsFilterMatchesTheKind(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "5", "/", "g", "a", "t", "e", "enter")
+	if n := m.rowCount(); n != 1 || m.agentRows()[0].Name != "judge" {
+		t.Errorf("filter by kind: %d rows", n)
+	}
+	if m = press(m, "esc"); m.rowCount() != 4 {
+		t.Error("esc clears the filter")
+	}
+}
+
+func TestAgentsAbsentIsOneDimLine(t *testing.T) {
+	m := fixture(t).WithSize(120, 20)
+	m.snap.Agents = agents.Load(t.TempDir(), now)
+	if out := m.Render(); !strings.Contains(out, "agents   not configured here (no agents/ in the project)") || strings.Contains(out, "agents/ changed") {
+		t.Errorf("the line should say why, with no age:\n%s", out)
+	}
+	if m = press(m, "5"); m.rowCount() != 0 || !strings.Contains(m.Render(), "not configured here (no agents/ in the project)") {
+		t.Error("the table form says the same")
+	}
+}
+
+func TestLoadedKeepsTheOpenAgentCurrent(t *testing.T) {
+	m := press(fixture(t).WithSize(120, 20), "5", "down", "enter")
+	if m.agentDetail == nil {
+		t.Fatal("no detail")
+	}
+	next, _ := m.Update(loadedMsg(m.snap))
+	if next.(Model).agentDetail == nil {
+		t.Error("the agent should survive a reread of the same directory")
+	}
+	gone := m.snap
+	gone.Agents = agents.Result{At: now}
+	next, _ = m.Update(loadedMsg(gone))
+	if next.(Model).agentDetail != nil {
+		t.Error("the agent should close when its file is gone")
+	}
+	if next.(Model).snap.Agents.Red() {
+		t.Error("no agents is not red")
+	}
+	if !m.Red() || !m.snap.Agents.Red() {
+		t.Error("a broken agent file is red")
 	}
 }

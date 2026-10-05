@@ -2,8 +2,8 @@
 
 An `htop`-shaped terminal view of what the heai tools are doing: one screen, refreshed on its own clocks, that reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing: every key on it moves, opens, filters or reloads, and every change to a task, a flow or the reactor is made at the shell with that tool's own command.
 
-Four panes: **tasks**, every task in the tracker with the agent it is assigned to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
-One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
+Five panes: **tasks**, every task in the tracker with the agent it is assigned to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused; **agents**, every agent the project defines under `agents/`, by kind, with its prompt.
+One pane is a table and the other four are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
 The same panes in a browser, with every flow definition drawn as its state machine and an editor for the architecture map, are [`operator-web`](../operator-web).
 The name is the Matrix's: the one at the console watching the crew inside.
@@ -29,13 +29,14 @@ It is the first tool in this repository not written in TypeScript, for the reaso
  flows    ⚠ 2 stuck > 1h   session 14 (running 2 · blocked 1 · clean 10)   request 2 (todo 2)          flow 4s ago
  pod      ● heai-workshop running   jobs 6 (ok 3 · running 2 · queued 1)                                  pod 4s ago
  reactor  ● clock  ● drops  ● tasks_cli  ○ github   12 events/1h · 4 rules                            reactor 5s ago
- ↑↓ move  ⏎ open  b active  S sort  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ agents   8   worker 5 · gate 3                                                                agents/ changed 2d ago
+ ↑↓ move  ⏎ open  b active  S sort  1-5 pane  / filter  +/- interval  r reload  ? help  q quit
 ```
 
 **The header** carries the project's name, the task count, the counts that matter in pick-up order - in progress, in review, blocked, to do - each coloured when it is not zero, the open flows with the stuck count beside them, the container with its running jobs, `+n` queued and `✗n` finished badly, or `○` when it is down, the reactor's events in the last hour with `✗` for a rule that failed or `⚠` for a source with a problem, then the tracker's refresh interval and the clock.
 On a narrow terminal the meters leave from the right before the clock is cut.
 
-**`1` to `4`** give the table to the tasks, the flows, the pod or the reactor; the other three panes stay as one line each, above or below the table in the same order.
+**`1` to `5`** give the table to the tasks, the flows, the pod, the reactor or the agents; the other four panes stay as one line each, above or below the table in the same order.
 Each line carries the pane's counts and, on the right, the age of its data, because each pane is read on its own clock and the screen is honest about how old each number is.
 
 ### tasks
@@ -170,13 +171,36 @@ When the region is short the sources and rules give way first, saying how many m
 `↑` `↓` scroll it, `esc` returns.
 A tick run at the shell, `heai-reactor tick`, shows here on the next poll.
 
+### agents
+
+```
+ agents ── 8 agents · worker 5 · gate 3 ───────────────────────────────────────────────────── agents/ changed 2d ago
+ name          kind     description
+ cli           worker   A command-line tool in TypeScript on Node - a command, a file format, a schema, a store - in …
+ judge         gate     Decides architectural changes - the ones with long-term consequence for the direction of the …
+ tui           worker   The terminal screen in Go - Bubble Tea, Lip Gloss, readers pinned by recorded output, golden …
+```
+
+**The line** is how many agents the project defines, then how many of each kind, and in red how many files miss the contract; on the right, when a file under `agents/` last changed.
+
+**The table** is every file under `<project>/agents/`, by name, with its frontmatter as columns: `name`, `kind` and `description`, the description taking the width the other two leave and leaving first when the terminal is too narrow for it.
+A file that does not meet the contract is listed too, in red, with its first problem in place of the description, because a broken agent file is the first thing to fix.
+The file's path is in the agent view rather than here.
+
+**Enter** opens the agent full width: its name, kind and description, the file's path, what is wrong with it when something is, and under `── prompt` the prompt body wrapped to the width.
+`↑` `↓` scroll the prompt, `esc` returns.
+
+The contract is the agents README's: an agent is `<name>.md` directly in `agents/`, opening with a frontmatter block between two `---` lines that holds exactly `name`, `kind` and `description`, one `key: value` a line, the prompt being everything after it; `name` is the file name without `.md`, and `kind` is `worker` or `gate`, shown as read so a new kind is a count rather than a problem.
+`README.md` is not an agent; dotfiles and files that are not `.md` are ignored.
+Nothing here knows what a worker or a gate does: the files are the project's, and the pane lists them.
+
 ### Keys
 
 | key | does |
 | --- | --- |
-| `1` to `4` | the pane with the table: tasks, flows, pod, reactor |
+| `1` to `5` | the pane with the table: tasks, flows, pod, reactor, agents |
 | `↑` `↓` `j` `k`, `pgup` `pgdn`, `g` `G` | move, page, first and last |
-| `⏎` | open the row full width: a task, a flow's `heai-flow trace`, a job, or an event with its actions; `esc` back |
+| `⏎` | open the row full width: a task, a flow's `heai-flow trace`, a job, an event with its actions, or an agent with its prompt; `esc` back |
 | `→` `l` | move to the pane beside the list - the task, or the flow with its trace; again from there, it opens full width |
 | `p` | show or hide the detail pane beside the tasks and flows lists |
 | `⇥` | focus the detail pane, to scroll it; `⇥` or `esc` back to the list |
@@ -200,10 +224,11 @@ Everything on the screen is read fresh on its pane's clock; the process keeps on
 - **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. The table is the `list` answer; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. The flow pane's timeline is one more call, `heai-flow trace <id> --json`, made for the flow under the cursor when the cursor moves onto it and again after each flows poll; the recording is [`testdata/flow/trace.json`](testdata/flow/trace.json), and `⏎` asks again without `--json` for the printed form. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
 - **The pod** is `heai-pod status --json` and `heai-pod list --json`, both run with `--dir <project>` on the same clock; `list` reads the queue on the host, so it is asked whether or not the container is up. `status` exits `1` with its JSON when the container is down, and that is read as an answer, not a failure. A job's `stdout` and `stderr` are read from the directory `list` names, the two files read here that are not a tool's output. pod is asked only when `pod.yaml` or `pod/` sits in the project, or `HEAI_POD_STATE` is set, because `heai-pod status` creates `pod/` when it is absent. The outputs are recorded under [`testdata/pod/`](testdata/pod) through the tool against its fake runtime and pinned by [`internal/pod`](internal/pod).
 - **The reactor** is `heai-reactor status --json` and `heai-reactor events --since 1h --json`, with `--dir <project>`, on the same clock, and asked only when `reactor.yaml`, `.heai/reactor.yaml` or `reactor/` sits in the project, or `HEAI_REACTOR_STATE` is set, for the same reason. Each event `events --json` prints carries the actions rules took on it, so nothing here reads reactor's files. [`testdata/reactor/`](testdata/reactor) records both from one emit, one dropped fact and two ticks, pinned by [`internal/reactor`](internal/reactor).
+- **The agents** are the files under `<project>/agents/`, read on the tracker's clock - every `--interval`, since they are files too - under the contract the agents README states: `<name>.md`, a frontmatter block between two `---` lines holding exactly `name`, `kind` and `description`, the prompt after it, `README.md` not an agent. Like the tracker this is a reader of files, not a call to a CLI, in [`internal/agents`](internal/agents), pinned by its fixture `internal/agents/testdata/agents/`: two workers, a gate, a broken file and a README, in the shape of the real ones. When the project has no `agents/` the pane says so and nothing is read.
 - **The recordings** under `testdata/pod/` and `testdata/reactor/` are made by [`testdata/record.sh`](testdata/record.sh), which runs the two tools from their sources - pod against its fake runtime, reactor against a temporary project - and rewrites only the temporary path to `/repo`. When a tool's output changes, run it, then `go test ./internal/ui -update`, and read the goldens.
 - **A pane whose tool fails** keeps its last table and says `⚠ <reason> · as of <time>` on its title; a pane that never answered shows why: not on `PATH`, not configured here, or the command's last line.
 
-Reading the tracker has no side effects.
+Reading the tracker and the agents has no side effects.
 Asking flow, pod and reactor has none either: every command this tool runs is a query.
 There are no writes. An earlier build bound `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` to keys; they were removed so the screen is only ever a reading of the tools, and a change is made where it is recorded, at the shell with the tool's own command.
 
@@ -217,7 +242,7 @@ Flags first, then the specific environment variables, then the project directory
 | the tracker | `--tasks <dir>` | `HEAI_TASKS` | `$HEAI_DIR/tasks`, else `.heai/tasks` if it exists, else `tasks` |
 | the map | `--map <path>` | `HEAI_MAP` | `$HEAI_DIR/architecture.yaml`, else the tracker's `tasks.yaml` `map:`, else `.heai/architecture.yaml`, else `architecture.yaml` |
 
-The project directory is what pod and reactor are asked about; under `HEAI_DIR` the map, the tracker and every tool's state sit in it.
+The project directory is what pod and reactor are asked about, and where `agents/` is read; under `HEAI_DIR` the map, the tracker, the agents and every tool's state sit in it.
 The tracker's own configuration sits between the environment and the convention because it is the tracker's statement of which map validates its territories, and this tool should look where the tracker looks.
 The map is not read here; flow is given its directory as `--dir`, so it finds its state beside the same map the tracker names.
 
@@ -227,21 +252,22 @@ The map is not read here; flow is given its directory as `--dir`, so it finds it
 heai-operator                  the screen
 heai-operator --once                the screen, once, to stdout, then exit
 heai-operator --once --active       only the active tasks, not the backlog and the closed
-heai-operator --json                the tracker, the flows, the pod and the reactor as the screen read them, with counts and whether anything is red
+heai-operator --json                the tracker, the flows, the pod, the reactor and the agents as the screen read them, with counts and whether anything is red
 heai-operator --interval 5s         the tracker's refresh interval (default 2s)
 heai-operator --poll 10s            the clock for the panes that ask flow, pod and reactor (default 5s)
 heai-operator --width 100           --once: columns to render (default $COLUMNS, else 120)
 ```
 
 `--once` and `--json` are the whole tool without a terminal, and what makes it a health check: a cron line, or a script reading `red`.
-`--once` prints the tasks table with the other three panes' lines under it, never the split, since a batch listing wants rows.
+`--once` prints the tasks table with the other four panes' lines under it, never the split, since a batch listing wants rows.
+`--json` carries the agents under `agents`, the list alone - name, kind, description, file and problems - not the prompts.
 
 ### Exit codes
 
 | code | meaning |
 | --- | --- |
 | `0` | shown; under `--once` or `--json`, nothing on the screen is red |
-| `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or has ended, or a reactor rule that ran and failed on an event in the last hour |
+| `1` | under `--once` or `--json`, something is red: an invalid task file, a blocked task whose blocker is canceled or missing, a stuck flow waiting on a flow that is missing or has ended, a reactor rule that ran and failed on an event in the last hour, or an agent file that misses its contract |
 | `2` | no tracker at the resolved directory, or bad usage |
 
 The interactive screen exits `0` on `q` whatever it shows; the split is for the batch modes, and it is the same `0` yes, `1` no, `2` could not ask as every other tool here.
@@ -255,6 +281,7 @@ internal/tracker/         the tracker reader and its fixture: testdata/tracker/ 
 internal/flows/           heai-flow definitions --json, list --json, stuck --json and trace; the fixtures are testdata/flow/ at the root
 internal/pod/             heai-pod status --json and heai-pod list --json; the fixtures are testdata/pod/ at the root
 internal/reactor/         heai-reactor status --json and heai-reactor events --json; the fixtures are testdata/reactor/ at the root
+internal/agents/          the agents/ reader and its fixture: testdata/agents/ has two workers, a gate, a broken file and a README
 internal/ui/              the Bubble Tea model, the screen, and golden renderings in testdata/golden/
 testdata/                 the sibling tools' recorded output, the format contracts this tool reads; record.sh makes the pod and reactor ones
 ```

@@ -12,7 +12,7 @@
 
 
 
-
  pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 ·  pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3  reactor 5s ago
- ↑↓ move  ⏎ trace  p flow pane  1-4 pane  / filter  +/- interval  ? help  q quit
+ agents   4   worker 2 · gate 1 · broken 1               agents/ changed 2d ago
+ ↑↓ move  ⏎ trace  p flow pane  1-5 pane  / filter  +/- interval  ? help  q quit

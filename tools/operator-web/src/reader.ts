@@ -4,6 +4,7 @@
 // answer, marked old. Which tools the project has at all is looked for on the
 // tracker's clock, so a tab comes on soon after its tool's files appear.
 
+import { agentsConfigured, loadAgents, type Agents } from './agents.ts'
 import { mapPath, projectDir, type Env } from './discover.ts'
 import { flowConfigured, pollFlows, type FlowsResult } from './flows.ts'
 import { podConfigured, pollPod, type PodResult } from './pod.ts'
@@ -13,8 +14,8 @@ import { loadTracker, NotATracker, type Tracker } from './tracker.ts'
 import { message } from './run.ts'
 import { statSync } from 'node:fs'
 
-/** The tools, in the order of their tabs. */
-export const TOOLS = ['architect', 'tasks', 'flows', 'pod', 'reactor'] as const
+/** The tools, in the order of their tabs; the agents are the project's files, listed last. */
+export const TOOLS = ['architect', 'tasks', 'flows', 'pod', 'reactor', 'agents'] as const
 export type Tool = (typeof TOOLS)[number]
 
 /** Why each tool's tab is off: what was looked for in the project and not found; "" for a tool that is there. */
@@ -43,6 +44,10 @@ export interface Reading {
   flows: FlowsResult
   pod: PodResult
   reactor: ReactorResult
+  /** The project's agents/, read from its files; null when there is none. */
+  agents: Agents | null
+  /** Why the agents could not be read, when the directory is there but could not be. */
+  agentsError: string
   absent: Absent
   project: string
   at: number
@@ -57,7 +62,9 @@ export function emptyReading(): Reading {
     flows: { definitions: [], flows: [], stuck: [], note: '', failed: false, at: 0 },
     pod: { status: null, jobs: [], note: '', failed: false, at: 0 },
     reactor: { status: null, events: [], note: '', failed: false, at: 0 },
-    absent: { architect: '', tasks: '', flows: '', pod: '', reactor: '' },
+    agents: null,
+    agentsError: '',
+    absent: { architect: '', tasks: '', flows: '', pod: '', reactor: '', agents: '' },
     project: '',
     at: 0
   }
@@ -83,7 +90,7 @@ export class Reader {
     await this.readTracker()
     const { absent, project } = this.reading
     if (TOOLS.every((t) => absent[t])) {
-      throw new Error(`${project}: nothing to show here - no map, tasks/items/, flow/, pod/ or reactor/; name the project with --dir`)
+      throw new Error(`${project}: nothing to show here - no map, tasks/items/, flow/, pod/, reactor/ or agents/; name the project with --dir`)
     }
     await this.readSlow()
     this.timers.push(setInterval(() => void this.readTracker(), this.opts.interval))
@@ -127,8 +134,20 @@ export class Reader {
       // architect is asked again only when the map moved, since validation is not free.
       if (map !== prev.map || mtime !== prev.territories.mapMtime) territories = await resolveTerritories(map)
       const project = projectDir(this.opts.env, map, this.opts.tasksDir, this.opts.cwd)
-      const absent: Absent = { architect: noMap, tasks: noTracker, flows: flowConfigured(map), pod: podConfigured(project), reactor: reactorConfigured(project) }
-      this.reading = { ...this.reading, tracker, trackerError, map, territories, absent, project, at }
+      const noAgents = agentsConfigured(project)
+      let agents: Agents | null = null
+      let agentsError = ''
+      if (!noAgents) {
+        try {
+          agents = loadAgents(project)
+        } catch (e) {
+          // The directory is there but could not be read: keep the last list, and say so.
+          agents = prev.agents
+          agentsError = message(e)
+        }
+      }
+      const absent: Absent = { architect: noMap, tasks: noTracker, flows: flowConfigured(map), pod: podConfigured(project), reactor: reactorConfigured(project), agents: noAgents }
+      this.reading = { ...this.reading, tracker, trackerError, map, territories, agents, agentsError, absent, project, at }
     } finally {
       this.trackerBusy = false
     }

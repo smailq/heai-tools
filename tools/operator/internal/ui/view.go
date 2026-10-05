@@ -12,6 +12,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/smailq/heai-tools/tools/operator/internal/agents"
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
@@ -49,6 +50,8 @@ func (m Model) Render() string {
 		lines = append(lines, m.jobLines(st, m.jobDetail)...)
 	case m.evDetail != nil:
 		lines = append(lines, m.eventLines(st, m.evDetail)...)
+	case m.agentDetail != nil:
+		lines = append(lines, m.agentLines(st, m.agentDetail)...)
 	default:
 		// The five panes in a fixed order: the selected one is a table sized to its region, the others one line each.
 		for p := paneTasks; p < paneCount; p++ {
@@ -97,6 +100,8 @@ func (m Model) region(st styles, p pane) []string {
 		lines = m.podTable(st)
 	case paneReactor:
 		lines = m.reactorTable(st)
+	case paneAgents:
+		lines = m.agentsTable(st)
 	}
 	h := m.regionHeight()
 	for len(lines) < h {
@@ -195,6 +200,8 @@ func (m Model) paneLine(st styles, p pane) string {
 		text, right = m.podSummary(st), m.podAge(st)
 	case paneReactor:
 		text, right = m.reactorSummary(st), m.reactorAge(st)
+	case paneAgents:
+		text, right = m.agentsSummary(st), m.agentsAge()
 	}
 	left := " " + st.title.Render(pad(paneNames[p], 9)) + text
 	// The age on the right is the honest part of the line; the counts yield to it.
@@ -341,6 +348,39 @@ func (m Model) reactorAge(st styles) string {
 		return st.red.Render("⚠ "+m.reactor.Note) + " · as of " + m.reactor.At.Format("15:04:05")
 	}
 	return "reactor " + ago(m.reactor.At, m.opts.Now())
+}
+
+// agentsSummary is the count, then the agents by kind, then in red how many files miss the contract.
+func (m Model) agentsSummary(st styles) string {
+	a := m.snap.Agents
+	if a.Failed {
+		return st.red.Render(a.Note)
+	}
+	if a.Note != "" {
+		return st.faint.Render(a.Note)
+	}
+	if a.At.IsZero() {
+		return st.faint.Render("loading…")
+	}
+	if len(a.Agents) == 0 {
+		return st.faint.Render("no agents")
+	}
+	var parts []string
+	for _, c := range agents.CountByKind(a.Agents) {
+		parts = append(parts, fmt.Sprintf("%s %d", c.Kind, c.Count))
+	}
+	if n := a.Broken(); n > 0 {
+		parts = append(parts, st.red.Render(fmt.Sprintf("broken %d", n)))
+	}
+	return fmt.Sprintf("%d   ", len(a.Agents)) + strings.Join(parts, " · ")
+}
+
+// agentsAge is when a file under agents/ last changed, like the tracker's line; "" when there is no directory.
+func (m Model) agentsAge() string {
+	if m.snap.Agents.Dir == "" || m.snap.Agents.Changed.IsZero() {
+		return ""
+	}
+	return "agents/ changed " + ago(m.snap.Agents.Changed, m.opts.Now())
 }
 
 // ---- split ------------------------------------------------------------------
@@ -1223,6 +1263,113 @@ func reactorTime(s string) time.Time {
 	return t
 }
 
+// ---- agents -----------------------------------------------------------------
+
+// agentColumns is the frontmatter as columns: the description takes what the
+// name and the kind leave, and leaves first when the terminal is too narrow
+// for it. The file is in the agent view, not here.
+func (m Model) agentColumns(width int) []column {
+	cols := []column{
+		{"name", 12, 0},
+		{"kind", 7, 0},
+		{"description", 0, 48}, // flexible
+	}
+	return layout(cols, width, -1, 16, math.MaxInt, 0, math.MaxInt, "")
+}
+
+// agentsTable is every agent under agents/, by name, with a broken file in red.
+func (m Model) agentsTable(st styles) []string {
+	width := m.width
+	a := m.snap.Agents
+	if len(a.Agents) == 0 {
+		msg, dim := a.Note, true
+		switch {
+		case a.Failed:
+			dim = false
+		case msg == "" && a.At.IsZero():
+			msg = "loading…"
+		case msg == "":
+			msg = "no agents"
+		}
+		if dim {
+			msg = st.faint.Render(msg)
+		} else {
+			msg = st.red.Render(msg)
+		}
+		return []string{paneTitle(st, "agents", "", m.agentsAge(), width), " " + msg}
+	}
+	rows := m.agentRows()
+	var parts []string
+	for _, c := range agents.CountByKind(a.Agents) {
+		parts = append(parts, fmt.Sprintf("%s %d", c.Kind, c.Count))
+	}
+	if n := a.Broken(); n > 0 {
+		parts = append(parts, st.red.Render(fmt.Sprintf("%d broken", n)))
+	}
+	left := fmt.Sprintf("%d agents · %s", len(a.Agents), strings.Join(parts, " · "))
+	if m.filter != "" {
+		left = fmt.Sprintf("%d of %d · filter %q", len(rows), len(a.Agents), m.filter)
+	}
+	cols := m.agentColumns(width)
+	lines := []string{paneTitle(st, "agents", left, m.agentsAge(), width), columnHeader(st, cols)}
+	h := m.bodyHeight()
+	end := min(len(rows), m.offset+h)
+	for i := m.offset; i < end; i++ {
+		lines = append(lines, m.agentRow(st, cols, rows[i], i == m.cursor, width))
+	}
+	if len(rows) == 0 {
+		lines = append(lines, st.faint.Render(" (nothing to show)"))
+	}
+	return append(lines, m.filterLine()...)
+}
+
+func (m Model) agentRow(st styles, cols []column, a agents.Agent, selected bool, width int) string {
+	description := a.Description
+	if !a.Valid() {
+		description = "invalid: " + a.Problems[0]
+	}
+	values := map[string]string{"name": a.Name, "kind": orDash(a.Kind), "description": description}
+	var cells []string
+	for _, c := range cols {
+		cell := pad(values[c.name], c.width)
+		if !selected && !a.Valid() {
+			cell = st.red.Render(cell)
+		}
+		cells = append(cells, cell)
+	}
+	return m.finishRow(st, " "+strings.Join(cells, "  "), selected, width)
+}
+
+// agentLines is one agent in full: its frontmatter, its file, what is wrong with it, and its prompt wrapped to the width.
+func (m Model) agentLines(st styles, a *agents.Agent) []string {
+	width := m.width
+	lines := []string{paneTitle(st, "agent", a.Name+" · "+orDash(a.Kind), filepath.Base(a.File), width)}
+	kv := func(k, v string) string { return " " + st.faint.Render(pad(k, 12)) + v }
+	lines = append(lines, kv("name", a.Name), kv("kind", orDash(a.Kind)))
+	for i, l := range wrap(orDash(a.Description), width-14) {
+		if i == 0 {
+			lines = append(lines, kv("description", l))
+		} else {
+			lines = append(lines, kv("", l))
+		}
+	}
+	lines = append(lines, kv("file", truncate(a.File, width-14)))
+	if !a.Valid() {
+		lines = append(lines, kv("problems", st.red.Render(strings.Join(a.Problems, "; "))))
+	}
+	lines = append(lines, paneRule(st, " ── prompt ", "", width))
+	head := len(lines)
+	if a.Body == "" {
+		lines = append(lines, " "+st.faint.Render("(empty)"))
+	} else {
+		for _, l := range wrap(a.Body, width-2) {
+			lines = append(lines, " "+l)
+		}
+	}
+	// The frontmatter stays; the movement keys scroll the prompt under the rule.
+	return m.scrolled(lines, head, m.detailOff, m.fullHeight())
+}
+
 // ---- detail -----------------------------------------------------------------
 
 // detailLines is one task in full: its frontmatter as a table, then its body, within avail lines.
@@ -1324,9 +1471,9 @@ func paneRule(st styles, caption, right string, width int) string {
 func (m Model) helpLines(st styles) []string {
 	lines := []string{paneTitle(st, "help", "", "", m.width)}
 	keys := [][2]string{
-		{"1 2 3 4", "the pane with the table: tasks, flows, pod, reactor"},
+		{"1 2 3 4 5", "the pane with the table: tasks, flows, pod, reactor, agents"},
 		{"↑ ↓  j k", "move"}, {"pgup pgdn  g G", "page, first, last"},
-		{"enter", "open: the task, the job or the event full width, or the flow's trace (flow trace <id>)"},
+		{"enter", "open the row full width: a task, a flow's trace (flow trace <id>), a job, an event, an agent"},
 		{"→  l", "move to the pane beside the list; again from there, it opens full width"},
 		{"p", "show or hide the detail pane beside the tasks and flows lists"},
 		{"tab", "focus the detail pane, to scroll it"},
@@ -1357,7 +1504,12 @@ func (m Model) helpLines(st styles) []string {
 		reactorFrom += "  (" + m.reactor.Note + ")"
 	}
 	lines = append(lines, " "+pad("reactor", 16)+reactorFrom)
-	lines = append(lines, " "+pad("interval", 16)+m.opts.Interval.String()+" for the tracker")
+	agentsFrom := fmt.Sprintf("%s/, one <name>.md with name, kind and description, every %s", filepath.Join(m.project(), "agents"), m.opts.Interval)
+	if m.snap.Agents.Note != "" {
+		agentsFrom += "  (" + m.snap.Agents.Note + ")"
+	}
+	lines = append(lines, " "+pad("agents", 16)+agentsFrom)
+	lines = append(lines, " "+pad("interval", 16)+m.opts.Interval.String()+" for the tracker and the agents")
 	return lines
 }
 
@@ -1369,7 +1521,7 @@ func (m Model) keyBar(st styles) string {
 	if m.active {
 		scope = "all"
 	}
-	common := [][2]string{{"1-4", "pane"}, {"/", "filter"}, {"+/-", "interval"}, {"r", "reload"}, {"?", "help"}, {"q", "quit"}}
+	common := [][2]string{{"1-5", "pane"}, {"/", "filter"}, {"+/-", "interval"}, {"r", "reload"}, {"?", "help"}, {"q", "quit"}}
 	switch {
 	case m.typing:
 		keys = [][2]string{{"type", "to filter"}, {"enter", "keep"}, {"esc", "clear"}}
@@ -1379,7 +1531,7 @@ func (m Model) keyBar(st styles) string {
 		keys = [][2]string{{"↑↓", "scroll"}, {"r", "reload"}, {"esc", "back"}, {"q", "quit"}}
 	case m.inDetail():
 		keys = [][2]string{{"↑↓", "scroll"}, {"esc", "back"}, {"q", "quit"}}
-	case m.pane == panePod, m.pane == paneReactor:
+	case m.pane == panePod, m.pane == paneReactor, m.pane == paneAgents:
 		keys = append([][2]string{{"↑↓", "move"}, {"⏎", "open"}}, common...)
 	case m.pane == paneFlows && m.split():
 		keys = append([][2]string{{"↑↓", "move"}, {"→", "flow"}, {"⏎", "trace"}, {"p", "hide"}}, common...)
@@ -1402,7 +1554,7 @@ func (m Model) keyBar(st styles) string {
 		return " " + strings.Join(parts, "  ")
 	}
 	// On a narrow terminal the least-used keys leave the bar first; help and quit stay.
-	for _, drop := range []string{"r", "+/-", "1-4", "S", "b", "/", "p", "⇥", "⏎"} {
+	for _, drop := range []string{"r", "+/-", "1-5", "S", "b", "/", "p", "⇥", "⏎"} {
 		if lipgloss.Width(render(keys)) <= m.width {
 			break
 		}

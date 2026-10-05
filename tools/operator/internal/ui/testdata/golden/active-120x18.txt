@@ -11,8 +11,8 @@
  shipping     soon    broken                             (untriaged)     -             -      invalid: missing frontmat…
 
 
-
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
  pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 · ok 1 · queued 1 · running 1)             pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
- ↑↓ move  ⏎ open  p task pane  b all  S sort  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ agents   4   worker 2 · gate 1 · broken 1                                                       agents/ changed 2d ago
+ ↑↓ move  ⏎ open  p task pane  b all  S sort  1-5 pane  / filter  +/- interval  r reload  ? help  q quit

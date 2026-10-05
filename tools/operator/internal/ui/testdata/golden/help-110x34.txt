@@ -1,9 +1,9 @@
  operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●1+1 ✗1         2s  13:41:00
  help ────────────────────────────────────────────────────────────────────────────────────────────────────────
- 1 2 3 4         the pane with the table: tasks, flows, pod, reactor
+ 1 2 3 4 5       the pane with the table: tasks, flows, pod, reactor, agents
  ↑ ↓  j k        move
  pgup pgdn  g G  page, first, last
- enter           open: the task, the job or the event full width, or the flow's trace (flow trace <id>)
+ enter           open the row full width: a task, a flow's trace (flow trace <id>), a job, an event, an agent
  →  l            move to the pane beside the list; again from there, it opens full width
  p               show or hide the detail pane beside the tasks and flows lists
  tab             focus the detail pane, to scroll it
@@ -24,8 +24,8 @@
  flows           flow definitions --json · flow list --json · flow stuck --json, every 5s
  pod             pod status --json · pod list --json when it is up, every 5s
  reactor         reactor status --json · reactor events --since 1h --json, every 5s
- interval        2s for the tracker
-
+ agents          /repo/agents/, one <name>.md with name, kind and description, every 2s
+ interval        2s for the tracker and the agents
 
 
 

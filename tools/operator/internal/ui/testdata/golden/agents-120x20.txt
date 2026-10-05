@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4  pod ●1+1 ✗1  reactor 3/1h ✗1  2s  13:41:00
+ tasks    11   in-progress 1 · in-review 1 · blocked 3 · todo 2 · backlog 1 · done 1 · canceled 1 items/ changed 3m ago
+ flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
+ pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 · ok 1 · queued 1 · running 1)             pod 4s ago
+ reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
+ agents ── 4 agents · worker 2 · gate 1 · 1 broken ────────────────────────────────────────────── agents/ changed 2d ago
+ name          kind     description                                                                                   
+ broken        -        invalid: missing frontmatter opening '---'                                                    
+ cli           worker   A command-line tool in TypeScript on Node - a command, a file format, a schema, a store - in …  
+ judge         gate     Decides architectural changes - the ones with long-term consequence for the direction of the …
+ tui           worker   The terminal screen in Go - Bubble Tea, Lip Gloss, readers pinned by recorded output, golden …
+
+
+
+
+
+
+
+
+ ↑↓ move  ⏎ open  1-5 pane  / filter  +/- interval  r reload  ? help  q quit

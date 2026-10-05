@@ -8,7 +8,7 @@ before(async () => {
 })
 after(() => s.close())
 
-const TABS = ['href="/architect/"', 'href="/tasks"', 'href="/flows"', 'href="/pod"', 'href="/reactor"']
+const TABS = ['href="/architect/"', 'href="/tasks"', 'href="/flows"', 'href="/pod"', 'href="/reactor"', 'href="/agents"']
 
 test('each pane is a tab, and every page carries all of them', async () => {
   const cases: Array<[string, string[]]> = [
@@ -18,7 +18,8 @@ test('each pane is a tab, and every page carries all of them', async () => {
     ['/flows/machines', ['class="optab on"><b>flows', '<svg class="machine"', 'href="/flows/machines" class="on"']],
     ['/architect/', ['class="optab on"><b>architect', 'id="save-btn"']],
     ['/pod', ['class="optab on"><b>pod', 'heai-workshop running · 1 running · 1 queued · 3 done', 'web-ui-document-tabs', '>failed<', '1m31s', '4.2s']],
-    ['/reactor', ['class="optab on"><b>reactor', '<h2>sources</h2>', '<h2>rules</h2>', 'exited 3']]
+    ['/reactor', ['class="optab on"><b>reactor', '<h2>sources</h2>', '<h2>rules</h2>', 'exited 3']],
+    ['/agents', ['class="optab on"><b>agents', '<small>5 · worker 3 · gate 1 · <span class="red">⚠ 2 broken</span></small>', 'href="/agents/cli"', '<td>gate</td>', 'Decides architectural changes', 'missing frontmatter key: description', 'missing frontmatter opening']]
   ]
   for (const [path, want] of cases) {
     const r = await get(s.url + path)
@@ -43,13 +44,15 @@ test('a page per row, and a 404 for a row that is not there', async () => {
     ['/tasks/document-tabs', 'help-requested-by-web-ui'],
     ['/flows/20260906-024801-session-77f0', 'trace'],
     ['/pod/core-reviewer-merge-two-entities', 'exit 3: conflict in core'],
-    ['/reactor/20260911-030505-73776c', 'payload']
+    ['/reactor/20260911-030505-73776c', 'payload'],
+    ['/agents/judge', 'you never edit the code'],
+    ['/agents/stray', 'is not the file&#39;s name, stray']
   ]) {
     const r = await get(s.url + path!)
     assert.equal(r.status, 200, path)
     assert.ok(r.body.includes(want!), `${path}: missing ${want}`)
   }
-  for (const path of ['/tasks/nope', '/flows/--help', '/pod/no-such-job', '/reactor/nope', '/flows/machines/nope']) {
+  for (const path of ['/tasks/nope', '/flows/--help', '/pod/no-such-job', '/reactor/nope', '/flows/machines/nope', '/agents/README', '/agents/nope']) {
     assert.equal((await get(s.url + path)).status, 404, path)
   }
 })
@@ -74,7 +77,7 @@ test('the primary tabs are architect, tasks, flows, pod, reactor, in that order,
   for (const path of ['/tasks', '/flows/machines', '/architect/']) {
     const body = (await get(s.url + path)).body
     const order = [...body.matchAll(/class="optab[^"]*"><b>([a-z]+)<\/b>/g)].map((m) => m[1])
-    assert.deepEqual(order, ['architect', 'tasks', 'flows', 'pod', 'reactor'], path)
+    assert.deepEqual(order, ['architect', 'tasks', 'flows', 'pod', 'reactor', 'agents'], path)
   }
   const editor = (await get(s.url + '/architect/')).body
   assert.ok(!editor.includes('<!-- operator-nav -->'), 'the tabs are put in the editor page')

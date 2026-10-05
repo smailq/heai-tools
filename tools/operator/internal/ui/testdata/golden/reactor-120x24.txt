@@ -20,5 +20,5 @@
  03:05  drops       exited            exited.w2@1789095905658.7617@b0f27d…  session-exited → exited 3                   
  03:05  tasks_cli   task.todo         fetch-company-favicon@todo            pick-now → ok                               
  03:05  clock       tick              clock@2026-09-11T03:05:00.000Z        sweep → ok                                  
-
- ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ agents   4   worker 2 · gate 1 · broken 1                                                       agents/ changed 2d ago
+ ↑↓ move  ⏎ open  1-5 pane  / filter  +/- interval  r reload  ? help  q quit

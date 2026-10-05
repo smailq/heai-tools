@@ -15,6 +15,6 @@
 
 
 
-
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago
- ↑↓ move  ⏎ open  1-4 pane  / filter  +/- interval  r reload  ? help  q quit
+ agents   4   worker 2 · gate 1 · broken 1                                                       agents/ changed 2d ago
+ ↑↓ move  ⏎ open  1-5 pane  / filter  +/- interval  r reload  ? help  q quit

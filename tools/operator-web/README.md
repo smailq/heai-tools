@@ -1,7 +1,7 @@
 # operator-web
 
 [`operator`](../operator)'s panes as a web page, with what the terminal has no room for: an **editor for the architecture map**, and every flow definition drawn as its **state machine**.
-The tabs, in order: **architect** (the map editor), **tasks**, **flows** (with its **machines**), **pod**, **reactor**.
+The tabs, in order: **architect** (the map editor), **tasks**, **flows** (with its **machines**), **pod**, **reactor**, and **agents**, the project's agent files.
 It reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing but the map, and that only when you press Save.
 
 ```sh
@@ -18,7 +18,7 @@ There is no login. It binds to loopback by default, and it should stay there: an
 
 The same header and tab bar sit on every page, the map editor's included. Each tab carries its one-line summary - counts, `⚠` and `●` - so the tabs that are not open still say how things stand, as the terminal's one-line panes do.
 Pages refresh themselves in place every `--interval`, keeping the filter and the scroll; without JavaScript they reload. On the architect tab only the tab bar refreshes, so the editor keeps what you are doing.
-`/` reaches the filter; `1` to `5` are the tabs in order - architect, tasks, flows, pod, reactor - except while typing in a field. `/` itself opens the first tab that is on.
+`/` reaches the filter; `1` to `6` are the tabs in order - architect, tasks, flows, pod, reactor, agents - except while typing in a field. `/` itself opens the first tab that is on.
 
 | route | what it shows |
 | --- | --- |
@@ -30,7 +30,8 @@ Pages refresh themselves in place every `--interval`, keeping the filter and the
 | `/flows/machines`, `/flows/machines/<definition>` | the flows tab's second tab: a definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
 | `/pod`, `/pod/<job>` | the container and its work queue: every job, queued, running or done, with its state, exit, how long it took and its worker; a job's result and the last 40 lines of its stdout and stderr |
 | `/reactor`, `/reactor/<id>` | the sources, the rules and the last hour's events; an event with every action a rule took and its payload |
-| `/api/state` | the whole reading as JSON - the tracker, the territories architect lists, flows, pod, reactor - with `red` true when anything shown is red, and `absent` saying why each off tab is off |
+| `/agents`, `/agents/<name>` | every agent file in the project's `agents/`: name, kind, description; an agent's file and its prompt |
+| `/api/state` | the whole reading as JSON - the tracker, the territories architect lists, flows, pod, reactor, the agents without their prompts - with `red` true when anything shown is red, and `absent` saying why each off tab is off |
 
 ### Which tabs are on
 
@@ -43,6 +44,7 @@ A tab is on only for a tool the project has, found by its files:
 | flows | `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set |
 | pod | `pod.yaml` or `pod/` is in the project, or `HEAI_POD_STATE` is set |
 | reactor | `reactor.yaml`, `.heai/reactor.yaml`, `reactor/` or `.heai/reactor/` is in the project, or `HEAI_REACTOR_STATE` is set |
+| agents | the project has an `agents/` directory |
 
 The other tabs stay in the bar, in their places, so the number keys do not move; an off tab is dimmed, links nowhere, and says what was looked for where its summary would be - in full on hover. Its number key does nothing.
 The files are looked for every `--interval`, so a tab comes on within seconds of `heai-tasks init` or a first `heai-flow start`, with no restart.
@@ -88,6 +90,7 @@ Everything is read on two clocks into one reading every browser shares, so ten o
 - **Flows** are `heai-flow definitions --json`, `list --json` and `stuck --json`, run with `--dir` set to the map's directory, every `--poll`; a flow's page asks `heai-flow trace <id> --json` once per view, and only for an id flow listed. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent.
 - **The pod** is `heai-pod status --json` for the container and the queue's counts, and `heai-pod list --json` for every job. The queue is files on the host, so the jobs are listed whether or not the container is up, and even when the runtime cannot be asked at all, with why. A job's page asks `heai-pod show <job> --json --lines 40`, and only for a job pod listed. pod is asked only when `pod.yaml` or `pod/` is in the project, or `HEAI_POD_STATE` is set.
 - **The reactor** is `heai-reactor status --json` and `events --since 1h --json`; asked only when `reactor.yaml`, `.heai/reactor.yaml` or `reactor/` is in the project, or `HEAI_REACTOR_STATE` is set.
+- **The agents** are the files under the project's `agents/`, read every `--interval` like the tracker: each `<name>.md` opens with a frontmatter block of exactly `name`, `kind` and `description`, and the prompt follows; `README.md` there is not an agent. A file that does not keep that shape - no frontmatter, a key missing, a `name` that is not the file's - is listed in red with its first problem. Nothing here runs an agent; a task names one as its `agent`, and the page is where that name is looked up.
 - **A tool that fails** keeps its last answer, and its tab says `⚠ <reason> · as of <time>`.
 
 Times are shown in UTC, as the tools record them.
@@ -127,6 +130,7 @@ src/territories.ts heai-architect territories
 src/flows.ts       heai-flow definitions, list, stuck, trace
 src/pod.ts         heai-pod status and list
 src/reactor.ts     heai-reactor status and events
+src/agents.ts      the project's agents/, from its files
 src/server.ts      the routes and the guards
 src/pages.ts       the pages, through html`` (src/html.ts), which escapes everything it is given
 src/machine.ts     a flow definition's state-machine layout, as SVG

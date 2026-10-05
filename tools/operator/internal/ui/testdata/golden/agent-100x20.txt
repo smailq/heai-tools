@@ -1,0 +1,20 @@
+ operator  repo  tasks 11:  prog 1  review 1  blocked 3  todo 2  flows 5 ⚠4            2s  13:41:00
+ agent ── cli · worker ─────────────────────────────────────────────────────── lines 1-11 of 37
+ name        cli
+ kind        worker
+ description A command-line tool in TypeScript on Node - a command, a file format, a schema, a
+             store - in any of the four Node CLIs of this repository.
+ file        ../agents/testdata/agents/cli.md
+ ── prompt ─────────────────────────────────────────────────────────────────────────────────────────
+ You are given a task in one territory, and what that territory is: its layout, its contracts, what
+ must stay true. This file is how a command-line tool is built here, true of every one of them.
+ 
+ The command is the interface. A capability without a subcommand does not exist; every subcommand
+ answers with the exit split 0 answered yes or done, 1 answered no or refused, 2 the question could
+ not be asked; the usage text in `src/cli.ts` is kept exact, since `--help` is tested. A script-
+ facing answer is `--json`, one document on stdout, and nothing else is written to stdout. Errors
+ are one line on stderr saying what to do, not a stack; the tools split them into a UsageError
+ (exit 2) and the tool's own "no" (exit 1).
+ 
+ Files are the record. A format is a fixed key set in a fixed order, read and written by one
+ ↑↓ scroll  esc back  q quit
