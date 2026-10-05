@@ -9,7 +9,7 @@ import { writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { INDEX_FILE, ITEMS_DIR, type Store } from './store.ts'
 
-const BANNER = '<!-- GENERATED FILE - regenerate with `tasks build`. Do not edit by hand. -->'
+const BANNER = '<!-- GENERATED FILE - regenerate with `heai-tasks build`. Do not edit by hand. -->'
 
 const dash = (value: string): string => value || '-'
 /** A territory list as one token, so an entry stays greppable as `t:api,web`. */
@@ -27,10 +27,10 @@ export function renderIndex(store: Store): string {
     '',
     `**${store.tasks.length} tasks** - ${counts}`,
     '',
-    `Each entry: \`[slug](${ITEMS_DIR}/slug.md) · p:<priority> · t:<territory> - <title>\`, where \`-\` means unset and \`t:\` lists every territory the task sits in, comma-separated.`,
+    `Each entry: \`[slug](${ITEMS_DIR}/slug.md) · p:<priority> · t:<territory> · a:<agent> - <title>\`, where \`-\` means unset, \`t:\` lists every territory the task is scoped to, comma-separated, and \`a:\` names the agent meant to do it.`,
     "The slug is the task's stable id; the linked file holds the full task body and is the source of truth.",
     'Sections appear in pick-up order: finish `in-progress` work first, then take from `todo` (the committed queue), then triage `backlog`. `blocked` tasks name their blocker in the body. Within a section, triaged priority sorts first (urgent → low, unset last).',
-    "After changing any task's frontmatter, re-run `tasks build`. Full contract: [README.md](README.md).",
+    "After changing any task's frontmatter, re-run `heai-tasks build`. Full contract: [README.md](README.md).",
     ''
   ]
 
@@ -43,7 +43,7 @@ export function renderIndex(store: Store): string {
     }
     for (const t of group) {
       lines.push(
-        `- [${t.slug}](${ITEMS_DIR}/${t.slug}.md) · p:${dash(t.priority)} · t:${territories(t.territory)} - ${t.title}`
+        `- [${t.slug}](${ITEMS_DIR}/${t.slug}.md) · p:${dash(t.priority)} · t:${territories(t.territory)} · a:${dash(t.agent)} - ${t.title}`
       )
     }
     lines.push('')

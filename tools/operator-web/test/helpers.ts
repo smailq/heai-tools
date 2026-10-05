@@ -25,7 +25,7 @@ export function fixtureReading(): Reading {
     ...emptyReading(),
     tracker: loadTracker(join(FIXTURES, 'tracker')),
     map: '/repo/architecture.yaml',
-    owners: { owners: { core: 'core-reviewer', desktop: 'desktop-owner', ui: 'ui-owner' }, repos: ['app'], note: '', mapMtime: 0 },
+    territories: { names: ['core', 'desktop', 'ui'], note: '', mapMtime: 0 },
     flows: {
       definitions: fixture<Definition[]>('flow', 'definitions.json'),
       flows: fixture<Flow[]>('flow', 'list.json'),

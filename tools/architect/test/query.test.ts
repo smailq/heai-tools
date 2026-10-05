@@ -5,62 +5,54 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { stringify } from 'yaml'
 import { UsageError } from '../src/errors.ts'
-import { actorContext, actorsView, contextChain, loadMap, ownerOf, resolveMapPath, territoriesView } from '../src/query.ts'
+import { contextChain, loadMap, resolveMapPath, territoriesView, territoryOf } from '../src/query.ts'
 import type { ArchitectureMap } from '../src/validate.ts'
 
 const MAP: ArchitectureMap = {
   version: 1,
-  actors: {
-    kyu: { type: 'human', identity: '@kyu' },
-    api: { type: 'llm-agent', context: 'Owns the API.' },
-    maintainer: { type: 'llm-agent', context: 'Watches.', watches: ['service', 'platform'] }
-  },
   repositories: { app: {} },
   territories: {
-    platform: { owner: 'kyu', scope: [{ repository: 'app', globs: ['architecture.yaml', 'ci/**'] }], context: 'Governance.' },
-    service: { owner: 'api', scope: [{ repository: 'app', globs: ['src/**'] }], context: 'Service context.' },
+    platform: { scope: [{ repository: 'app', globs: ['architecture.yaml', 'ci/**'] }], context: 'Governance.' },
+    service: { scope: [{ repository: 'app', globs: ['src/**'] }], context: 'Service context.' },
     'service-db': { parent: 'service', scope: [{ repository: 'app', globs: ['src/db/**'] }], context: 'DB context.' }
   }
 }
 
-describe('ownerOf', () => {
-  it('resolves a path through globs, children and the parent chain', () => {
-    assert.deepEqual(ownerOf(MAP, 'src/db/schema.ts'), { path: 'src/db/schema.ts', repository: 'app', territory: 'service-db', owner: 'api', ownerType: 'llm-agent' })
-    assert.equal(ownerOf(MAP, 'src/index.ts').territory, 'service')
-    assert.equal(ownerOf(MAP, './ci/build.yml').owner, 'kyu')
-    assert.equal(ownerOf(MAP, 'README.md').territory, null)
+describe('territoryOf', () => {
+  it('resolves a path through globs and children', () => {
+    assert.deepEqual(territoryOf(MAP, 'src/db/schema.ts'), { path: 'src/db/schema.ts', repository: 'app', territory: 'service-db' })
+    assert.equal(territoryOf(MAP, 'src/index.ts').territory, 'service')
+    assert.equal(territoryOf(MAP, './ci/build.yml').territory, 'platform')
+    assert.equal(territoryOf(MAP, 'README.md').territory, null)
   })
   it('needs a repository name only when the map governs several', () => {
     const multi: ArchitectureMap = { ...MAP, repositories: { app: {}, web: {} } }
-    assert.throws(() => ownerOf(multi, 'src/x'), (e: UsageError) => /name one with --repo/.test(e.message))
-    assert.equal(ownerOf(multi, 'src/x', 'app').territory, 'service')
-    assert.throws(() => ownerOf(multi, 'src/x', 'nope'), UsageError)
+    assert.throws(() => territoryOf(multi, 'src/x'), (e: UsageError) => /name one with --repo/.test(e.message))
+    assert.equal(territoryOf(multi, 'src/x', 'app').territory, 'service')
+    assert.throws(() => territoryOf(multi, 'src/x', 'nope'), UsageError)
   })
 })
 
 describe('views', () => {
-  it('list territories with resolved owners, and actors with what they own and watch', () => {
+  it('lists every territory with its parent, globs, edges and whether it has context', () => {
     const t = territoriesView(MAP)
-    assert.equal(t.find((x) => x.name === 'service-db')!.owner, 'api')
-    assert.equal(t.find((x) => x.name === 'service-db')!.ownerType, 'llm-agent')
-    assert.equal(t.find((x) => x.name === 'platform')!.ownerType, 'human')
-    assert.equal(t.find((x) => x.name === 'service-db')!.declaredOwner, null)
-    assert.deepEqual(territoriesView(MAP, 'api').map((x) => x.name), ['service', 'service-db'])
-    const a = actorsView(MAP)
-    assert.deepEqual(a.find((x) => x.name === 'maintainer'), { name: 'maintainer', type: 'llm-agent', identity: null, owns: [], watches: ['service', 'platform'], hasContext: true })
+    assert.deepEqual(t.map((x) => x.name), ['platform', 'service', 'service-db'])
+    assert.deepEqual(t.find((x) => x.name === 'service-db'), {
+      name: 'service-db',
+      parent: 'service',
+      globs: [{ repository: 'app', globs: ['src/db/**'] }],
+      dependsOn: [],
+      hasContext: true
+    })
   })
 })
 
 describe('context', () => {
-  it('chains ancestors outermost first and composes an actor from own, owned and watched', () => {
+  it('chains ancestors outermost first, and knows no territory it was not given', () => {
     assert.deepEqual(contextChain(MAP, 'service-db').map((l) => l.from), ['territory:service', 'territory:service-db'])
-    const c = actorContext(MAP, 'maintainer')
-    assert.deepEqual(c.own.map((l) => l.context), ['Watches.'])
-    assert.deepEqual(c.owned, [])
-    assert.deepEqual(c.watched.map((w) => [w.territory, w.owner]), [['service', 'api'], ['platform', 'kyu']])
-    const api = actorContext(MAP, 'api')
-    assert.deepEqual(api.owned.map((o) => o.territory), ['service', 'service-db'])
-    assert.throws(() => actorContext(MAP, 'nobody'), UsageError)
+    assert.deepEqual(contextChain(MAP, 'service-db').map((l) => l.context), ['Service context.', 'DB context.'])
+    assert.deepEqual(contextChain(MAP, 'platform').map((l) => l.context), ['Governance.'])
+    assert.throws(() => contextChain(MAP, 'nowhere'), UsageError)
   })
 })
 

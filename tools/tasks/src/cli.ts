@@ -22,7 +22,7 @@ const USAGE = `heai-tasks - a file-based task tracker kept in markdown
   heai-tasks init [--dir tasks] [--map <path>]
   heai-tasks new <slug> --title "..." [--status todo] [--priority high]
   heai-tasks set <slug> --status in-progress [--note "..."]
-  heai-tasks list [--json] [--status <name>] [--territory <name>]
+  heai-tasks list [--json] [--status <name>] [--territory <name>] [--agent <name>]
   heai-tasks show <slug> [--json]
   heai-tasks build [--dir tasks] [--check]
 
@@ -39,14 +39,16 @@ Properties (new, set) - an empty value clears one, e.g. --priority=
   --title <text>       the human-readable title
   --status <name>      lifecycle state
   --priority <name>    urgent, high, medium, low
-  --territory <names>  the territory it routes to; several, comma-separated, when
-                       the work crosses a boundary
+  --territory <names>  the territory the work is scoped to; several, comma-separated,
+                       when it crosses a boundary
+  --agent <name>       the agent meant to do it, a name the project knows
   --body <text>        (new) the body; reads stdin when given as - or omitted
   --note <text>        (set) a line appended to the body; bodies are never rewritten
 
 Filters (list):
   --status <name>      only tasks in that state
   --territory <name>   only tasks whose territory list names it
+  --agent <name>       only tasks assigned to that agent
 
 Options:
   --dir <path>         the tracker directory; default HEAI_TASKS, else
@@ -74,10 +76,11 @@ function table(tasks: Task[]): string {
     t.status,
     dash(t.priority),
     dash(territoriesOf(t.territory).join(',')),
+    dash(t.agent),
     dash(t.modified_at),
     t.title
   ])
-  const header = ['slug', 'status', 'priority', 'territory', 'modified', 'title']
+  const header = ['slug', 'status', 'priority', 'territory', 'agent', 'modified', 'title']
   const widths = header.map((h, i) => Math.max(h.length, ...rows.map((r) => r[i]!.length)))
   const line = (cells: string[]) =>
     cells.map((c, i) => (i === cells.length - 1 ? c : c.padEnd(widths[i]!))).join('  ').trimEnd()
@@ -86,7 +89,7 @@ function table(tasks: Task[]): string {
 
 /** Refuse a property flag on a read-only command, where it can only be a filter that does not exist. */
 function refuseProperties(command: string, values: Record<string, string | undefined>, allowed: string[]): void {
-  for (const flag of ['title', 'status', 'priority', 'territory', 'body', 'note']) {
+  for (const flag of ['title', 'status', 'priority', 'territory', 'agent', 'body', 'note']) {
     if (values[flag] !== undefined && !allowed.includes(flag)) {
       throw new UsageError(
         allowed.length
@@ -98,7 +101,7 @@ function refuseProperties(command: string, values: Record<string, string | undef
 }
 
 function listCommand(dir: string, values: Record<string, string | undefined>, json: boolean): number {
-  refuseProperties('list', values, ['status', 'territory'])
+  refuseProperties('list', values, ['status', 'territory', 'agent'])
   const status = values['status']
   if (status !== undefined && !TASK_STATUSES.includes(status as TaskStatus)) {
     throw new UsageError(`status ${JSON.stringify(status)} not in [${TASK_STATUSES.join(', ')}]`)
@@ -107,10 +110,15 @@ function listCommand(dir: string, values: Record<string, string | undefined>, js
   if (territory !== undefined && !territory.trim()) {
     throw new UsageError('--territory needs a territory name to filter by')
   }
+  const agent = values['agent']
+  if (agent !== undefined && !agent.trim()) {
+    throw new UsageError('--agent needs an agent name to filter by')
+  }
 
   const tasks = load(dir)
     .tasks.filter((t) => status === undefined || t.status === status)
     .filter((t) => territory === undefined || territoriesOf(t.territory).includes(territory.trim()))
+    .filter((t) => agent === undefined || t.agent === agent.trim())
     .sort(pickUpOrder)
 
   console.log(json ? JSON.stringify(tasks.map(taskRecord), null, 2) : table(tasks))
@@ -171,7 +179,8 @@ function properties(values: Record<string, string | undefined>): Record<string, 
     title: values['title'],
     status: values['status'],
     priority: values['priority'],
-    territory: values['territory']
+    territory: values['territory'],
+    agent: values['agent']
   }
   return Object.fromEntries(
     Object.entries(fields).filter(([, v]) => v !== undefined)
@@ -260,6 +269,7 @@ async function main(): Promise<number> {
         status: { type: 'string' },
         priority: { type: 'string' },
         territory: { type: 'string' },
+        agent: { type: 'string' },
         body: { type: 'string' },
         note: { type: 'string' },
         json: { type: 'boolean' },

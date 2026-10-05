@@ -40,16 +40,12 @@
       <div id="system-view">
         <div id="tabbar">
           <button type="button" class="tab" id="tab-general">General</button>
-          <button type="button" class="tab" id="tab-actors">Actors</button>
           <button type="button" class="tab" id="tab-territories">Territories</button>
           <span class="tab-spacer"></span>
-          <button type="button" class="tab-add" id="add-human-btn" hidden>+ human</button>
-          <button type="button" class="tab-add" id="add-agent-btn" hidden>+ llm-agent</button>
           <button type="button" class="tab-add" id="add-territory-btn" hidden>+ territory</button>
         </div>
         <div id="tab-content">
           <div id="general-page" hidden></div>
-          <div id="actors-page" hidden></div>
           <div id="canvas-wrap"><div id="canvas"></div></div>
         </div>
         <div id="inspector"></div>
@@ -66,7 +62,7 @@
         this page is editing; nothing is written until you <strong>Save</strong>,
         which writes the map file this operator reads.
       </p>
-      <textarea id="paste-input" spellcheck="false" placeholder="version: 1&#10;actors:&#10;  …"></textarea>
+      <textarea id="paste-input" spellcheck="false" placeholder="version: 1&#10;repositories:&#10;  …&#10;territories:&#10;  …"></textarea>
       <p id="paste-error"></p>
       <div class="modal-btns">
         <button type="button" id="paste-template">Start from a template</button>

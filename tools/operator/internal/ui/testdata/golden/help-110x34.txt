@@ -20,12 +20,12 @@
  tracker         /repo/tasks
  map             /repo/architecture.yaml
  project         /repo
- routes to       architect territories --json · architect check --format json, when the map's mtime moves
  blocker         the first `Blocked by [slug](slug.md)` in the body, and that task's status
  flows           flow definitions --json · flow list --json · flow stuck --json, every 5s
  pod             pod status --json · pod list --json when it is up, every 5s
  reactor         reactor status --json · reactor events --since 1h --json, every 5s
  interval        2s for the tracker
+
 
 
 

@@ -2,46 +2,28 @@
 version: 1
 unowned: fail                      # a path no territory claims is a violation
 
-actors:
-  smailq:
-    type: human
-    identity: '@smailq'
-  api-owner:
-    type: llm-agent
-    context: |
-      You own the HTTP API. Keep handlers thin; business rules live in core.
-  # core's agent also watches the API.
-  core-owner:
-    type: llm-agent
-    context: |
-      You own the domain model and the database layer.
-    watches: [api]                 # sees api's changes and context; may not change it
-
 repositories:
   app:
     remotePath: github.com/example/app
     localPath: ../app              # where a checkout sits on this machine
 
 territories:
-  platform:                        # the human-owned territory
-    owner: smailq
+  platform:                        # the map, CI and the guard tooling
     scope:
       - repository: app
         globs: ['architecture.yaml', '.github/**', 'ci/**']
     context: The map protects everything else.
 
   core:
-    owner: core-owner
     scope:
       - repository: app
         globs:
           - 'src/core/**'
     context: |
       Invariants: no I/O in the domain model; every aggregate has a test.
-
+  # The API sits on core and nothing else.
   api:
-    owner: api-owner
     scope:
       - repository: app
         globs: ['src/api/**']
-    dependsOn: [core]
+    dependsOn: [core]              # may import core; core may not import it

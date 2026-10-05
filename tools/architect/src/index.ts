@@ -3,12 +3,9 @@ export { UsageError } from './errors.ts'
 export {
   claims,
   createValidator,
-  effectiveOwner,
   entriesFor,
   TEMPLATE,
   unownedPosture,
-  type Actor,
-  type ActorType,
   type ArchitectureMap,
   type Exclusion,
   type Repository,
@@ -21,18 +18,15 @@ export {
 } from './validate.ts'
 export { compileGlob, contains, GlobError, intersects, matchesAny, matchesGlob, validateGlob } from './glob.ts'
 export {
-  actorContext,
-  actorsView,
   contextChain,
   DEFAULT_SCHEMA,
   loadMap,
-  ownerOf,
   resolveMapPath,
   territoriesView,
-  type ActorView,
+  territoryOf,
   type ContextLayer,
   type LoadedMap,
-  type OwnerAnswer,
+  type TerritoryAnswer,
   type TerritoryView
 } from './query.ts'
 export { parseDiffPaths } from './diff.ts'
@@ -42,12 +36,9 @@ export {
   resolveSubject,
   runGate,
   subjectGlobs,
-  territoriesOwnedBy,
   type Classification,
   type Finding,
   type GateInput,
   type GateResult,
-  type Subject,
-  type SubjectKind,
-  type SubjectRequest
+  type Subject
 } from './gate.ts'

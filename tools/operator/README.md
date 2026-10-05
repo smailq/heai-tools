@@ -2,7 +2,7 @@
 
 An `htop`-shaped terminal view of what the heai tools are doing: one screen, refreshed on its own clocks, that reads each tool's own files and asks each tool's own CLI, holds nothing but the last thing it read, and changes nothing: every key on it moves, opens, filters or reloads, and every change to a task, a flow or the reactor is made at the shell with that tool's own command.
 
-Four panes: **tasks**, every task in the tracker with the actor it routes to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
+Four panes: **tasks**, every task in the tracker with the agent it is assigned to and where its blocker stands; **flows**, every flow `flow` knows of, all definitions together; **pod**, the container and every job in its queue; **reactor**, each source's health, each rule's last run, and the last hour's events with what they caused.
 One pane is a table and the other three are one line each, in a fixed order, so the screen never jumps.
 The map pane is designed in [`DESIGN.md`](DESIGN.md) and not built yet.
 The same panes in a browser, with every flow definition drawn as its state machine and an editor for the architecture map, are [`operator-web`](../operator-web).
@@ -13,7 +13,7 @@ go build -o heai-operator ./cmd/heai-operator     # or: go install ./cmd/heai-op
 cd ../../../aw3-operator && heai-operator    # from the project directory, or HEAI_DIR=... heai-operator from anywhere
 ```
 
-Requires Go 1.26 or newer to build; the result is one static binary with no runtime dependencies. Each GitHub release attaches it for linux and darwin, amd64 and arm64, and `go install github.com/smailq/heai-tools/tools/operator/cmd/heai-operator@latest` builds it from source. It asks the other tools by their released names: `heai-architect`, `heai-flow`, `heai-pod`, `heai-reactor` and `heai-tasks` must be on PATH.
+Requires Go 1.26 or newer to build; the result is one static binary with no runtime dependencies. Each GitHub release attaches it for linux and darwin, amd64 and arm64, and `go install github.com/smailq/heai-tools/tools/operator/cmd/heai-operator@latest` builds it from source. It asks the other tools by their released names: `heai-flow`, `heai-pod`, `heai-reactor` and `heai-tasks` must be on PATH.
 It is the first tool in this repository not written in TypeScript, for the reason the design gives: a full-screen loop over a terminal is what Go's TUI ecosystem was built for, and a program a person opens and closes all day should start in milliseconds.
 
 ## The screen
@@ -21,11 +21,11 @@ It is the first tool in this repository not written in TypeScript, for the reaso
 ```
  operator  aw3-operator  tasks 91:  prog 2  review 1  blocked 3  todo 4  flows 19 ⚠2  pod ●2+1  reactor 12/1h ⚠1   2s  14:02:11
  tasks ── all 91 of 91 ─────────────────────────────────────────────────────────────── items/ changed 3m ago
- status       pri     slug                           territory       routes to         age
- in-progress  high    add-place-entity               core,desktop    desktop-owner     2d
- blocked      high    document-tabs                  ui              ui-owner          1d     ← help-requested-by-web-ui
- blocked      -       multiple-workspaces            core,desktop    desktop-owner     6d     ← ontology-entity-identity (blocker canceled)
- todo         -       add-command-line-shortcut      -               (untriaged)       11d
+ status       pri     slug                           territory       agent         age
+ in-progress  high    add-place-entity               core,desktop    desktop       2d
+ blocked      high    document-tabs                  ui              cli           1d     ← help-requested-by-web-ui
+ blocked      -       multiple-workspaces            core,desktop    -             6d     ← ontology-entity-identity (blocker canceled)
+ todo         -       add-command-line-shortcut      (untriaged)     -             11d
  flows    ⚠ 2 stuck > 1h   session 14 (running 2 · blocked 1 · clean 10)   request 2 (todo 2)          flow 4s ago
  pod      ● heai-workshop running   jobs 6 (ok 3 · running 2 · queued 1)                                  pod 4s ago
  reactor  ● clock  ● drops  ● tasks_cli  ○ github   12 events/1h · 4 rules                            reactor 5s ago
@@ -48,14 +48,14 @@ A file that does not meet the tracker's format is listed too, in red, with its f
 | --- | --- |
 | `status`, `pri` | the task's own frontmatter; empty priority is `-`, meaning not yet triaged |
 | `slug` | the file name, the task's stable id |
-| `territory` | the task's territories, sorted and unique, as the tracker writes them |
-| `routes to` | the actor owning each territory, asked of `heai-architect territories --json`; `?` for a territory the map does not declare, `(untriaged)` for no territory at all |
+| `territory` | the task's territories, sorted and unique, as the tracker writes them; `(untriaged)` for no territory at all |
+| `agent` | the task's own `agent`, the name of who is meant to do it; `-` when it is unassigned. What the name means is the project's business |
 | `age` | days since `modified_at`, when the task last moved |
 | the last column | a blocked task's blocker, from the first `Blocked by [slug](slug.md)` in its body, and where that blocker stands: red when it is `canceled` or not in the tracker, since that task will never unblock on its own |
 
-Columns leave as the terminal narrows - age first, then routes to, then territory, then priority - and the key bar drops its least-used keys before it drops help and quit.
+Columns leave as the terminal narrows - age first, then agent, then territory, then priority - and the key bar drops its least-used keys before it drops help and quit.
 
-**The task pane.** From 100 columns the screen splits: the list on the left, and on the right the task under the cursor - its frontmatter as a table, its territories with the actor each routes to, its blocker and that blocker's status, the file's path, and its body, wrapped to the pane.
+**The task pane.** From 100 columns the screen splits: the list on the left, and on the right the task under the cursor - its frontmatter as a table, its territories and its agent, its blocker and that blocker's status, the file's path, and its body, wrapped to the pane.
 Moving the cursor changes the task; **`→`** or `l` moves to the task pane - `⇥` does the same - so `↑` `↓` and `pgup` `pgdn` scroll a long body, and the rule above the body says which lines are showing; `→` again from there opens the task full width, and `esc` goes back to the list.
 The list keeps its status, priority and slug columns and its blocker notes, and gives the rest of its columns to the task pane, which shows them in full.
 
@@ -63,13 +63,14 @@ The list keeps its status, priority and slug columns and its blocker notes, and 
  tasks ── all 11 of 11 ────────────────── items/ changed 3m ago│ task ── blocked · document-tabs ──── modified 2026-09-06
  status       pri     slug                                     │ title       Document tabs
  in-progress  high    add-place-entity                         │ status      blocked
- blocked      high    document-tabs   ← help-requested-by-web-ui│ territory   ui  → ui-owner
- blocked      -       multiple-workspaces  ← ontology-entity-i…│ blocked by  help-requested-by-web-ui  (todo)
+ blocked      high    document-tabs   ← help-requested-by-web-ui│ territory   ui
+ blocked      -       multiple-workspaces  ← ontology-entity-i…│ agent       cli
+                                                               │ blocked by  help-requested-by-web-ui  (todo)
                                                                │ ── body ─────────────────────────────── lines 1-4 of 4
                                                                │ Tabs.
 ```
 
-**`p`** hides the task pane and shows it again; hidden, the list takes the whole width and gets its territory, routes-to and age columns back.
+**`p`** hides the task pane and shows it again; hidden, the list takes the whole width and gets its territory, agent and age columns back.
 Under 100 columns the list has the screen to itself, and **Enter** opens the task full width; Enter does the same when split, for a body worth the whole screen.
 
 ### flows
@@ -194,8 +195,7 @@ The tracker's statuses and pod's job states are fixed vocabularies, so they are 
 
 Everything on the screen is read fresh on its pane's clock; the process keeps only the last reading.
 
-- **The tracker** is read from its files every two seconds, under the format contract the tasks tool's README states: one file per task under `items/`, exactly six frontmatter keys, its status and priority vocabularies, and a comma-separated territory list. This is a second reader of that format, written on purpose (root README, principle 1) and pinned by the same fixture the tasks tool's own model test parses, in [`internal/tracker`](internal/tracker). `heai-tasks list --json` and `show --json` exist now; this reader predates them and has not been replaced.
-- **Owners and repositories** are asked of `heai-architect territories --json --map <path>` and `heai-architect check --format json --map <path>`, never read from the map itself, so this tool holds no second map reader or glob dialect. architect is asked again only when the map's mtime moves. Without architect on `PATH`, or without a map, the column shows `-` and the pane's title says why. [`internal/owners`](internal/owners) pins both outputs.
+- **The tracker** is read from its files every two seconds, under the format contract the tasks tool's README states: one file per task under `items/`, exactly seven frontmatter keys, its status and priority vocabularies, an agent that is a name or empty, and a comma-separated territory list. This is a second reader of that format, written on purpose (root README, principle 1) and pinned by the same fixture the tasks tool's own model test parses, in [`internal/tracker`](internal/tracker). `heai-tasks list --json` and `show --json` exist now; this reader predates them and has not been replaced.
 - **The blocker** is the tracker's own convention - the `Blocked by` note - and its state is that slug's status in the same tracker.
 - **Flows** are `heai-flow definitions --json`, `heai-flow list --json` and `heai-flow stuck --json`, run with `--dir` set to the map's directory so flow looks beside the same map, every five seconds. The table is the `list` answer; nothing is asked per definition. The output shape is recorded under [`testdata/flow/`](testdata/flow) from a real `heai-flow start` and pinned by [`internal/flows`](internal/flows): that recording is the format contract. The flow pane's timeline is one more call, `heai-flow trace <id> --json`, made for the flow under the cursor when the cursor moves onto it and again after each flows poll; the recording is [`testdata/flow/trace.json`](testdata/flow/trace.json), and `⏎` asks again without `--json` for the printed form. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent and a screen must not leave a state directory behind.
 - **The pod** is `heai-pod status --json` and `heai-pod list --json`, both run with `--dir <project>` on the same clock; `list` reads the queue on the host, so it is asked whether or not the container is up. `status` exits `1` with its JSON when the container is down, and that is read as an answer, not a failure. A job's `stdout` and `stderr` are read from the directory `list` names, the two files read here that are not a tool's output. pod is asked only when `pod.yaml` or `pod/` sits in the project, or `HEAI_POD_STATE` is set, because `heai-pod status` creates `pod/` when it is absent. The outputs are recorded under [`testdata/pod/`](testdata/pod) through the tool against its fake runtime and pinned by [`internal/pod`](internal/pod).
@@ -204,7 +204,7 @@ Everything on the screen is read fresh on its pane's clock; the process keeps on
 - **A pane whose tool fails** keeps its last table and says `⚠ <reason> · as of <time>` on its title; a pane that never answered shows why: not on `PATH`, not configured here, or the command's last line.
 
 Reading the tracker has no side effects.
-Asking architect, flow, pod and reactor has none either: every command this tool runs is a query.
+Asking flow, pod and reactor has none either: every command this tool runs is a query.
 There are no writes. An earlier build bound `heai-tasks set`, `heai-flow start session`, the project's cancel script and `heai-reactor tick` to keys; they were removed so the screen is only ever a reading of the tools, and a change is made where it is recorded, at the shell with the tool's own command.
 
 ## Discovery
@@ -218,8 +218,8 @@ Flags first, then the specific environment variables, then the project directory
 | the map | `--map <path>` | `HEAI_MAP` | `$HEAI_DIR/architecture.yaml`, else the tracker's `tasks.yaml` `map:`, else `.heai/architecture.yaml`, else `architecture.yaml` |
 
 The project directory is what pod and reactor are asked about; under `HEAI_DIR` the map, the tracker and every tool's state sit in it.
-The tracker's own configuration sits between the environment and the convention because it is the tracker's statement of which map validates its territories, and this tool should agree with the tracker about who owns what.
-flow is given the map's directory as `--dir`, so it finds its state beside the same map this screen reads.
+The tracker's own configuration sits between the environment and the convention because it is the tracker's statement of which map validates its territories, and this tool should look where the tracker looks.
+The map is not read here; flow is given its directory as `--dir`, so it finds its state beside the same map the tracker names.
 
 ## The CLI
 
@@ -227,7 +227,7 @@ flow is given the map's directory as `--dir`, so it finds its state beside the s
 heai-operator                  the screen
 heai-operator --once                the screen, once, to stdout, then exit
 heai-operator --once --active       only the active tasks, not the backlog and the closed
-heai-operator --json                the tracker, the flows, the pod and the reactor as the screen read them, with owners, counts and whether anything is red
+heai-operator --json                the tracker, the flows, the pod and the reactor as the screen read them, with counts and whether anything is red
 heai-operator --interval 5s         the tracker's refresh interval (default 2s)
 heai-operator --poll 10s            the clock for the panes that ask flow, pod and reactor (default 5s)
 heai-operator --width 100           --once: columns to render (default $COLUMNS, else 120)
@@ -252,7 +252,6 @@ The interactive screen exits `0` on `q` whatever it shows; the split is for the 
 cmd/heai-operator/main.go  flags, discovery, --once and --json, exit codes
 internal/discover/        the project directory, the tracker, the map
 internal/tracker/         the tracker reader and its fixture: testdata/tracker/ has one task per case
-internal/owners/          heai-architect territories --json and check --format json, recorded in testdata/
 internal/flows/           heai-flow definitions --json, list --json, stuck --json and trace; the fixtures are testdata/flow/ at the root
 internal/pod/             heai-pod status --json and heai-pod list --json; the fixtures are testdata/pod/ at the root
 internal/reactor/         heai-reactor status --json and heai-reactor events --json; the fixtures are testdata/reactor/ at the root

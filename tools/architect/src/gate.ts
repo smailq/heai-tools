@@ -1,31 +1,19 @@
-// The scope gate: every changed path classified against the territories the
-// subject may change. It runs over the validated map like every other
+// The scope gate: every changed path classified against the territories a
+// unit of work was scoped to. It runs over the validated map like every other
 // subcommand, and the checks it keeps on the map itself are assertions for a
 // library caller that hands it an object the validator has not seen.
 
 import { UsageError } from './errors.ts'
 import { GlobError, validateGlob } from './glob.ts'
-import {
-  claims,
-  effectiveOwner,
-  entriesFor,
-  unownedPosture,
-  type ActorType,
-  type ArchitectureMap,
-  type UnownedPosture
-} from './validate.ts'
+import { claims, entriesFor, unownedPosture, type ArchitectureMap, type UnownedPosture } from './validate.ts'
 
-export type Classification = 'owned' | 'foreign' | 'unowned'
+export type Classification = 'inside' | 'outside' | 'unowned'
 
 export interface Finding {
   path: string
   classification: Classification
-  /** The territory that owns the path, when one does. */
+  /** The territory that claims the path, when one does. */
   territory: string | null
-  /** That territory's owner. */
-  owner: string | null
-  /** The owner's declared type, for the report. */
-  ownerType: ActorType | null
   /** Whether this finding fails the gate. */
   fatal: boolean
   note?: string
@@ -48,36 +36,9 @@ export interface GateInput {
   paths: readonly string[]
 }
 
-export type SubjectKind = 'territory' | 'actor'
-
-/** Who the change is attributed to, and what that lets them touch. */
+/** What the change was scoped to: the territories it may touch. */
 export interface Subject {
-  kind: SubjectKind
-  name: string
-  /** Territories this subject may change. */
   territories: string[]
-  /** For a territory subject, who owns it. */
-  owner?: string
-}
-
-export interface SubjectRequest {
-  territory?: string | undefined
-  actor?: string | undefined
-  /** A bare name, resolved against both namespaces. */
-  name?: string | undefined
-}
-
-/**
- * A territory's owner through the parent chain. A validated map always
- * resolves one; an object that does not is a map problem, reported rather than
- * guessed at.
- */
-function ownerOrThrow(map: ArchitectureMap, territory: string): string {
-  const owner = effectiveOwner(map, territory)
-  if (owner === null) {
-    throw new UsageError(`map is invalid: territory "${territory}" resolves to no owner through its parent chain`)
-  }
-  return owner
 }
 
 /**
@@ -86,12 +47,6 @@ function ownerOrThrow(map: ArchitectureMap, territory: string): string {
  */
 export function claimants(map: ArchitectureMap, repository: string, path: string): string[] {
   return Object.keys(map.territories).filter((t) => claims(map, repository, t, path))
-}
-
-export function territoriesOwnedBy(map: ArchitectureMap, owner: string): string[] {
-  // Ownership resolves through the parent chain, so a child that declares no
-  // owner belongs to the actor its nearest ancestor names.
-  return Object.keys(map.territories).filter((name) => effectiveOwner(map, name) === owner)
 }
 
 /**
@@ -119,40 +74,18 @@ function validateGlobs(map: ArchitectureMap, repository: string): void {
   }
 }
 
-export function resolveSubject(map: ArchitectureMap, req: SubjectRequest): Subject {
-  const explicit = (
-    [
-      ['territory', req.territory],
-      ['actor', req.actor]
-    ] as [SubjectKind, string | undefined][]
-  ).filter(([, v]) => v !== undefined) as [SubjectKind, string][]
-
-  if (explicit.length > 1) throw new UsageError('give only one of --territory, --actor')
-  if (explicit.length === 1) return build(map, explicit[0]![0], explicit[0]![1])
-  if (!req.name) throw new UsageError('name the subject: --territory, --actor, or a bare name')
-
-  const kinds: SubjectKind[] = []
-  if (map.territories[req.name]) kinds.push('territory')
-  if (map.actors[req.name]) kinds.push('actor')
-  if (kinds.length === 0) {
-    throw new UsageError(`"${req.name}" is not a territory or an actor in the map`)
+/**
+ * The subject of a gate: one or more territories, each declared in the map. A
+ * unit of work that crosses a boundary names every territory it was scoped
+ * to, and the gate judges against their union.
+ */
+export function resolveSubject(map: ArchitectureMap, names: readonly string[]): Subject {
+  const territories = [...new Set(names)]
+  if (territories.length === 0) throw new UsageError('name the territory the change was scoped to')
+  for (const name of territories) {
+    if (!map.territories[name]) throw new UsageError(`no territory named "${name}" in the map`)
   }
-  if (kinds.length > 1) {
-    throw new UsageError(
-      `"${req.name}" is both a territory and an actor; disambiguate with --territory or --actor`
-    )
-  }
-  return build(map, kinds[0]!, req.name)
-}
-
-function build(map: ArchitectureMap, kind: SubjectKind, name: string): Subject {
-  if (kind === 'territory') {
-    const t = map.territories[name]
-    if (!t) throw new UsageError(`no territory named "${name}" in the map`)
-    return { kind, name, territories: [name], owner: ownerOrThrow(map, name) }
-  }
-  if (!map.actors[name]) throw new UsageError(`no actor named "${name}" in the map`)
-  return { kind, name, territories: territoriesOwnedBy(map, name) }
+  return { territories }
 }
 
 /**
@@ -176,11 +109,11 @@ export function resolveRepository(map: ArchitectureMap, requested?: string): str
 }
 
 /**
- * Classify every changed path against the territories the subject may change.
- *
- * Confinement is symmetric: a change fails when it reaches a path its actor
- * does not own, whoever that actor is. The map bounds every actor alike, so
- * there is no kind of subject that passes trivially.
+ * Classify every changed path against the territories the change was scoped
+ * to. A path inside them passes; a path another territory claims fails; a path
+ * no territory claims fails or passes by the repository's unowned posture. No
+ * subject passes trivially: the scope is what the task declared, and nothing
+ * widens it.
  */
 export function runGate({ map, repository, subject, paths }: GateInput): GateResult {
   validateGlobs(map, repository)
@@ -189,43 +122,35 @@ export function runGate({ map, repository, subject, paths }: GateInput): GateRes
 
   const findings: Finding[] = []
   for (const path of paths) {
-    const owners = claimants(map, repository, path)
+    const claimed = claimants(map, repository, path)
 
     // Territories do not overlap and no precedence rule breaks a tie, so a
-    // path claimed twice has no defined owner. The validator rejects such a
-    // map before it gets here; for an object it never saw, guessing would be
+    // path claimed twice has no defined territory. The validator rejects such
+    // a map before it gets here; for an object it never saw, guessing would be
     // a lie.
-    if (owners.length > 1) {
+    if (claimed.length > 1) {
       throw new UsageError(
-        `map is invalid: "${path}" is claimed by ${owners.length} territories ` +
-          `(${owners.join(', ')}); territories may not overlap`
+        `map is invalid: "${path}" is claimed by ${claimed.length} territories ` +
+          `(${claimed.join(', ')}); territories may not overlap`
       )
     }
 
-    const territory = owners[0] ?? null
+    const territory = claimed[0] ?? null
     if (!territory) {
       findings.push({
         path,
         classification: 'unowned',
         territory: null,
-        owner: null,
-        ownerType: null,
         fatal: posture === 'fail',
-        ...(posture === 'allow'
-          ? { note: "allowed by this repository's unowned posture" }
-          : {})
+        ...(posture === 'allow' ? { note: "allowed by this repository's unowned posture" } : {})
       })
       continue
     }
 
-    const owner = ownerOrThrow(map, territory)
-    const ownerType = map.actors[owner]?.type ?? null
     findings.push({
       path,
-      classification: mine.has(territory) ? 'owned' : 'foreign',
+      classification: mine.has(territory) ? 'inside' : 'outside',
       territory,
-      owner,
-      ownerType,
       fatal: !mine.has(territory)
     })
   }
@@ -243,11 +168,7 @@ export function runGate({ map, repository, subject, paths }: GateInput): GateRes
 }
 
 /** Every glob the subject may touch in this repository, for diagnostics. */
-export function subjectGlobs(
-  map: ArchitectureMap,
-  repository: string,
-  subject: Subject
-): string[] {
+export function subjectGlobs(map: ArchitectureMap, repository: string, subject: Subject): string[] {
   const globs = subject.territories.flatMap((t) => {
     // Exclusions and child carve-outs are noted rather than subtracted: this
     // is a hint, and silently advertising a subtracted path would mislead.
@@ -256,10 +177,7 @@ export function subjectGlobs(
     )
     return entriesFor(map, repository, t).flatMap((e) =>
       (e.globs ?? []).map((g) => {
-        const notes = [
-          ...(e.exclude ? ['minus exclusions'] : []),
-          ...(carved ? ['minus child territories'] : [])
-        ]
+        const notes = [...(e.exclude ? ['minus exclusions'] : []), ...(carved ? ['minus child territories'] : [])]
         return notes.length ? `${g} (${notes.join(', ')})` : g
       })
     )

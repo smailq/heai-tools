@@ -1,7 +1,7 @@
 // Package tracker reads a tasks tracker directory under the format
-// contract its README states: one markdown file per task under items/, six
-// frontmatter keys in a fixed set, a status and priority vocabulary, and an
-// optional tasks.yaml naming the architecture map.
+// contract its README states: one markdown file per task under items/, seven
+// frontmatter keys in a fixed set, a status and priority vocabulary, an agent
+// that is a name or empty, and an optional tasks.yaml naming the architecture map.
 //
 // This is a second reader of that format, written on purpose (root README,
 // principle 1) and pinned by the same fixture tasks's own tests use.
@@ -28,7 +28,10 @@ var Statuses = []string{"in-progress", "in-review", "blocked", "todo", "backlog"
 var Priorities = []string{"urgent", "high", "medium", "low"}
 
 // Keys is the exact frontmatter key set, in the order tasks writes it.
-var Keys = []string{"title", "status", "priority", "territory", "created_at", "modified_at"}
+var Keys = []string{"title", "status", "priority", "territory", "agent", "created_at", "modified_at"}
+
+// agentName is the form an agent's name takes, exactly tasks's AGENT_PATTERN; what the name means is the project's business.
+var agentName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
 
 // WorkingSet is what the pane shows by default: everything but the backlog and the closed.
 var WorkingSet = map[string]bool{"in-progress": true, "in-review": true, "blocked": true, "todo": true}
@@ -40,9 +43,11 @@ type Task struct {
 	Status      string   `json:"status"`
 	Priority    string   `json:"priority"`
 	Territories []string `json:"territories"`
-	CreatedAt   string   `json:"created_at"`
-	ModifiedAt  string   `json:"modified_at"`
-	Body        string   `json:"body"`
+	// Agent names who is meant to do the task, or "" when it is unassigned.
+	Agent      string `json:"agent"`
+	CreatedAt  string `json:"created_at"`
+	ModifiedAt string `json:"modified_at"`
+	Body       string `json:"body"`
 	// Blocker is the slug of the first "Blocked by [slug](slug.md)" link in the body, or "".
 	Blocker string `json:"blocker,omitempty"`
 	// Problems is what the format contract found wrong with the file; a task with problems is still listed, marked.
@@ -236,6 +241,7 @@ func Parse(slug, raw string) Task {
 	t.Title = fields["title"]
 	t.Status = fields["status"]
 	t.Priority = fields["priority"]
+	t.Agent = fields["agent"]
 	t.CreatedAt = fields["created_at"]
 	t.ModifiedAt = fields["modified_at"]
 	if fields["territory"] != "" {
@@ -255,6 +261,9 @@ func Parse(slug, raw string) Task {
 	}
 	if t.Priority != "" && !contains(Priorities, t.Priority) {
 		t.Problems = append(t.Problems, fmt.Sprintf("priority %q not in [%s] (or empty)", t.Priority, strings.Join(Priorities, " ")))
+	}
+	if t.Agent != "" && !agentName.MatchString(t.Agent) {
+		t.Problems = append(t.Problems, fmt.Sprintf("agent %q is not a name: lowercase letters, digits, '.', '_' and '-' (or empty)", t.Agent))
 	}
 	t.Body = strings.TrimSpace(rest)
 	if t.Body == "" {

@@ -1,4 +1,4 @@
-// The architecture map editor, served by heai-operator at /map/.
+// The architecture map editor, served by heai-operator-web at /architect/.
 //
 // The map is the file operator reads: it is loaded from there, edited here, and
 // written back by Save - only when architect calls it valid, and only over the
@@ -32,30 +32,19 @@ const canvas = document.getElementById('canvas')
 const canvasWrap = document.getElementById('canvas-wrap')
 const inspector = document.getElementById('inspector')
 const generalPage = document.getElementById('general-page')
-const actorsPage = document.getElementById('actors-page')
 const tabGeneral = document.getElementById('tab-general')
-const tabActors = document.getElementById('tab-actors')
 const tabTerritories = document.getElementById('tab-territories')
-const addHumanBtn = document.getElementById('add-human-btn')
-const addAgentBtn = document.getElementById('add-agent-btn')
 const addRepoBtn = document.getElementById('add-repo-btn')
 const addTerritoryBtn = document.getElementById('add-territory-btn')
 const filetreeEl = document.getElementById('filetree')
-
-const AGENT_COLORS = ['#2563eb', '#0d9488', '#7c3aed', '#db2777', '#ca8a04', '#0284c7', '#dc2626', '#4f46e5']
-const HUMAN_COLOR = '#d97706'
 
 let mode = 'system'
 let mapState = null
 let lastValidation = null
 let debounceTimer = null
-let selection = null // null | {type:'territory'|'actor', id}
-// On the Actors tab a territory can be focused WITHIN the selected owner: the
-// owner keeps the 1st-layer tree highlight, this territory gets the 2nd layer
-// and the bottom editor.
-let subTerritory = null
+let selection = null // null | {type:'territory'|'task', id}
 let editingField = null // key of the single inspector field currently in edit mode
-let activeTab = 'territories' // 'general' | 'actors' | 'territories'
+let activeTab = 'territories' // 'general' | 'territories'
 let lastChangeAt = null
 // The map file: {path, name, exists, version} from api/file, or null when no map is configured.
 let fileInfo = null
@@ -115,7 +104,7 @@ function renderStoreNote() {
 }
 
 function emptyMap() {
-  return { version: 1, actors: {}, repositories: {}, territories: {} }
+  return { version: 1, repositories: {}, territories: {} }
 }
 
 function normalizedMap() {
@@ -125,11 +114,6 @@ function normalizedMap() {
     if (v === undefined) return
     if (v === '' || (Array.isArray(v) && v.length === 0)) delete obj[key]
     else if (typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === 0) delete obj[key]
-  }
-  for (const actor of Object.values(map.actors ?? {})) {
-    dropEmpty(actor, 'identity')
-    dropEmpty(actor, 'context')
-    dropEmpty(actor, 'watches')
   }
   for (const repo of Object.values(map.repositories ?? {})) {
     dropEmpty(repo, 'remotePath')
@@ -149,14 +133,6 @@ function normalizedMap() {
   return map
 }
 
-function actorType(name) {
-  return mapState && mapState.actors[name] ? mapState.actors[name].type : null
-}
-
-function isHumanOwner(owner) {
-  return actorType(owner) === 'human'
-}
-
 /** Ancestors of a territory, nearest first; cycle-safe on a mid-edit map. */
 function ancestorsOf(name) {
   const out = []
@@ -168,24 +144,6 @@ function ancestorsOf(name) {
     cur = mapState.territories[cur].parent
   }
   return out
-}
-
-/** A territory's owner: its own, else the nearest ancestor's, else null mid-edit. */
-function effectiveOwner(name) {
-  if (!mapState || !mapState.territories[name]) return null
-  for (const n of [name, ...ancestorsOf(name)]) {
-    const owner = mapState.territories[n].owner
-    if (owner !== undefined) return owner
-  }
-  return null
-}
-
-function ownerColor(owner) {
-  if (!mapState || !mapState.actors[owner]) return 'var(--muted)'
-  if (isHumanOwner(owner)) return HUMAN_COLOR
-  const agents = Object.keys(mapState.actors).filter((n) => !isHumanOwner(n))
-  const i = agents.indexOf(owner)
-  return i >= 0 ? AGENT_COLORS[i % AGENT_COLORS.length] : 'var(--muted)'
 }
 
 function setStatus(text, cls) {
@@ -313,23 +271,9 @@ function renameKey(obj, oldKey, newKey) {
 
 function select(sel) {
   selection = sel
-  subTerritory = null
   editingField = null
-  if (sel && sel.type === 'territory') activeTab = 'territories'
-  else if (sel && (sel.type === 'actor' || sel.type === 'task')) activeTab = 'actors'
-  renderAll()
-}
-
-// Focus an owner AND one of their territories (Actors tab): the owner keeps the
-// 1st-layer highlight, the territory gets the 2nd layer plus the editor.
-function selectOwnerAndTerritory(tName) {
-  const territory = mapState.territories[tName]
-  const owner = territory && effectiveOwner(tName)
-  if (!owner || !mapState.actors[owner]) return select({ type: 'territory', id: tName })
-  selection = { type: 'actor', id: owner }
-  subTerritory = tName
-  editingField = null
-  activeTab = 'actors'
+  // A territory and a task are both inspected beside the drawing.
+  if (sel) activeTab = 'territories'
   renderAll()
 }
 
@@ -346,7 +290,6 @@ function setTab(tab) {
   if (tab !== activeTab) {
     // Leaving a tab abandons whatever was selected on it.
     selection = null
-    subTerritory = null
     editingField = null
   }
   activeTab = tab
@@ -355,20 +298,15 @@ function setTab(tab) {
 
 function syncTabs() {
   tabGeneral.classList.toggle('active', activeTab === 'general')
-  tabActors.classList.toggle('active', activeTab === 'actors')
   tabTerritories.classList.toggle('active', activeTab === 'territories')
   generalPage.hidden = activeTab !== 'general'
-  actorsPage.hidden = activeTab !== 'actors'
   canvasWrap.hidden = activeTab !== 'territories'
-  // The General tab edits in place; the bottom inspector serves the other tabs.
+  // The General tab edits in place; the inspector beside the drawing serves the territories.
   inspector.hidden = activeTab === 'general'
-  addHumanBtn.hidden = activeTab !== 'actors' || !mapState
-  addAgentBtn.hidden = activeTab !== 'actors' || !mapState
   addTerritoryBtn.hidden = activeTab !== 'territories' || !mapState
 }
 
 tabGeneral.addEventListener('click', () => setTab('general'))
-tabActors.addEventListener('click', () => setTab('actors'))
 tabTerritories.addEventListener('click', () => setTab('territories'))
 
 // ── General page: map-wide settings, edited in place ──
@@ -432,74 +370,17 @@ function renderGeneral() {
   generalPage.appendChild(section)
 }
 
-// ── Actors page ──
-
-actorsPage.addEventListener('click', () => select(null))
-
-// A small territory node (owner-colored bar + name + globs). On this tab a
-// click focuses the owner (1st layer) and the territory itself (2nd layer +
-// bottom editor) without leaving the tab.
-function territoryNodeButton(tName, markParent) {
-  const t = mapState.territories[tName]
-  const node = el('button', 't-node' + (subTerritory === tName ? ' selected' : ''))
-  node.type = 'button'
-  const bar = el('span', 't-node-bar')
-  bar.style.background = ownerColor(effectiveOwner(tName))
-  node.appendChild(bar)
-  const body = el('span', 't-node-body')
-  const label = tName + (markParent && t.parent !== undefined ? ` ⊂ ${t.parent}` : '')
-  body.appendChild(el('span', 't-node-name', label))
-  const globs = (t.scope || []).flatMap((s) => s.globs || [])
-  body.appendChild(el('span', 't-node-sub', truncate(globs.join(' '), 36) || '(no globs)'))
-  node.appendChild(body)
-  node.addEventListener('click', (e) => {
-    e.stopPropagation()
-    selectOwnerAndTerritory(tName)
-  })
-  return node
-}
-
-/**
- * An actor's territories as a forest: a child sits indented under its parent
- * when this actor holds both (by declaration or inheritance). A child whose
- * parent belongs to someone else stays top level, marked ⊂ parent, since the
- * relation cannot be shown inside one owner's column. Cycles mid-edit fall
- * back to top level rather than recursing.
- */
-function appendTerritoryTree(container, owned) {
-  const ownedSet = new Set(owned)
-  const roots = owned.filter((n) => {
-    const p = mapState.territories[n].parent
-    return p === undefined || p === n || !ownedSet.has(p) || ancestorsOf(p).includes(n)
-  })
-  const rootSet = new Set(roots)
-  const kidsOf = (p) =>
-    owned.filter((n) => n !== p && !rootSet.has(n) && mapState.territories[n].parent === p)
-  const append = (names, into, top) => {
-    for (const n of names) {
-      into.appendChild(territoryNodeButton(n, top))
-      const kids = kidsOf(n)
-      if (kids.length > 0) {
-        const sub = el('div', 't-tree-children')
-        append(kids, sub, false)
-        into.appendChild(sub)
-      }
-    }
-  }
-  append(roots, container, true)
-}
+// ── The tracker's tasks, shown per territory ──
+//
+// Read through the server, read-only: the tasks tool owns every write. A task
+// names the territories it is scoped to and the agent meant to do it; the
+// territory inspector lists the open tasks in it, and a task opens its detail.
 
 // Statuses in the tracker's pick-up order: active work first, then the
 // committed queue. The backlog and the terminal states stay out of the view.
 const TASK_ORDER = ['in-progress', 'in-review', 'blocked', 'todo']
 const PRIORITY_ORDER = ['urgent', 'high', 'medium', 'low']
 
-/**
- * The tasks shown under an actor's card: prioritized open tasks the tracker
- * routes to the territories that actor owns, grouped per territory. Only
- * triaged work shows - a task with no priority, or still in the backlog, is
- * not on anyone's plate yet. Read-only: the task-manager CLI owns every write.
- */
 /**
  * The territories a task sits in. The tracker writes one or more names,
  * comma-separated, in the one `territory` field; a task that crosses a
@@ -512,149 +393,56 @@ function taskTerritories(t) {
     .filter(Boolean)
 }
 
-/** The prioritized open tasks routed to any of these territories. */
-function openTasksFor(owned) {
+/**
+ * The prioritized open tasks in any of these territories, in pick-up order.
+ * Only triaged work shows - a task with no priority, or still in the backlog,
+ * is not on anyone's plate yet.
+ */
+function openTasksFor(names) {
   if (!tasksData || !Array.isArray(tasksData.tasks)) return []
-  const ownedSet = new Set(owned)
-  return tasksData.tasks.filter(
-    (t) =>
-      taskTerritories(t).some((name) => ownedSet.has(name)) &&
-      TASK_ORDER.includes(t.status) &&
-      PRIORITY_ORDER.includes(t.priority)
-  )
+  const set = new Set(names)
+  return tasksData.tasks
+    .filter(
+      (t) =>
+        taskTerritories(t).some((name) => set.has(name)) &&
+        TASK_ORDER.includes(t.status) &&
+        PRIORITY_ORDER.includes(t.priority)
+    )
+    .sort(
+      (a, b) =>
+        TASK_ORDER.indexOf(a.status) - TASK_ORDER.indexOf(b.status) ||
+        PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority)
+    )
 }
 
-function actorTasksColumn(owned) {
-  const open = openTasksFor(owned)
-  if (open.length === 0) return null
-  const col = el('div', 'res-tasks')
-  // A territory header only where it disambiguates: when the tasks span
-  // more than one territory.
-  const spread = new Set(open.flatMap(taskTerritories)).size > 1
-  for (const tn of owned) {
-    // A task in several of this actor's territories appears under each.
-    const mine = open
-      .filter((t) => taskTerritories(t).includes(tn))
-      .sort(
-        (a, b) =>
-          TASK_ORDER.indexOf(a.status) - TASK_ORDER.indexOf(b.status) ||
-          PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority)
-      )
-    if (mine.length === 0) continue
-    if (spread) col.appendChild(el('span', 'res-tasks-head', tn))
-    for (const t of mine) {
-      const isSel = selection && selection.type === 'task' && selection.id === t.slug
-      const row = el('button', 'task-row' + (isSel ? ' selected' : ''))
-      row.type = 'button'
-      row.title = [t.slug, t.modified_at].filter(Boolean).join(' · ')
-      row.appendChild(el('span', `task-status st-${t.status}`, t.status))
-      row.appendChild(el('span', `task-prio p-${t.priority}`, t.priority))
-      row.appendChild(el('span', 'task-title', t.title || t.slug))
-      row.addEventListener('click', (e) => {
-        e.stopPropagation()
-        select({ type: 'task', id: t.slug })
-      })
-      col.appendChild(row)
-    }
-  }
-  return col
+/** One row of a task: its status, priority, title and the agent it is assigned to. */
+function taskRow(t) {
+  const isSel = selection && selection.type === 'task' && selection.id === t.slug
+  const row = el('button', 'task-row' + (isSel ? ' selected' : ''))
+  row.type = 'button'
+  row.title = [t.slug, t.modified_at].filter(Boolean).join(' · ')
+  row.appendChild(el('span', `task-status st-${t.status}`, t.status))
+  row.appendChild(el('span', `task-prio p-${t.priority}`, t.priority))
+  row.appendChild(el('span', 'task-title', t.title || t.slug))
+  row.appendChild(el('span', 'task-agent', t.agent || '—'))
+  row.addEventListener('click', (e) => {
+    e.stopPropagation()
+    select({ type: 'task', id: t.slug })
+  })
+  return row
 }
 
-function appendOwnerCard(grid, card, owned, color) {
-  // The actor's tasks sit directly below their card, hung off a rail in the
-  // owner's color, so the workload reads in the same glance as the actor.
-  const tasks = actorTasksColumn(owned)
-  const cardCell = el('div', 'res-card-cell')
-  cardCell.appendChild(card)
-  if (tasks) {
-    tasks.style.borderLeftColor = color
-    cardCell.appendChild(tasks)
-  }
-  // Every actor is one row of the same three-column grid (card, arrow,
-  // territories) so the arrows and territory columns line up down the page
-  // instead of following each card's own width.
-  const row = el('div', 'res-row')
-  row.appendChild(cardCell)
-  row.appendChild(el('span', 'res-arrow', owned.length > 0 ? '→' : ''))
-  const nodes = el('div', 'res-row-nodes')
-  appendTerritoryTree(nodes, owned)
-  row.appendChild(nodes)
-  grid.appendChild(row)
-}
-
-function territoriesOwnedBy(name) {
-  // Ownership resolves through the parent chain: a child that declares no
-  // owner belongs to the actor its nearest ancestor names.
-  return Object.keys(mapState.territories).filter((n) => effectiveOwner(n) === name)
-}
-
-function renderActorsPage() {
-  actorsPage.innerHTML = ''
-  if (!mapState) return
-  const groups = [
-    ['llm-agent', 'Agents', 'No agents yet.', 'Add an llm-agent'],
-    ['human', 'Humans', 'No humans yet. The map should fall inside a territory one of them owns.', 'Add a human']
-  ]
-  for (const [type, heading, empty, addLabel] of groups) {
-    const section = el('div', 'res-section')
-    const names = Object.keys(mapState.actors).filter((n) => mapState.actors[n].type === type)
-    const h = el('h2', '', heading)
-    if (names.length > 0) h.appendChild(el('span', 'res-count', String(names.length)))
-    section.appendChild(h)
-    const grid = el('div', 'res-grid')
-    for (const name of names) {
-      const actor = mapState.actors[name]
-      const owned = territoriesOwnedBy(name)
-      const card = el('button', 'res-card' + (selection && selection.type === 'actor' && selection.id === name ? ' selected' : ''))
-      card.type = 'button'
-      card.addEventListener('click', (e) => {
-        e.stopPropagation()
-        select({ type: 'actor', id: name })
-      })
-      const title = el('span', 'res-title')
-      const dot = el('span', 'chip-dot')
-      dot.style.background = ownerColor(name)
-      title.appendChild(dot)
-      title.appendChild(document.createTextNode(name))
-      card.appendChild(title)
-      if (actor.identity) card.appendChild(el('span', 'res-sub mono', actor.identity))
-      // The first paragraph of the context, clamped by CSS to two lines so
-      // the cut falls at the card's edge rather than mid-word.
-      if (actor.context) {
-        card.appendChild(el('span', 'res-sub', actor.context.trim().split(/\n\s*\n/)[0].replace(/\s+/g, ' ')))
-      }
-      // The meta line is the summary; the territory tree beside the card is
-      // the enumeration, so the names are not restated here.
-      const meta = []
-      if (owned.length > 0) {
-        meta.push(`${owned.length} ${owned.length === 1 ? 'territory' : 'territories'}`)
-        if (tasksData && Array.isArray(tasksData.tasks) && tasksData.tasks.length > 0) {
-          const open = openTasksFor(owned).length
-          meta.push(open === 0 ? 'no open tasks' : `${open} open task${open === 1 ? '' : 's'}`)
-        }
-      } else {
-        meta.push('owns no territory')
-      }
-      card.appendChild(el('span', 'res-meta', meta.join(' · ')))
-      appendOwnerCard(grid, card, owned, ownerColor(name))
-    }
-    if (names.length === 0) {
-      // The empty state carries its own add button: the one in the tab bar
-      // is a long way from the gap it fills.
-      const emptyBox = el('div', 'res-empty')
-      emptyBox.appendChild(el('span', 'res-empty-text', empty))
-      const add = el('button', 'res-empty-add', addLabel)
-      add.type = 'button'
-      add.addEventListener('click', (e) => {
-        e.stopPropagation()
-        addActor(type)
-      })
-      emptyBox.appendChild(add)
-      grid.appendChild(emptyBox)
-    }
-    section.appendChild(grid)
-    actorsPage.appendChild(section)
-  }
+/** The open tasks in a territory, under the territory's own fields; nothing when the tracker is not there. */
+function tasksGroup(name) {
+  if (!tasksData || !Array.isArray(tasksData.tasks)) return null
+  const open = openTasksFor([name])
+  const wrap = el('div', 'i-group')
+  wrap.appendChild(el('span', 'i-label', open.length === 0 ? 'open tasks' : `open tasks · ${open.length}`))
+  const body = el('div', 'i-group-body i-tasks')
+  if (open.length === 0) body.appendChild(el('span', 'i-hint', 'no prioritized open task is scoped here'))
+  for (const t of open) body.appendChild(taskRow(t))
+  wrap.appendChild(body)
+  return wrap
 }
 
 function uniqueName(existing, base) {
@@ -663,27 +451,12 @@ function uniqueName(existing, base) {
   return n
 }
 
-function addActor(type) {
-  if (!mapState) return
-  const name = uniqueName(mapState.actors, type === 'human' ? 'new-human' : 'new-agent')
-  mapState.actors[name] = type === 'human' ? { type, identity: '' } : { type, context: '' }
-  select({ type: 'actor', id: name })
-  editingField = 'name'
-  renderInspector()
-  scheduleValidate()
-  persist()
-}
-
-addHumanBtn.addEventListener('click', () => addActor('human'))
-addAgentBtn.addEventListener('click', () => addActor('llm-agent'))
 addRepoBtn.addEventListener('click', () => openRepoModal(null))
 
 addTerritoryBtn.addEventListener('click', () => {
   if (!mapState) return
   const name = uniqueName(mapState.territories, 'new-territory')
-  const defaultOwner = Object.keys(mapState.actors)[0] || ''
   mapState.territories[name] = {
-    owner: defaultOwner,
     scope: [{ repository: Object.keys(mapState.repositories)[0] || '', globs: [] }]
   }
   select({ type: 'territory', id: name })
@@ -707,11 +480,6 @@ let cyNeedsLayout = false
 function cssColor(name, fallback) {
   const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim()
   return v || fallback
-}
-
-function ownerHex(owner) {
-  const c = ownerColor(owner)
-  return c.startsWith('var(') ? cssColor('--muted', '#9ca3af') : c
 }
 
 /** The map as Cytoscape elements: compound repos, nested territories, dep edges. */
@@ -743,10 +511,11 @@ function canvasElements() {
         p !== undefined && p !== tName && memberSet.has(p) && !ancestorsOf(p).includes(tName)
       const id = `t:${repoName}:${tName}`
       if (!firstInstance.has(tName)) firstInstance.set(tName, id)
-      const eOwner = effectiveOwner(tName)
       const spans = new Set((t.scope || []).map((s) => s.repository)).size > 1
       // ⊂ only where the relation is not visible as containment itself.
       const stray = !nested && p !== undefined
+      // Under the name, what the territory claims in this repository.
+      const globs = territoryGlobs(repoName, t)
       els.push({
         data: {
           id,
@@ -754,8 +523,7 @@ function canvasElements() {
           parent: nested ? `t:${repoName}:${p}` : `repo:${repoName}`,
           label:
             truncate(tName, 24) + (spans ? ' ⧉' : '') + (stray ? ` ⊂ ${truncate(p, 14)}` : ''),
-          sub: t.owner === undefined ? `↑ ${effectiveOwner(tName) ?? '(no owner)'}` : t.owner,
-          ocolor: ownerHex(eOwner)
+          sub: truncate(globs.join(' '), 30) || '(no globs)'
         },
         classes: 'territory'
       })
@@ -804,7 +572,7 @@ function cyStyles() {
       style: {
         shape: 'round-rectangle',
         'background-color': bg,
-        'border-color': 'data(ocolor)',
+        'border-color': muted,
         'border-width': 2,
         width: 'label',
         height: 'label',
@@ -912,14 +680,13 @@ function renderCanvas() {
     cy.add(els)
     cyNeedsLayout = true
   } else {
-    // Same graph, changed details: update labels and colors in place so the
+    // Same graph, changed details: update the labels in place so the
     // arrangement (including anything the user dragged) is left alone.
     for (const e of els) {
       if (e.data.source !== undefined) continue
       cy.getElementById(e.data.id).data({
         label: e.data.label,
-        sub: e.data.sub ?? '',
-        ocolor: e.data.ocolor ?? ''
+        sub: e.data.sub ?? ''
       })
     }
   }
@@ -1010,13 +777,8 @@ function fieldRow({ key, label, value, commit, multiline, mono, placeholder }) {
   return row
 }
 
-function inspectorHeader(kind, title, color, onDelete) {
+function inspectorHeader(kind, title, onDelete) {
   const head = el('div', 'i-head')
-  if (color) {
-    const dot = el('span', 'chip-dot')
-    dot.style.background = color
-    head.appendChild(dot)
-  }
   head.appendChild(el('span', 'i-kind', kind))
   head.appendChild(el('span', 'i-title', title))
   if (onDelete) {
@@ -1036,23 +798,19 @@ function renderEditors() {
 function renderInspector() {
   inspector.innerHTML = ''
   if (!mapState) return
-  if (subTerritory && mapState.territories[subTerritory]) {
-    return renderTerritoryInspector(subTerritory)
-  }
   if (!selection) {
     inspector.appendChild(
-      el('p', 'i-hint', 'Select an actor or a territory to inspect and edit it — one field at a time.')
+      el('p', 'i-hint', 'Select a territory to inspect and edit it — one field at a time.')
     )
     return
   }
-  if (selection.type === 'actor') renderActorInspector(selection.id)
-  else if (selection.type === 'territory') renderTerritoryInspector(selection.id)
+  if (selection.type === 'territory') renderTerritoryInspector(selection.id)
   else if (selection.type === 'task') renderTaskInspector(selection.id)
 }
 
 /**
- * Read-only task detail, from the tracker beside the map. The task-manager
- * CLI and its web view own every write, so this shows the file, not an editor.
+ * Read-only task detail, from the tracker beside the map. The tasks tool
+ * owns every write, so this shows the file, not an editor.
  */
 function renderTaskInspector(slug) {
   const task =
@@ -1064,9 +822,7 @@ function renderTaskInspector(slug) {
     return
   }
   const territories = taskTerritories(task)
-  inspector.appendChild(
-    inspectorHeader('task', task.title || task.slug, ownerColor(effectiveOwner(territories[0] || '')))
-  )
+  inspector.appendChild(inspectorHeader('task', task.title || task.slug))
 
   const field = (label, node) => {
     const row = el('div', 'i-field')
@@ -1085,11 +841,12 @@ function renderTaskInspector(slug) {
   if (territories.length > 0) {
     const wrap = el('div', 'i-chips')
     for (const tName of territories) {
-      const chip = el('button', 'chip')
+      // A territory the map no longer declares is named, but opens nothing.
+      const known = Boolean(mapState.territories[tName])
+      const chip = el('button', 'chip' + (known ? '' : ' unknown'))
       chip.type = 'button'
-      const dot = el('span', 'chip-dot')
-      dot.style.background = ownerColor(effectiveOwner(tName))
-      chip.appendChild(dot)
+      chip.disabled = !known
+      chip.title = known ? '' : 'not a territory of this map'
       chip.appendChild(el('span', '', tName))
       chip.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -1097,10 +854,11 @@ function renderTaskInspector(slug) {
       })
       wrap.appendChild(chip)
     }
-    const owners = [...new Set(territories.map(effectiveOwner).filter(Boolean))]
-    if (owners.length > 0) wrap.appendChild(el('span', 'i-hint', `owned by ${owners.join(', ')}`))
     field(territories.length === 1 ? 'territory' : 'territories', wrap)
   }
+
+  // Who is meant to do it: a name the project resolves, which this editor only shows.
+  field('agent', task.agent || '— unassigned')
 
   const dates = [
     task.created_at ? `created ${task.created_at}` : '',
@@ -1118,7 +876,7 @@ function renderTaskInspector(slug) {
   }
 
   inspector.appendChild(
-    el('p', 'i-hint', 'Read-only here — tasks change through the task-manager CLI or its web view.')
+    el('p', 'i-hint', 'Read-only here — tasks change through heai-tasks at the shell.')
   )
 }
 
@@ -1143,131 +901,6 @@ function repoSelect(value, onchange) {
     names.map((name) => [name, name || '(pick repository)']),
     onchange
   )
-}
-
-/** Watches: checkbox chips over every territory, committing immediately; grants nothing. */
-function watchesGroup(name, actor) {
-  const wrap = el('div', 'i-group')
-  wrap.appendChild(el('span', 'i-label', 'watches'))
-  const body = el('div', 'i-group-body i-chips')
-  const names = Object.keys(mapState.territories || {})
-  if (names.length === 0) body.appendChild(el('span', 'i-hint', 'no territories yet'))
-  for (const n of names) {
-    const current = actor.watches || []
-    const active = current.includes(n)
-    const chip = el('button', 'chip dep' + (active ? ' selected' : ''))
-    chip.type = 'button'
-    const dot = el('span', 'chip-dot')
-    dot.style.background = ownerColor(effectiveOwner(n))
-    chip.appendChild(dot)
-    chip.appendChild(el('span', '', n))
-    chip.addEventListener('click', (e) => {
-      e.stopPropagation()
-      actor.watches = active ? current.filter((x) => x !== n) : [...current, n]
-      if (actor.watches.length === 0) delete actor.watches
-      refresh()
-    })
-    body.appendChild(chip)
-  }
-  wrap.appendChild(body)
-  const hint = el('p', 'i-hint', 'Observed, not owned: watching grants nothing. A watcher that needs a change files a task for the owner.')
-  wrap.appendChild(hint)
-  return wrap
-}
-
-function ownsGroup(name) {
-  const owned = territoriesOwnedBy(name)
-  const wrap = el('div', 'i-group')
-  wrap.appendChild(el('span', 'i-label', 'owns'))
-  const body = el('div', 'i-group-body i-chips')
-  if (owned.length === 0) body.appendChild(el('span', 'i-hint', 'no territories yet'))
-  for (const n of owned) {
-    const chip = el('button', 'chip')
-    chip.type = 'button'
-    const dot = el('span', 'chip-dot')
-    dot.style.background = ownerColor(name)
-    chip.appendChild(dot)
-    chip.appendChild(el('span', '', n))
-    chip.addEventListener('click', (e) => {
-      e.stopPropagation()
-      select({ type: 'territory', id: n })
-    })
-    body.appendChild(chip)
-  }
-  wrap.appendChild(body)
-  return wrap
-}
-
-function renderActorInspector(name) {
-  const actor = mapState.actors[name]
-  if (!actor) return select(null)
-  inspector.appendChild(
-    inspectorHeader(actor.type, name, ownerColor(name), () => {
-      delete mapState.actors[name]
-      select(null)
-      scheduleValidate()
-      persist()
-    })
-  )
-  inspector.appendChild(
-    fieldRow({
-      key: 'name', label: 'name', value: name, mono: true,
-      commit: (v) => {
-        const next = v.trim()
-        if (!next || next === name) return
-        mapState.actors = renameKey(mapState.actors, name, next)
-        for (const t of Object.values(mapState.territories)) if (t.owner === name) t.owner = next
-        selection = { type: 'actor', id: next }
-      }
-    })
-  )
-
-  const typeRow = el('div', 'i-field')
-  typeRow.appendChild(el('span', 'i-label', 'type'))
-  typeRow.appendChild(
-    choiceSelect(
-      actor.type,
-      [
-        ['llm-agent', 'llm-agent - works inside the territories it owns'],
-        ['human', 'human - accountable for the territories they own']
-      ],
-      (v) => {
-        actor.type = v
-        // The schema requires an identity of a human and a context of an agent:
-        // materialize the field so the inspector can edit it in place.
-        if (v === 'human' && actor.identity === undefined) actor.identity = ''
-        if (v === 'llm-agent' && actor.context === undefined) actor.context = ''
-        refresh()
-      }
-    )
-  )
-  inspector.appendChild(typeRow)
-
-  inspector.appendChild(
-    fieldRow({
-      key: 'identity', label: 'identity', value: actor.identity, mono: true,
-      placeholder: actor.type === 'human'
-        ? '@handle or email — whatever the surrounding tooling resolves'
-        : 'optional — only where this actor acts under an account of its own',
-      commit: (v) => (actor.identity = v.trim())
-    })
-  )
-  inspector.appendChild(
-    fieldRow({
-      key: 'context', label: 'context', value: actor.context, multiline: true, mono: true,
-      placeholder: actor.type === 'llm-agent'
-        ? 'Role, focus, and standing guidance across every territory this agent owns.'
-        : 'Optional annotation.',
-      commit: (v) => (actor.context = v)
-    })
-  )
-  inspector.appendChild(ownsGroup(name))
-  inspector.appendChild(watchesGroup(name, actor))
-  if (actor.type === 'human') {
-    inspector.appendChild(
-      el('p', 'i-hint', 'A human-owned territory is where the paths that govern what agents may do belong — CI, guard tooling, repo-wide docs, and the map itself.')
-    )
-  }
 }
 
 function scopeEntryEditor(t, name, entry, i) {
@@ -1321,9 +954,6 @@ function scopeEntryEditor(t, name, entry, i) {
       const active = current.includes(other)
       const chip = el('button', 'chip dep' + (active ? ' selected' : ''))
       chip.type = 'button'
-      const dot = el('span', 'chip-dot')
-      dot.style.background = ownerColor(effectiveOwner(other))
-      chip.appendChild(dot)
       chip.appendChild(el('span', '', other))
       chip.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -1349,17 +979,13 @@ function renderTerritoryInspector(name) {
   const t = mapState.territories[name]
   if (!t) return select(null)
   inspector.appendChild(
-    inspectorHeader('territory', name, ownerColor(effectiveOwner(name)), () => {
+    inspectorHeader('territory', name, () => {
       delete mapState.territories[name]
       for (const other of Object.values(mapState.territories)) {
-        // Children of the deleted territory move up a level; where there is no
-        // level above, the inherited owner becomes their own.
+        // Children of the deleted territory move up a level.
         if (other.parent === name) {
           if (t.parent !== undefined) other.parent = t.parent
-          else {
-            delete other.parent
-            if (other.owner === undefined) other.owner = t.owner ?? ''
-          }
+          else delete other.parent
         }
         if (other.dependsOn) {
           other.dependsOn = other.dependsOn.filter((x) => x !== name)
@@ -1372,19 +998,9 @@ function renderTerritoryInspector(name) {
           if (Object.keys(entry.exclude).length === 0) delete entry.exclude
         }
       }
-      for (const actor of Object.values(mapState.actors || {})) {
-        if (!actor.watches) continue
-        actor.watches = actor.watches.filter((x) => x !== name)
-        if (actor.watches.length === 0) delete actor.watches
-      }
-      if (subTerritory === name) {
-        subTerritory = null
-        refresh()
-      } else {
-        select(null)
-        scheduleValidate()
-        persist()
-      }
+      select(null)
+      scheduleValidate()
+      persist()
     })
   )
   inspector.appendChild(
@@ -1402,11 +1018,7 @@ function renderTerritoryInspector(name) {
             entry.exclude.territories = entry.exclude.territories.map((x) => (x === name ? next : x))
           }
         }
-        for (const actor of Object.values(mapState.actors || {})) {
-          if (actor.watches) actor.watches = actor.watches.map((x) => (x === name ? next : x))
-        }
-        if (subTerritory === name) subTerritory = next
-        else selection = { type: 'territory', id: next }
+        selection = { type: 'territory', id: next }
       }
     })
   )
@@ -1428,13 +1040,8 @@ function renderTerritoryInspector(name) {
   }
   parentSel.addEventListener('click', (e) => e.stopPropagation())
   parentSel.addEventListener('change', () => {
-    if (parentSel.value === '') {
-      delete t.parent
-      // The schema requires an owner of a territory without a parent.
-      if (t.owner === undefined) t.owner = effectiveOwner(name) ?? ''
-    } else {
-      t.parent = parentSel.value
-    }
+    if (parentSel.value === '') delete t.parent
+    else t.parent = parentSel.value
     refresh()
   })
   parentRow.appendChild(parentSel)
@@ -1444,44 +1051,6 @@ function renderTerritoryInspector(name) {
       el('p', 'i-hint', 'A child carves its scope out of its parent: the globs must sit inside the parent’s, and the parent no longer holds what the child claims.')
     )
   }
-
-  // Owner: a select commits immediately (still one decision at a time).
-  const ownerRow = el('div', 'i-field')
-  ownerRow.appendChild(el('span', 'i-label', 'owner'))
-  const ownerSel = el('select', 'i-select')
-  const addOption = (parent, value, label) => {
-    const opt = el('option', '', label ?? value)
-    opt.value = value
-    if (value === (t.owner ?? '')) opt.selected = true
-    parent.appendChild(opt)
-  }
-  if (t.parent !== undefined) {
-    const inherited = effectiveOwner(t.parent)
-    const opt = el('option', '', `(inherit from parent: ${inherited ?? 'unresolved'})`)
-    opt.value = ''
-    if (t.owner === undefined) opt.selected = true
-    ownerSel.appendChild(opt)
-  }
-  if (t.owner !== undefined && !mapState.actors[t.owner]) {
-    addOption(ownerSel, t.owner || '', t.owner || '(pick owner)')
-  }
-  for (const [type, label] of [['llm-agent', 'llm-agents'], ['human', 'humans']]) {
-    const names = Object.keys(mapState.actors).filter((n) => mapState.actors[n].type === type)
-    if (names.length === 0) continue
-    const group = el('optgroup')
-    group.label = label
-    for (const n of names) addOption(group, n)
-    ownerSel.appendChild(group)
-  }
-  ownerSel.style.borderLeft = `4px solid ${ownerColor(effectiveOwner(name))}`
-  ownerSel.addEventListener('click', (e) => e.stopPropagation())
-  ownerSel.addEventListener('change', () => {
-    if (ownerSel.value === '' && t.parent !== undefined) delete t.owner
-    else t.owner = ownerSel.value
-    refresh()
-  })
-  ownerRow.appendChild(ownerSel)
-  inspector.appendChild(ownerRow)
 
   const scopeWrap = el('div', 'i-group')
   scopeWrap.appendChild(el('span', 'i-label', 'scope'))
@@ -1518,9 +1087,6 @@ function renderTerritoryInspector(name) {
       const active = current.includes(other)
       const chip = el('button', 'chip dep' + (active ? ' selected' : ''))
       chip.type = 'button'
-      const dot = el('span', 'chip-dot')
-      dot.style.background = ownerColor(effectiveOwner(other))
-      chip.appendChild(dot)
       chip.appendChild(el('span', '', other))
       chip.addEventListener('click', (e) => {
         e.stopPropagation()
@@ -1555,6 +1121,10 @@ function renderTerritoryInspector(name) {
     )
   )
   inspector.appendChild(undeclaredRow)
+
+  // The tracker's open tasks scoped here, after the territory's own fields.
+  const tasks = tasksGroup(name)
+  if (tasks) inspector.appendChild(tasks)
 }
 
 inspector.addEventListener('click', (e) => e.stopPropagation())
@@ -1733,8 +1303,8 @@ async function loadTasks() {
     })
     if (!res.ok) return
     tasksData = await res.json()
-    if (activeTab === 'actors') renderActorsPage()
-    if (selection && selection.type === 'task') renderInspector()
+    // The inspector lists tasks under a territory and shows a task's detail; nothing else reads them.
+    if (selection && editingField === null) renderInspector()
   } catch {
     // Server briefly unavailable; keep the current tasks.
   }
@@ -1794,25 +1364,15 @@ function renderTree() {
     filetreeEl.appendChild(el('div', 'ft-empty', 'No map loaded.'))
     return
   }
-  const selT =
-    mode === 'system' && selection && selection.type === 'territory' && mapState.territories[selection.id]
-      ? selection.id
-      : null
-  const selActor =
-    mode === 'system' && selection && selection.type === 'actor' && mapState.actors[selection.id]
-      ? selection.id
-      : null
-  // 1st layer: the selected territory, or every territory the selected actor
-  // owns, merged. 2nd layer: the territory focused within the actor.
-  const highlightTerritories = selT
-    ? [selT]
-    : selActor
-      ? territoriesOwnedBy(selActor)
-      : null
-  const focusTerritory =
-    mode === 'system' && activeTab === 'actors' && subTerritory && mapState.territories[subTerritory]
-      ? subTerritory
-      : null
+  // The selected territory's files are highlighted; a selected task highlights the territories it is scoped to.
+  let highlightTerritories = null
+  if (mode === 'system' && selection) {
+    if (selection.type === 'territory' && mapState.territories[selection.id]) highlightTerritories = [selection.id]
+    else if (selection.type === 'task') {
+      const task = tasksData && Array.isArray(tasksData.tasks) ? tasksData.tasks.find((t) => t.slug === selection.id) : null
+      if (task) highlightTerritories = taskTerritories(task).filter((n) => mapState.territories[n])
+    }
+  }
   const repoNames = Object.keys(mapState.repositories)
 
   for (const name of repoNames) {
@@ -1878,15 +1438,12 @@ function renderTree() {
       return dirs
     }
     const matchSet = highlightTerritories ? matchFiles(highlightTerritories) : null
-    const match2Set = focusTerritory ? matchFiles([focusTerritory]) : null
 
     const body = el('div', 'ft-body')
     renderTreeDir(buildTree(files), '', 0, {
       repo: name,
       matchSet,
       matchDirs: ancestorDirs(matchSet),
-      match2Set,
-      match2Dirs: ancestorDirs(match2Set),
       body,
       autoExpand: matchSet !== null && matchSet.size > 0 && matchSet.size <= 400
     })
@@ -1904,12 +1461,7 @@ function renderTreeDir(node, dirPath, depth, ctx) {
     const key = `${ctx.repo} ${full}`
     const auto = ctx.autoExpand && ctx.matchDirs.has(full)
     const isOpen = (expandedDirs.has(key) || auto) && !collapsedDirs.has(key)
-    const row = el(
-      'div',
-      'ft-row ft-dir' +
-        (ctx.matchSet && ctx.matchDirs.has(full) ? ' match' : '') +
-        (ctx.match2Set && ctx.match2Dirs.has(full) ? ' match2' : '')
-    )
+    const row = el('div', 'ft-row ft-dir' + (ctx.matchSet && ctx.matchDirs.has(full) ? ' match' : ''))
     row.style.paddingLeft = `${8 + depth * 13}px`
     row.appendChild(el('span', 'ft-chevron', isOpen ? '▾' : '▸'))
     row.appendChild(el('span', 'ft-name', d))
@@ -1929,18 +1481,14 @@ function renderTreeDir(node, dirPath, depth, ctx) {
   }
   for (const f of node.files.sort((a, b) => a.name.localeCompare(b.name))) {
     const matchCls = ctx.matchSet && ctx.matchSet.has(f.p) ? ' match' : ''
-    const match2Cls = ctx.match2Set && ctx.match2Set.has(f.p) ? ' match2' : ''
-    const row = el('div', `ft-row ft-file${matchCls}${match2Cls}`)
+    const row = el('div', `ft-row ft-file${matchCls}`)
     row.style.paddingLeft = `${8 + depth * 13 + 13}px`
     row.appendChild(el('span', 'ft-name', f.name))
     const claiming = claimingTerritory(f.p, ctx.repo)
-    const ownerName = claiming ? effectiveOwner(claiming) : null
-    row.title = claiming ? `territory: ${claiming} · owner: ${ownerName}` : 'unowned'
+    row.title = claiming ? `territory: ${claiming}` : 'unowned: no territory claims this path'
     row.addEventListener('click', (e) => {
       e.stopPropagation()
-      if (!claiming) return
-      if (activeTab === 'actors') return selectOwnerAndTerritory(claiming)
-      select({ type: 'territory', id: claiming })
+      if (claiming) select({ type: 'territory', id: claiming })
     })
     ctx.body.appendChild(row)
   }
@@ -1949,7 +1497,6 @@ function renderTreeDir(node, dirPath, depth, ctx) {
 function renderAll() {
   syncTabs()
   renderGeneral()
-  renderActorsPage()
   if (activeTab === 'territories') renderCanvas()
   renderInspector()
   renderTree()
@@ -2081,7 +1628,6 @@ document.getElementById('paste-load').addEventListener('click', async () => {
  */
 function adopt(yaml, validation) {
   selection = null
-  subTerritory = null
   editingField = null
   if (validation && validation.valid) {
     mode = 'system'

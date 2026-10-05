@@ -15,7 +15,6 @@ import { GlobError, contains, intersects, matchesAny, validateGlob } from './glo
 
 export type UnownedPosture = 'fail' | 'allow'
 export type UndeclaredPosture = 'fail' | 'warn'
-export type ActorType = 'human' | 'llm-agent'
 
 export interface Exclusion {
   globs?: string[]
@@ -29,21 +28,11 @@ export interface ScopeEntry {
 }
 
 export interface Territory {
-  /** Required on a territory without a parent; a child may omit it and inherit. */
-  owner?: string
   parent?: string
   scope: ScopeEntry[]
   dependsOn?: string[]
   undeclaredDependencies?: UndeclaredPosture
   context?: string
-}
-
-export interface Actor {
-  type: ActorType
-  identity?: string
-  context?: string
-  /** Territories observed without being owned; grants nothing. */
-  watches?: string[]
 }
 
 export interface Repository {
@@ -55,7 +44,6 @@ export interface Repository {
 
 export interface ArchitectureMap {
   version: number
-  actors: Record<string, Actor>
   repositories: Record<string, Repository>
   territories: Record<string, Territory>
   unowned?: UnownedPosture
@@ -118,20 +106,6 @@ function childSubtraction(map: ArchitectureMap, repository: string, name: string
   )
 }
 
-/** A territory's owner through the parent chain, or null where the chain is broken. */
-export function effectiveOwner(map: ArchitectureMap, name: string): string | null {
-  const seen = new Set<string>()
-  let cur: string | undefined = name
-  while (cur !== undefined && !seen.has(cur)) {
-    seen.add(cur)
-    const t: Territory | undefined = map.territories[cur]
-    if (!t) return null
-    if (t.owner !== undefined) return t.owner
-    cur = t.parent
-  }
-  return null
-}
-
 /** Territories in the order a cycle through `from` visits them, or null. */
 function findCycle(map: ArchitectureMap, from: string): string[] | null {
   const stack: string[] = []
@@ -188,7 +162,6 @@ export function createValidator(schemaPath: string): Validator {
     const map = doc as ArchitectureMap
     const repoNames = new Set(Object.keys(map.repositories))
     const territoryNames = new Set(Object.keys(map.territories))
-    const actorNames = new Set(Object.keys(map.actors))
 
     // ── Globs the dialect rejects: checked before anything matches them, so the
     // report does not depend on which paths happen to reach them. ──
@@ -205,18 +178,7 @@ export function createValidator(schemaPath: string): Validator {
       }
     }
 
-    for (const [name, actor] of Object.entries(map.actors)) {
-      for (const watched of actor.watches ?? []) {
-        if (!territoryNames.has(watched)) {
-          errors.push(`actors.${name}.watches: unknown territory "${watched}"`)
-        }
-      }
-    }
-
     for (const [name, territory] of Object.entries(map.territories)) {
-      if (territory.owner !== undefined && !actorNames.has(territory.owner)) {
-        errors.push(`territories.${name}: owner "${territory.owner}" is not a declared actor`)
-      }
       if (territory.parent !== undefined) {
         if (!territoryNames.has(territory.parent)) {
           errors.push(`territories.${name}: parent "${territory.parent}" is not a declared territory`)
@@ -315,25 +277,6 @@ export function createValidator(schemaPath: string): Validator {
     if (globsUsable) errors.push(...overlapErrors(map))
 
     // ── Warnings ──
-    // Ownership resolves through the parent chain, so an actor a child
-    // inherits is not "owning nothing".
-    const owners = new Set(
-      Object.keys(map.territories)
-        .map((name) => effectiveOwner(map, name))
-        .filter((o): o is string => o !== null)
-    )
-    for (const actor of actorNames) {
-      const watches = map.actors[actor]?.watches ?? []
-      if (!owners.has(actor) && watches.length === 0) {
-        warnings.push(`actors.${actor}: declared but neither owns nor watches a territory`)
-      }
-      for (const watched of watches) {
-        if (territoryNames.has(watched) && effectiveOwner(map, watched) === actor) {
-          warnings.push(`actors.${actor}.watches: "${watched}" is already owned by this actor; watching adds nothing`)
-        }
-      }
-    }
-
     const scopedRepos = new Set(
       Object.values(map.territories).flatMap((t) => (t.scope ?? []).map((s) => s.repository))
     )
@@ -352,22 +295,13 @@ export function createValidator(schemaPath: string): Validator {
       if (names.length > 1) {
         warnings.push(
           `repositories: ${names.join(', ')} share the remotePath "${remote}", ` +
-            'so two territories can own one path without ever overlapping'
+            'so two territories can claim one path without ever overlapping'
         )
       }
     }
 
     if (globsUsable) warnings.push(...exclusionWarnings(map))
     warnings.push(...redundantCarveOutWarnings(map, globsUsable))
-
-    const humanOwned = Object.keys(map.territories).some(
-      (name) => map.actors[effectiveOwner(map, name) ?? '']?.type === 'human'
-    )
-    if (!humanOwned) {
-      warnings.push(
-        'no human-owned territory: the map protects everything else, so it must fall inside one itself'
-      )
-    }
 
     return {
       valid: errors.length === 0,
@@ -520,16 +454,6 @@ export const TEMPLATE = `version: 1
 # claims are allowed. Switch to 'fail' once the tree is covered.
 unowned: allow
 
-actors:
-  your-name:
-    type: human
-    identity: '@your-handle'
-  example-owner:
-    type: llm-agent
-    context: |
-      Role, focus, and standing guidance for this agent across every
-      territory it owns.
-
 repositories:
   app:
     remotePath: src.example.com/team/app
@@ -538,16 +462,14 @@ repositories:
 
 territories:
   example:
-    owner: example-owner
     scope:
       - repository: app
         globs: ['src/**']
     context: |
-      Invariants, review discipline, and background needed to work in and
-      review this territory.
+      What is where, what must stay true, what relies on it, and the review
+      discipline: what anyone working or judging here needs to know.
 
   platform:
-    owner: your-name
     scope:
       - repository: app
         globs: ['architecture.yaml', 'ci/**', 'docs/**']

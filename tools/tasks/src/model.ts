@@ -30,6 +30,7 @@ export const TASK_KEYS = [
   'status',
   'priority',
   'territory',
+  'agent',
   'created_at',
   'modified_at'
 ] as const
@@ -46,6 +47,12 @@ export interface Task {
    * architecture map, comma-separated, sorted and unique - see `territoriesOf`.
    */
   territory: string
+  /**
+   * Empty = not yet assigned. Otherwise the name of the agent meant to do the
+   * work, a file under the project's agents directory; what that name means is
+   * the project's business, and this tool only carries it.
+   */
+  agent: string
   /** `YYYY-MM-DD`, set once when the task is created and never rewritten. */
   created_at: string
   /** `YYYY-MM-DD`, restamped by every edit that changes something. */
@@ -122,6 +129,9 @@ export function normalizeTerritories(value: string): string {
 
 /** A slug: kebab-case, with dots allowed so a version can be part of one. */
 export const SLUG_PATTERN = /^[a-z0-9]+([-.][a-z0-9]+)*$/
+
+/** An agent's name: the architecture map's name format, lowercase with `.`, `_` and `-`. */
+export const AGENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/
 
 const list = (values: readonly string[]): string => values.join(', ')
 
@@ -207,6 +217,10 @@ export function parseTask(
     problems.push(`priority ${JSON.stringify(priority)} not in [${list(PRIORITIES)}] (or empty)`)
   }
   checkTerritories(fields['territory'], vocabularies.territories, problems)
+  const agent = fields['agent']
+  if (agent && !AGENT_PATTERN.test(agent)) {
+    problems.push(`agent ${JSON.stringify(agent)} is not a name: lowercase letters, digits, '.', '_' and '-' (or empty)`)
+  }
   for (const key of ['created_at', 'modified_at'] as const) {
     const value = fields[key]
     if (value && !DATE_PATTERN.test(value)) {
@@ -223,6 +237,7 @@ export function parseTask(
       status: status as TaskStatus,
       priority: priority ?? '',
       territory: normalizeTerritories(fields['territory'] ?? ''),
+      agent: agent ?? '',
       created_at: fields['created_at'] ?? '',
       modified_at: fields['modified_at'] ?? '',
       body
@@ -250,7 +265,7 @@ export function pickUpOrder(a: Task, b: Task): number {
 }
 
 /**
- * A task's frontmatter as a script reads it: the six keys plus the slug, with
+ * A task's frontmatter as a script reads it: the seven keys plus the slug, with
  * `territory` already split into its names so no caller parses the list again.
  */
 export interface TaskRecord {
@@ -259,6 +274,7 @@ export interface TaskRecord {
   status: TaskStatus
   priority: string
   territory: string[]
+  agent: string
   created_at: string
   modified_at: string
 }
@@ -270,6 +286,7 @@ export function taskRecord(task: Task): TaskRecord {
     status: task.status,
     priority: task.priority,
     territory: territoriesOf(task.territory),
+    agent: task.agent,
     created_at: task.created_at,
     modified_at: task.modified_at
   }
@@ -314,6 +331,7 @@ export function serializeTask(task: Omit<Task, 'slug'>): string {
     `status: ${task.status}`,
     `priority: ${task.priority}`.trimEnd(),
     `territory: ${task.territory}`.trimEnd(),
+    `agent: ${task.agent}`.trimEnd(),
     `created_at: ${task.created_at}`.trimEnd(),
     `modified_at: ${task.modified_at}`.trimEnd(),
     '---',

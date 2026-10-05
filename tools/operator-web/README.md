@@ -23,14 +23,14 @@ Pages refresh themselves in place every `--interval`, keeping the filter and the
 | route | what it shows |
 | --- | --- |
 | `/architect/` | the map editor, below |
-| `/tasks` | every task, in pick-up order, with the actor its territories route to and where its blocker stands; `?active=1` narrows to the working set, `?sort=age\|slug\|territory` reorders |
-| `/tasks/<slug>` | the task: frontmatter, territories with their owners, the blocker, the file, the body |
+| `/tasks` | every task, in pick-up order, with its territories, the agent it is assigned to and where its blocker stands; `?active=1` narrows to the working set, `?sort=age\|slug\|territory` reorders |
+| `/tasks/<slug>` | the task: frontmatter, its territories and its agent, the blocker, the file, the body |
 | `/flows` | the stuck flows and where their waits stand, every flow flow lists, and the definitions |
 | `/flows/<id>` | the flow: its record, links and waits, its definition drawn with the moves it made, and its timeline from `heai-flow trace <id> --json` |
 | `/flows/machines`, `/flows/machines/<definition>` | the flows tab's second tab: a definition drawn as its state machine, with how many flows stand in each state; `?state=` lists the flows in one |
 | `/pod`, `/pod/<job>` | the container and its work queue: every job, queued, running or done, with its state, exit, how long it took and its worker; a job's result and the last 40 lines of its stdout and stderr |
 | `/reactor`, `/reactor/<id>` | the sources, the rules and the last hour's events; an event with every action a rule took and its payload |
-| `/api/state` | the whole reading as JSON, with `red` true when anything shown is red, and `absent` saying why each off tab is off |
+| `/api/state` | the whole reading as JSON - the tracker, the territories architect lists, flows, pod, reactor - with `red` true when anything shown is red, and `absent` saying why each off tab is off |
 
 ### Which tabs are on
 
@@ -63,7 +63,7 @@ The drawing is laid out on the server - ranked by longest path from the initial 
 
 ### The map editor
 
-The architect tab, `/architect/`, views and edits the architecture map - the file the tasks tab asks architect about for `routes to` - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, the actors with what each owns and watches and the open tasks in each territory, and the map-wide postures, each field edited on its own with live validation.
+The architect tab, `/architect/`, views and edits the architecture map - the file whose territories the tasks name - as a system: repositories as containers and territories as nodes with `dependsOn` as arrows, each territory's scope, parent, context and the open tasks scoped to it with the agent each is assigned to, and the map-wide postures, each field edited on its own with live validation.
 It is the browser app that began as the standalone `map-editor`, with the graph library it draws with ([cytoscape](https://js.cytoscape.org) and the fcose layout, MIT, their licences in [`public/architect/vendor/LICENSES.txt`](public/architect/vendor/LICENSES.txt)) shipped in the package, so nothing is fetched from elsewhere.
 
 It opens the map file and edits a copy in the page; **Save** writes it back. That is the one write this tool makes, and it is guarded:
@@ -84,7 +84,7 @@ They answer only the page this server serves: every request must arrive under a 
 Everything is read on two clocks into one reading every browser shares, so ten open tabs cost the tools no more than one:
 
 - **The tracker** is read from its files every `--interval`, under the format contract the tasks tool's README states. This is a reader of that format written beside the tasks tool's own, as operator's is, because tools meet in their files and not in each other's code (root README, principles 1 and 3).
-- **Owners and repositories** are `heai-architect territories --json` and `heai-architect check --format json`, asked again only when the map's mtime moves.
+- **The territories** are `heai-architect territories --json`, asked again only when the map's mtime moves; the map is never read here, so this tool holds no glob dialect of its own.
 - **Flows** are `heai-flow definitions --json`, `list --json` and `stuck --json`, run with `--dir` set to the map's directory, every `--poll`; a flow's page asks `heai-flow trace <id> --json` once per view, and only for an id flow listed. flow is asked only when `flow.yaml` or `flow/` sits beside the map, or `HEAI_FLOW_STATE` is set, because `heai-flow list` creates `flow/` when it is absent.
 - **The pod** is `heai-pod status --json` for the container and the queue's counts, and `heai-pod list --json` for every job. The queue is files on the host, so the jobs are listed whether or not the container is up, and even when the runtime cannot be asked at all, with why. A job's page asks `heai-pod show <job> --json --lines 40`, and only for a job pod listed. pod is asked only when `pod.yaml` or `pod/` is in the project, or `HEAI_POD_STATE` is set.
 - **The reactor** is `heai-reactor status --json` and `events --since 1h --json`; asked only when `reactor.yaml`, `.heai/reactor.yaml` or `reactor/` is in the project, or `HEAI_REACTOR_STATE` is set.
@@ -123,7 +123,7 @@ heai-operator-web [--dir <dir>] [--tasks <dir>] [--map <path>]
 src/cli.ts         flags, discovery, the listener
 src/reader.ts      the reading, on its two clocks, and which tools the project has
 src/tracker.ts     the tracker's files
-src/owners.ts      heai-architect territories and check
+src/territories.ts heai-architect territories
 src/flows.ts       heai-flow definitions, list, stuck, trace
 src/pod.ts         heai-pod status and list
 src/reactor.ts     heai-reactor status and events

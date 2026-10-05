@@ -8,10 +8,10 @@
  blocked      -       multiple-workspaces   core,desktop    ← ontology-entity-i…
  todo         high    do-the-thing          api                                 
  todo         -       help-requested-by-w…  core                                
- backlog      -       receipts-rollup-view  -                                   
+ backlog      -       receipts-rollup-view  (untriaged)                         
  done         low     old-and-done          website                             
  canceled     -       ontology-entity-ide…  ontology                            
- shipping     soon    broken                -               invalid: missing fr…
+ shipping     soon    broken                (untriaged)     invalid: missing fr…
 
 
 

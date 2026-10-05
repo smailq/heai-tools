@@ -72,8 +72,6 @@ export interface VocabularySet extends Vocabularies {
   config: Config
   /** Where the map was read from, when one is configured. */
   mapPath: string | null
-  /** The actor owning a territory, when a map names one. */
-  ownerOf(territory: string): string | null
 }
 
 function readYaml(path: string, what: string): unknown {
@@ -120,21 +118,17 @@ export function parseConfig(text: string, path: string = CONFIG_FILE): Config {
   return config
 }
 
-interface MapView {
-  territories: string[]
-  owners: Map<string, string>
-}
-
 /**
- * Read the territory names and their owners out of an architecture map.
+ * Read the territory names out of an architecture map.
  *
- * Only the shape this tool depends on is checked; the map's own rules belong to
- * the validator that owns them, so a map that this reads is not thereby a valid
- * map. A map that cannot be read at all is an error rather than a silent
- * fallback to an open vocabulary: a tracker that asked to be checked against a
- * map must not quietly stop being checked.
+ * Only the shape this tool depends on is checked - a `territories` mapping,
+ * whose keys are the names; the map's own rules belong to the validator that
+ * owns them, so a map that this reads is not thereby a valid map. A map that
+ * cannot be read at all is an error rather than a silent fallback to an open
+ * vocabulary: a tracker that asked to be checked against a map must not
+ * quietly stop being checked.
  */
-function readMap(path: string): MapView {
+function readMap(path: string): string[] {
   const doc = readYaml(path, 'architecture map')
   if (doc === null || typeof doc !== 'object' || Array.isArray(doc)) {
     throw new UsageError(`architecture map must be a mapping: ${path}`)
@@ -143,52 +137,18 @@ function readMap(path: string): MapView {
   if (!territories || typeof territories !== 'object' || Array.isArray(territories)) {
     throw new UsageError(`architecture map has no "territories" section: ${path}`)
   }
-  const field = (name: string, key: 'owner' | 'parent'): string | null => {
-    const value = (territories as Record<string, unknown>)[name]
-    const raw =
-      value && typeof value === 'object' && !Array.isArray(value)
-        ? (value as Record<string, unknown>)[key]
-        : undefined
-    return typeof raw === 'string' && raw ? raw : null
-  }
-  // A territory's owner resolves through its parent chain: a child that
-  // declares none belongs to the actor its nearest ancestor names. A chain
-  // the map leaves broken resolves to no owner, which is the validator's
-  // business, not this tool's.
-  const owners = new Map<string, string>()
-  for (const name of Object.keys(territories as object)) {
-    const seen = new Set<string>()
-    let cur: string | null = name
-    while (cur !== null && !seen.has(cur) && cur in (territories as object)) {
-      seen.add(cur)
-      const owner = field(cur, 'owner')
-      if (owner !== null) {
-        owners.set(name, owner)
-        break
-      }
-      cur = field(cur, 'parent')
-    }
-  }
-  return { territories: Object.keys(territories as object), owners }
+  return Object.keys(territories as object)
 }
 
 /** Resolve the vocabulary a tracker directory's files are validated against. */
 export function loadVocabularies(dir: string, config: Config = loadConfig(dir)): VocabularySet {
   let territories: Vocabulary = null
-  let owners = new Map<string, string>()
   let mapPath: string | null = null
 
   if (config.map !== undefined) {
     mapPath = isAbsolute(config.map) ? config.map : resolve(dir, config.map)
-    const view = readMap(mapPath)
-    territories = view.territories
-    owners = view.owners
+    territories = readMap(mapPath)
   }
 
-  return {
-    territories,
-    config,
-    mapPath,
-    ownerOf: (territory: string) => owners.get(territory) ?? null
-  }
+  return { territories, config, mapPath }
 }

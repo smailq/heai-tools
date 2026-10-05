@@ -1,7 +1,7 @@
 // The tracker, read from its files under the format contract the tasks tool's
-// README states: one markdown file per task under items/, exactly six
-// frontmatter keys, its status and priority vocabularies, and an optional
-// tasks.yaml naming the architecture map.
+// README states: one markdown file per task under items/, exactly seven
+// frontmatter keys, its status and priority vocabularies, the agent's name
+// format, and an optional tasks.yaml naming the architecture map.
 //
 // This is a reader of that format written on purpose beside the tasks tool's
 // own, as heai-operator's is (root README, principles 1 and 3): the tools meet
@@ -16,7 +16,9 @@ export const STATUSES = ['in-progress', 'in-review', 'blocked', 'todo', 'backlog
 /** Priorities most urgent first; empty is "not yet triaged". */
 export const PRIORITIES = ['urgent', 'high', 'medium', 'low']
 /** The exact frontmatter key set, in the order the tasks tool writes it. */
-export const KEYS = ['title', 'status', 'priority', 'territory', 'created_at', 'modified_at']
+export const KEYS = ['title', 'status', 'priority', 'territory', 'agent', 'created_at', 'modified_at']
+/** An agent's name: the architecture map's name format, lowercase with `.`, `_` and `-`. */
+export const AGENT_PATTERN = /^[a-z0-9][a-z0-9._-]*$/
 /** What the tasks tab's "active" view keeps. */
 export const WORKING_SET = new Set(['in-progress', 'in-review', 'blocked', 'todo'])
 
@@ -26,6 +28,8 @@ export interface Task {
   status: string
   priority: string
   territories: string[]
+  /** The agent meant to do it, a name the project resolves; "" is unassigned. This tool only shows it. */
+  agent: string
   created_at: string
   modified_at: string
   body: string
@@ -93,7 +97,7 @@ const BLOCKED_BY = /Blocked by \[([^\]]+)\]\(/
 
 /** Reads one task file; every problem is reported in one pass, and an empty optional field is unset, not invalid. */
 export function parseTask(slug: string, raw: string): Task {
-  const t: Task = { slug, title: '', status: '', priority: '', territories: [], created_at: '', modified_at: '', body: '', blocker: '', problems: [] }
+  const t: Task = { slug, title: '', status: '', priority: '', territories: [], agent: '', created_at: '', modified_at: '', body: '', blocker: '', problems: [] }
   raw = raw.replaceAll('\r\n', '\n')
   if (!raw.startsWith('---\n')) {
     t.problems.push("missing frontmatter opening '---'")
@@ -133,6 +137,7 @@ export function parseTask(slug: string, raw: string): Task {
   t.title = fields.get('title') ?? ''
   t.status = fields.get('status') ?? ''
   t.priority = fields.get('priority') ?? ''
+  t.agent = fields.get('agent') ?? ''
   t.created_at = fields.get('created_at') ?? ''
   t.modified_at = fields.get('modified_at') ?? ''
   const territory = fields.get('territory') ?? ''
@@ -142,6 +147,7 @@ export function parseTask(slug: string, raw: string): Task {
   if (!t.title) t.problems.push('title must not be empty')
   if (fields.has('status') && !STATUSES.includes(t.status)) t.problems.push(`status ${JSON.stringify(t.status)} not in [${STATUSES.join(' ')}]`)
   if (t.priority && !PRIORITIES.includes(t.priority)) t.problems.push(`priority ${JSON.stringify(t.priority)} not in [${PRIORITIES.join(' ')}] (or empty)`)
+  if (t.agent && !AGENT_PATTERN.test(t.agent)) t.problems.push(`agent ${JSON.stringify(t.agent)} is not a name: lowercase letters, digits, '.', '_' and '-' (or empty)`)
   t.body = rest.trim()
   if (!t.body) t.problems.push('body must not be empty')
   t.blocker = BLOCKED_BY.exec(t.body)?.[1] ?? ''

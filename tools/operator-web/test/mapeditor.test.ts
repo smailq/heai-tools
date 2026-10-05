@@ -17,17 +17,19 @@ test('an unchanged map written over its own file is the file, byte for byte', ()
 
 test('an edit changes its own lines and no others', () => {
   const edited = structuredClone(MAP)
-  edited['territories'].api.owner = 'core-owner'
+  edited['territories'].api.context = 'Keep handlers thin; business rules live in core.'
+  edited['territories'].api.dependsOn = ['core', 'platform']
   const a = YAML.split('\n')
   const b = mapToYaml(edited, YAML).split('\n')
-  assert.equal(a.length, b.length)
-  const changed = b.filter((l, i) => l !== a[i])
-  assert.deepEqual(changed.map((l) => l.trim()), ['owner: core-owner'])
+  assert.equal(a.length + 1, b.length, 'one line added, for the new key')
+  const changed = b.filter((l) => !a.includes(l))
+  assert.deepEqual(changed.map((l) => l.trim()), ['dependsOn: [core, platform] # may import core; core may not import it', 'context: Keep handlers thin; business rules live in core.'])
+  assert.ok(b.includes('  # The API sits on core and nothing else.'), 'the comment above the edited territory stays')
 })
 
 test('a new map keeps its keys in order, short lists inline, multiline text as a block', () => {
-  const out = mapToYaml({ version: 1, actors: { b: { type: 'human' }, a: { type: 'llm-agent', context: 'one\ntwo\n' } }, territories: { t: { scope: [{ repository: 'app', globs: ['src/**'] }] } } })
-  assert.equal(out, 'version: 1\nactors:\n  b:\n    type: human\n  a:\n    type: llm-agent\n    context: |\n      one\n      two\nterritories:\n  t:\n    scope:\n      - repository: app\n        globs: [src/**]\n')
+  const out = mapToYaml({ version: 1, repositories: { b: { remotePath: 'x/b' }, a: {} }, territories: { t: { scope: [{ repository: 'a', globs: ['src/**'] }], context: 'one\ntwo\n' } } })
+  assert.equal(out, 'version: 1\nrepositories:\n  b:\n    remotePath: x/b\n  a: {}\nterritories:\n  t:\n    scope:\n      - repository: a\n        globs: [src/**]\n    context: |\n      one\n      two\n')
 })
 
 /** A server whose map is a copy of the fixture in a temporary directory. */
@@ -95,8 +97,9 @@ test('save: only a valid map, only over the version loaded unless forced, keepin
   const e = await editor()
   try {
     const base = (await send('GET', e.url + '/architect/api/file', undefined)).json['version'] as string
-    const edited = YAML.replace('owner: api-owner', 'owner: core-owner')
-    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: 'version: 1\nactors: 3\n', base })).status, 422)
+    const edited = YAML.replace("globs: ['src/api/**']", "globs: ['src/api/**', 'src/http/**']")
+    assert.notEqual(edited, YAML)
+    assert.equal((await send('PUT', e.url + '/architect/api/file', { yaml: 'version: 1\nrepositories: 3\n', base })).status, 422)
     const saved = await send('PUT', e.url + '/architect/api/file', { yaml: edited, base })
     assert.equal(saved.status, 200)
     assert.notEqual(saved.json['version'], base)
@@ -116,9 +119,16 @@ test('validate: a map object or its text, answered by architect', { skip: !archi
     const ok = await send('POST', e.url + '/architect/api/validate', { map: MAP })
     assert.equal(ok.json['valid'], true)
     assert.ok(ok.json['map'])
-    const bad = await send('POST', e.url + '/architect/api/validate', { yaml: 'version: 1\nterritories: {x: {owner: nobody}}\n' })
-    assert.equal(bad.json['valid'], false)
-    assert.ok((bad.json['errors'] as string[]).length > 0)
+    // A scope naming a repository the map does not declare, and the keys architect no longer knows.
+    for (const yaml of [
+      'version: 1\nrepositories: {app: {}}\nterritories: {x: {scope: [{repository: nowhere, globs: [src/**]}]}}\n',
+      'version: 1\nrepositories: {app: {}}\nterritories: {x: {owner: nobody, scope: [{repository: app, globs: [src/**]}]}}\n',
+      'version: 1\nactors: {}\nrepositories: {app: {}}\nterritories: {x: {scope: [{repository: app, globs: [src/**]}]}}\n'
+    ]) {
+      const bad = await send('POST', e.url + '/architect/api/validate', { yaml })
+      assert.equal(bad.json['valid'], false, yaml)
+      assert.ok((bad.json['errors'] as string[]).length > 0, yaml)
+    }
   } finally {
     await e.close()
   }

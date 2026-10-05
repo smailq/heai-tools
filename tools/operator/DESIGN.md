@@ -68,12 +68,12 @@ Table, when selected or when the map has errors, since an invalid map is the fir
  map ── ✗ invalid  1 error  2 warnings ────────────────────────────────────── architecture.yaml  changed 8s ago
  level    where                                   message
  error    territories.mail.dependsOn               unknown territory `messaging`
- warning  actors.extensions-owner                  owns nothing and watches nothing
+ warning  repositories.sdk                         declared but no territory scopes it
  warning  territories.website / territories.web    exclude subtracts nothing: `apps/website/legacy/**` matches no glob
 ```
 
 The map pane polls on the file's mtime, not on a clock; `changed 8s ago` is the mtime, so a human who just saved sees the verdict of what they saved.
-The owners provider already runs `check --format json` when the mtime moves, for the repositories; this pane is the same answer's `errors` and `warnings` drawn, so it costs no second command.
+Nothing asks architect today - the owners provider that once ran `check --format json` went with the map's owners - so this pane would be the one call, made when the mtime moves.
 
 ### reactor and pod - built
 

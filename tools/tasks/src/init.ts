@@ -24,7 +24,7 @@ function renderConfig(config: Config): string {
   ]
   lines.push(
     config.map !== undefined
-      ? `# Territories are validated against this map, and each one's owner is read from it.\nmap: ${config.map}`
+      ? `# Territories are validated against this map.\nmap: ${config.map}`
       : "# map: ../architecture.yaml   # validate 'territory' against an architecture map"
   )
   return `${lines.join('\n')}\n`
@@ -45,8 +45,8 @@ Everything the tracker needs lives here: one markdown file per task, and one gen
 - \`INDEX.md\` - the generated task overview agents read first. Never edit it by hand.
 - \`${CONFIG_FILE}\` - what \`territory\` is allowed to say.
 
-Create and change tasks with \`tasks new\` and \`tasks set\`, never by writing frontmatter by hand: they validate the change before writing it and regenerate the view after it.
-\`tasks build --check\` exits non-zero when the view is stale, so CI can hold the two in step.
+Create and change tasks with \`heai-tasks new\` and \`heai-tasks set\`, never by writing frontmatter by hand: they validate the change before writing it and regenerate the view after it.
+\`heai-tasks build --check\` exits non-zero when the view is stale, so CI can hold the two in step.
 
 ## Task file format
 
@@ -56,6 +56,7 @@ title: Human-readable task title
 status: backlog
 priority:
 territory:
+agent:
 created_at:
 modified_at:
 ---
@@ -63,20 +64,21 @@ modified_at:
 The task body: free markdown - context, motivation, proposed approach, acceptance criteria.
 \`\`\`
 
-Exactly these six frontmatter keys, always present, in this order:
+Exactly these seven frontmatter keys, always present, in this order:
 
 | key | values | meaning |
 | --- | --- | --- |
 | \`title\` | free text | required |
 | \`status\` | ${backtickList(TASK_STATUSES)} | lifecycle state (below) |
 | \`priority\` | empty, ${backtickList(PRIORITIES)} | empty = not yet triaged |
-| \`territory\` | ${territory} | routes the task to each territory's owner; empty = not yet triaged |
+| \`territory\` | ${territory} | where the work is scoped to: the scope gate holds the change inside it; empty = not yet triaged |
+| \`agent\` | empty, or an agent's name | who is meant to do it, a file under the project's agents directory; empty = not yet assigned |
 | \`created_at\` | \`YYYY-MM-DD\` | stamped once, at creation |
 | \`modified_at\` | \`YYYY-MM-DD\` | restamped by every edit that changes something |
 
 Both dates are maintained by the tool and are never set by hand.
 
-A task says what the work is and who owns it, and nothing about the machinery used to do it - no branch, no PR, no build, no release.
+A task says what the work is, where it is scoped to and who is meant to do it, and nothing about the machinery used to do it - no branch, no PR, no build, no release.
 Whatever layer does the shipping references the task by its slug, in a branch name, a commit message, or a PR title, so the link runs from the tooling to the task rather than the other way round and the tracker stays the same shape whatever that tooling is.
 
 ## Lifecycle
@@ -88,10 +90,10 @@ Side states: \`blocked\` (the body must name the blocker, ideally as a link to t
 
 ## Rules for agents
 
-1. **One agent owns this folder.** Other agents route changes - status moves, new tasks, triage - through it, the same cross-boundary convention as code territories.
-2. **Pick-up protocol:** read \`INDEX.md\`, choose a task (finish \`in-progress\` first, then \`todo\`, then triage \`backlog\`), read its file fully, \`tasks set <slug> --status in-progress\`, and commit the task-file change alongside the work.
-3. **Adding a task:** \`tasks new <slug> --title "..." --body "..."\` - kebab-case slug, unique, descriptive, and permanent.
-   Deleting is \`tasks delete <slug>\`, which moves the file to \`deleted/\` rather than unlinking it; \`done\` and \`canceled\` are outcomes and stay in \`${ITEMS_DIR}/\`.
+1. **One agent owns this folder.** Other agents route changes - status moves, new tasks, triage - through it.
+2. **Pick-up protocol:** read \`INDEX.md\`, choose a task (finish \`in-progress\` first, then \`todo\`, then triage \`backlog\`), read its file fully, \`heai-tasks set <slug> --status in-progress\`, and commit the task-file change alongside the work.
+3. **Adding a task:** \`heai-tasks new <slug> --title "..." --body "..." --territory <name> --agent <name>\` - kebab-case slug, unique, descriptive, and permanent. The producer of a task picks its territory and its agent: that is what scopes the work and chooses who does it.
+   Deleting is \`heai-tasks delete <slug>\`, which moves the file to \`deleted/\` rather than unlinking it; \`done\` and \`canceled\` are outcomes and stay in \`${ITEMS_DIR}/\`.
 4. **Cross-references between tasks** are relative markdown links: \`[other-slug](other-slug.md)\` from a task body, \`[other-slug](${ITEMS_DIR}/other-slug.md)\` from this file or \`INDEX.md\`.
 5. **The files win.** Task bodies are the source of truth for scope; \`INDEX.md\` is a derived view, and when it disagrees it needs regenerating.
 `

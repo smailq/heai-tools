@@ -30,7 +30,7 @@ const usage = `heai-operator - what the heai tools are doing, on one screen
 
   --dir <dir>         the project directory: the map at its root, tasks/ and flow/ under it; or HEAI_DIR
   --tasks <dir>       the tracker; default $HEAI_DIR/tasks, else .heai/tasks, else tasks, or HEAI_TASKS
-  --map <path>        the architecture map, for "routes to" and for flow; default $HEAI_DIR/architecture.yaml,
+  --map <path>        the architecture map, whose directory flow is asked about; default $HEAI_DIR/architecture.yaml,
                       else the tracker's tasks.yaml, else .heai/architecture.yaml, else architecture.yaml, or HEAI_MAP
   --interval <dur>    the tracker's refresh interval (default 2s)
   --poll <dur>        the clock for the panes that ask flow, pod and reactor (default 5s)
@@ -145,18 +145,15 @@ func printOnce(opts ui.Options, snap ui.Snapshot, fl flows.Result, po pod.Result
 
 func printJSON(snap ui.Snapshot, fl flows.Result, po pod.Result, re reactor.Result) int {
 	out := struct {
-		Tracker *tracker.Tracker  `json:"tracker"`
-		Map     string            `json:"map,omitempty"`
-		Owners  map[string]string `json:"owners,omitempty"`
-		Repos   []string          `json:"repositories,omitempty"`
-		Note    string            `json:"ownersNote,omitempty"`
-		Counts  map[string]int    `json:"counts"`
-		Flows   flows.Result      `json:"flows"`
-		Pod     pod.Result        `json:"pod"`
-		Reactor reactor.Result    `json:"reactor"`
-		Red     bool              `json:"red"`
-		At      time.Time         `json:"at"`
-	}{snap.Tracker, snap.MapPath, snap.Owners.Owners, snap.Owners.Repos, snap.Owners.Note, snap.Tracker.Counts(), fl, po, re, snap.Tracker.Red() || fl.Red() || re.Red(), snap.At}
+		Tracker *tracker.Tracker `json:"tracker"`
+		Map     string           `json:"map,omitempty"`
+		Counts  map[string]int   `json:"counts"`
+		Flows   flows.Result     `json:"flows"`
+		Pod     pod.Result       `json:"pod"`
+		Reactor reactor.Result   `json:"reactor"`
+		Red     bool             `json:"red"`
+		At      time.Time        `json:"at"`
+	}{snap.Tracker, snap.MapPath, snap.Tracker.Counts(), fl, po, re, snap.Tracker.Red() || fl.Red() || re.Red(), snap.At}
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(out); err != nil {

@@ -18,6 +18,7 @@ title: Do the thing
 status: todo
 priority: high
 territory: api
+agent: cli
 created_at: 2026-08-20
 modified_at: 2026-08-25
 ---
@@ -39,6 +40,7 @@ test('parses a well-formed task', () => {
     status: 'todo',
     priority: 'high',
     territory: 'api',
+    agent: 'cli',
     created_at: '2026-08-20',
     modified_at: '2026-08-25',
     body: 'Some body.'
@@ -46,10 +48,17 @@ test('parses a well-formed task', () => {
 })
 
 test('an empty optional field is unset, not invalid', () => {
-  const raw = TASK.replace('priority: high', 'priority:').replace('territory: api', 'territory:')
+  const raw = TASK.replace('priority: high', 'priority:').replace('territory: api', 'territory:').replace('agent: cli', 'agent:')
   const result = parseTask('t', raw)
   assert.equal(result.ok, true)
   assert.equal(result.ok && result.value.priority, '')
+  assert.equal(result.ok && result.value.agent, '')
+})
+
+test('an agent is a name, and nothing more is known about it here', () => {
+  assert.ok(parseTask('t', TASK.replace('agent: cli', 'agent: web-engineer.v2')).ok)
+  const bad = problems(parseTask('t', TASK.replace('agent: cli', 'agent: Web Engineer')))
+  assert.ok(bad.some((p) => p.includes('agent "Web Engineer" is not a name')))
 })
 
 test('reports every problem in one pass', () => {
@@ -68,15 +77,17 @@ priority: soon
   assert.ok(found.some((p) => p.includes('"soon"')))
 })
 
-test('the key set is exactly six, and carries nothing tool-specific', () => {
-  // A task says what the work is and who owns it; branch, PR, build, release
-  // and environment belong to the layer that ships it. Pinned so a field for
-  // one of them cannot be added without this failing first.
+test('the key set is exactly seven, and carries nothing tool-specific', () => {
+  // A task says what the work is, where it is scoped to and who is meant to do
+  // it; branch, PR, build, release and environment belong to the layer that
+  // ships it. Pinned so a field for one of them cannot be added without this
+  // failing first.
   assert.deepEqual(TASK_KEYS, [
     'title',
     'status',
     'priority',
     'territory',
+    'agent',
     'created_at',
     'modified_at'
   ])
@@ -146,6 +157,7 @@ const task = (slug: string, priority: string): Task =>
     title: slug,
     status: 'todo',
     territory: '',
+    agent: '',
     created_at: '',
     modified_at: '',
     body: 'x'
@@ -170,6 +182,7 @@ title: Regenerate the ontology bindings
 status: todo
 priority: medium
 territory: ontology
+agent:
 created_at: 2026-09-01
 modified_at: 2026-09-01
 ---
@@ -224,6 +237,7 @@ test('a record splits the territory list and carries exactly the frontmatter', (
     status: 'todo',
     priority: 'high',
     territory: ['api', 'web'],
+    agent: 'cli',
     created_at: '2026-08-20',
     modified_at: '2026-08-25'
   })

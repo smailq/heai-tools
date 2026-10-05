@@ -6,7 +6,7 @@ It is built for an llm-agent to own and orchestrate work from, which is why the 
 ```sh
 npm install && npm link                                          # builds dist/ and puts `heai-tasks` on PATH
 heai-tasks init --dir heai-tasks --map ../architecture.yaml
-heai-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
+heai-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request." --territory api --agent cli
 heai-tasks set cache-the-index --status in-progress
 heai-tasks list --status todo --json
 heai-tasks show cache-the-index
@@ -45,7 +45,7 @@ heai-tasks init  [--dir tasks] [--map <path>]
 heai-tasks new <slug> --title "..." [--status todo] [--priority high]
 heai-tasks set <slug> --status in-progress [--note "..."]
 heai-tasks delete <slug>
-heai-tasks list [--json] [--status <name>] [--territory <name>]
+heai-tasks list [--json] [--status <name>] [--territory <name>] [--agent <name>]
 heai-tasks show <slug> [--json]
 heai-tasks build [--dir tasks] [--check]
 ```
@@ -67,8 +67,8 @@ Run them as `heai-tasks <command>`; `npm install && npm link` builds the command
 
 ```sh
 heai-tasks new cache-the-index --title "Cache the index" --body "It is rebuilt per request."
-heai-tasks set cache-the-index --status in-progress --territory api
-heai-tasks set cache-the-index --territory api,web    # crosses a boundary
+heai-tasks set cache-the-index --status in-progress --territory api --agent cli
+heai-tasks set cache-the-index --territory api,web    # scoped to cross a boundary
 heai-tasks set cache-the-index --status blocked --note "Blocked by [x](x.md)."
 ```
 
@@ -91,8 +91,8 @@ heai-tasks show cache-the-index --json | jq -r '.run // empty'
 ```
 
 `list` answers with every task's slug and frontmatter and nothing from the body, in the order `INDEX.md` uses: status section first, then priority, then slug.
-`--status` keeps the tasks in one state and `--territory` the tasks whose territory list names the territory; together they intersect.
-With `--json` the answer is one array of objects with the keys `slug`, `title`, `status`, `priority`, `territory`, `created_at`, `modified_at`, where `territory` is an array of names and an unset value is `""` or `[]`.
+`--status` keeps the tasks in one state, `--territory` the tasks whose territory list names the territory, and `--agent` the tasks assigned to one agent; together they intersect.
+With `--json` the answer is one array of objects with the keys `slug`, `title`, `status`, `priority`, `territory`, `agent`, `created_at`, `modified_at`, where `territory` is an array of names and an unset value is `""` or `[]`.
 
 `show` prints the task file exactly as it is on disk.
 With `--json` it is the same object as one `list` entry plus `body`, the markdown after the frontmatter, and `run` when the body carries a run block, absent otherwise.
@@ -106,6 +106,7 @@ title: Human-readable task title
 status: backlog
 priority:
 territory:
+agent:
 created_at: 2026-09-01
 modified_at: 2026-09-01
 ---
@@ -114,14 +115,15 @@ The task body: free markdown - context, motivation, proposed approach,
 acceptance criteria.
 ```
 
-Exactly these six frontmatter keys, always present, in this order:
+Exactly these seven frontmatter keys, always present, in this order:
 
 | key | values | meaning |
 | --- | --- | --- |
 | `title` | free text | required |
 | `status` | `in-progress` `in-review` `blocked` `todo` `backlog` `done` `canceled` | lifecycle state |
 | `priority` | empty, `urgent` `high` `medium` `low` | empty = not yet triaged |
-| `territory` | empty, or one or more declared territories, comma-separated | routes the task to each one's owner |
+| `territory` | empty, or one or more declared territories, comma-separated | where the work is scoped to; the scope gate holds the change inside it |
+| `agent` | empty, or a name: lowercase, digits, `.`, `_`, `-` | who is meant to do it; a file under the project's agents directory, which this tool never reads |
 | `created_at` | `YYYY-MM-DD` | stamped once, at creation |
 | `modified_at` | `YYYY-MM-DD` | restamped by every edit that changes something |
 
@@ -178,9 +180,12 @@ Validation runs on every `build`, over every file in `items/`.
 A file reports every problem it has in one pass rather than failing at the first, so a malformed file is fixed once rather than three times.
 Every bad file is reported too, not just the first one, so a tracker is fixed in a single pass rather than one run per problem.
 
-A task sits in one territory as a rule, and in several when the work crosses a boundary: `territory: api, web` routes it to both owners.
-The list is written sorted and unique, so two edits that mean the same set produce the same line and a diff shows a change of routing rather than of order.
-`INDEX.md` carries it as one token, `t:api,web`, so an entry stays greppable.
+A task sits in one territory as a rule, and in several when the work crosses a boundary: `territory: api, web` scopes it to both, and the scope gate judges its change against their union.
+The list is written sorted and unique, so two edits that mean the same set produce the same line and a diff shows a change of scope rather than of order.
+`INDEX.md` carries it as one token, `t:api,web`, and the agent as `a:<name>`, so an entry stays greppable.
+
+The producer of a task is the one who scopes it and picks who does it: `territory` and `agent` are set when the task is filed, or at triage, and the tool carries both without knowing what either means.
+An agent is a name the project resolves - by convention a file under the project's `agents/` - and this tool checks only that it is a name.
 
 Which values `territory` may take is the **repository's** decision, not this tool's, so the list is not hard-coded.
 It defaults to open, because a tool that invented a repository's territory list would be wrong everywhere it was not configured.
@@ -188,7 +193,7 @@ It defaults to open, because a tool that invented a repository's territory list 
 ## Configuration: `tasks.yaml`
 
 ```yaml
-# Territories, and the actor owning each, are read from the architecture map.
+# Territories are read from the architecture map.
 map: ../architecture.yaml
 ```
 
@@ -196,8 +201,9 @@ map: ../architecture.yaml
 A file that does not validate is refused with every problem it has, and the tracker is not read.
 
 Territories are deliberately not listed here twice.
-A repository with an architecture map already names them, together with the actor that owns each one, so the tracker points at the map and the map stays the single source of ownership.
-Every name a task's `territory` lists is then checked against it - which is what makes `territory` a routing decision rather than a label.
+A repository with an architecture map already names them, so the tracker points at the map and the map stays the single source of where things are.
+Every name a task's `territory` lists is then checked against it - which is what makes `territory` a scope rather than a label.
+Only the map's `territories` keys are read; the map's own rules are the validator's, and `heai-architect check` is what says a map is valid.
 A configured map that cannot be read is an error, not a silent fallback: a tracker that asked to be checked must not quietly stop being checked.
 
 `tasks.yaml` is the one part of a tracker that is about the repository rather than the tasks, and a tracker is valid whether or not it has one.
@@ -240,7 +246,7 @@ It is the same split `architect` makes.
 
 ## Ownership
 
-One agent owns the tracker directory, the same cross-boundary convention as a code territory: other agents route changes through it rather than editing the files themselves.
+One agent owns the tracker directory: other agents route changes through it rather than editing the files themselves.
 A human editing through the CLI is not a violation of that - the convention is about which *agent* writes, and both paths validate identically.
 [`agent/tasks.md`](agent/tasks.md) is that agent, ready to copy into `.claude/agents/`; set the tracker directory and the regenerate command in the two marked lines.
 Other agents route status moves, new tasks, and triage through it.

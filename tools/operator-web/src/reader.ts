@@ -6,9 +6,9 @@
 
 import { mapPath, projectDir, type Env } from './discover.ts'
 import { flowConfigured, pollFlows, type FlowsResult } from './flows.ts'
-import { resolveOwners, type Owners } from './owners.ts'
 import { podConfigured, pollPod, type PodResult } from './pod.ts'
 import { pollReactor, reactorConfigured, type ReactorResult } from './reactor.ts'
+import { emptyTerritories, resolveTerritories, type Territories } from './territories.ts'
 import { loadTracker, NotATracker, type Tracker } from './tracker.ts'
 import { message } from './run.ts'
 import { statSync } from 'node:fs'
@@ -38,7 +38,8 @@ export interface Reading {
   /** Why the tracker could not be read, when it could not. */
   trackerError: string
   map: string
-  owners: Owners
+  /** What architect says the map declares; asked again only when the map moves. */
+  territories: Territories
   flows: FlowsResult
   pod: PodResult
   reactor: ReactorResult
@@ -52,7 +53,7 @@ export function emptyReading(): Reading {
     tracker: null,
     trackerError: '',
     map: '',
-    owners: { owners: {}, repos: [], note: '', mapMtime: 0 },
+    territories: emptyTerritories(),
     flows: { definitions: [], flows: [], stuck: [], note: '', failed: false, at: 0 },
     pod: { status: null, jobs: [], note: '', failed: false, at: 0 },
     reactor: { status: null, events: [], note: '', failed: false, at: 0 },
@@ -114,7 +115,7 @@ export class Reader {
         }
       }
       const map = this.opts.mapOverride || mapPath(undefined, {}, tracker?.map ?? '', this.opts.cwd)
-      let owners = prev.owners
+      let territories = prev.territories
       let mtime = 0
       let noMap = map ? '' : 'not configured here (no architecture.yaml in the project)'
       try {
@@ -124,10 +125,10 @@ export class Reader {
         noMap = `not configured here (no map at ${map})`
       }
       // architect is asked again only when the map moved, since validation is not free.
-      if (map !== prev.map || mtime !== prev.owners.mapMtime) owners = await resolveOwners(map)
+      if (map !== prev.map || mtime !== prev.territories.mapMtime) territories = await resolveTerritories(map)
       const project = projectDir(this.opts.env, map, this.opts.tasksDir, this.opts.cwd)
       const absent: Absent = { architect: noMap, tasks: noTracker, flows: flowConfigured(map), pod: podConfigured(project), reactor: reactorConfigured(project) }
-      this.reading = { ...this.reading, tracker, trackerError, map, owners, absent, project, at }
+      this.reading = { ...this.reading, tracker, trackerError, map, territories, absent, project, at }
     } finally {
       this.trackerBusy = false
     }

@@ -10,26 +10,26 @@ Read its `README.md` before acting: that file is the contract, and this prompt o
 
 <!-- Set these when installing this agent in a repository. -->
 - Tracker directory: `tasks/`
-- Edit with: `tasks new|set --dir tasks`
-- Read with: `tasks list|show --dir tasks`
-- Regenerate with: `tasks build --dir tasks`
+- Edit with: `heai-tasks new|set --dir tasks`
+- Read with: `heai-tasks list|show --dir tasks`
+- Regenerate with: `heai-tasks build --dir tasks`
 
 ## Never hand-edit a task file
 
-Create and change tasks with `tasks new` and `tasks set`, not by writing frontmatter yourself.
+Create and change tasks with `heai-tasks new` and `heai-tasks set`, not by writing frontmatter yourself.
 
 ```sh
-tasks new <slug> --title "..." --body "..." [--status todo] [--priority high] [--territory api]
-tasks set <slug> --status in-progress [--priority high]
-tasks set <slug> --status blocked --note "Blocked by [other-slug](other-slug.md)."
-tasks delete <slug>          # only for a task that should never have been filed
+heai-tasks new <slug> --title "..." --body "..." [--status todo] [--priority high] [--territory api] [--agent cli]
+heai-tasks set <slug> --status in-progress [--priority high]
+heai-tasks set <slug> --status blocked --note "Blocked by [other-slug](other-slug.md)."
+heai-tasks delete <slug>          # only for a task that should never have been filed
 ```
 
 They validate the change before writing it and regenerate the view after it, so you cannot produce a file the validator rejects, and cannot leave `INDEX.md` describing the state before your change.
 An empty value clears a property (`--priority=`).
 A body is only ever added to, with `--note` - never rewritten.
 
-Use Write or Edit on a task file only to repair one the tool refuses to load, and run `tasks build` afterwards.
+Use Write or Edit on a task file only to repair one the tool refuses to load, and run `heai-tasks build` afterwards.
 
 ## Your responsibilities
 
@@ -48,8 +48,8 @@ Use Write or Edit on a task file only to repair one the tool refuses to load, an
 - **View freshness.** `new` and `set` regenerate `INDEX.md` for you, so a normal edit needs nothing further.
   Run the regenerate command after anything that changed a file some other way, and never hand-edit the view.
   If the validator reports invalid files, fix the files - do not work around the validator.
-- **Recommending work.** Asked what to work on next, run `tasks list`, which is `INDEX.md`'s pick-up order (finish `in-progress` first, then `todo`, then triage `backlog` by priority), narrowed with `--status` and `--territory` when the question is about one queue or one owner, and give a one-line rationale for each recommendation.
-  Read the body of anything you recommend with `tasks show <slug>`: bodies carry constraints and dependencies the index does not, and a body with an `sh run` block is a task that is executed rather than prompted.
+- **Recommending work.** Asked what to work on next, run `heai-tasks list`, which is `INDEX.md`'s pick-up order (finish `in-progress` first, then `todo`, then triage `backlog` by priority), narrowed with `--status`, `--territory` and `--agent` when the question is about one queue, one area or one agent, and give a one-line rationale for each recommendation.
+  Read the body of anything you recommend with `heai-tasks show <slug>`: bodies carry constraints and dependencies the index does not, and a body with an `sh run` block is a task that is executed rather than prompted.
 
 ## Boundaries
 

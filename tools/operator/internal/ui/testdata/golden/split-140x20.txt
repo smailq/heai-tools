@@ -3,17 +3,17 @@
  status       pri     slug                                                   │ title       Document tabs
  in-progress  high    add-place-entity                                       │ status      blocked
  in-review    -       inline-images-from-eml                                 │ priority    high
- blocked      high    document-tabs                ← help-requested-by-web-ui│ territory   ui  → ui-owner
- blocked      -       merge-two-entities           ← never-filed (blocker mi…│ created     2026-08-28
- blocked      -       multiple-workspaces          ← ontology-entity-identit…│ modified    2026-09-06
- todo         high    do-the-thing                                           │ blocked by  help-requested-by-web-ui  (todo)
- todo         -       help-requested-by-web-ui                               │ file        ../tracker/testdata/tracker/items/document-tabs…
- backlog      -       receipts-rollup-view                                   │ ── body ─────────────────────────────────────────────────────
- done         low     old-and-done                                           │ Tabs.
- canceled     -       ontology-entity-identity                               │ 
- shipping     soon    broken                       invalid: missing frontmat…│ Blocked by [help-requested-by-web-ui](help-requested-by-web-
+ blocked      high    document-tabs                ← help-requested-by-web-ui│ territory   ui
+ blocked      -       merge-two-entities           ← never-filed (blocker mi…│ agent       cli
+ blocked      -       multiple-workspaces          ← ontology-entity-identit…│ created     2026-08-28
+ todo         high    do-the-thing                                           │ modified    2026-09-06
+ todo         -       help-requested-by-web-ui                               │ blocked by  help-requested-by-web-ui  (todo)
+ backlog      -       receipts-rollup-view                                   │ file        ../tracker/testdata/tracker/items/document-tabs…
+ done         low     old-and-done                                           │ ── body ─────────────────────────────────────────────────────
+ canceled     -       ontology-entity-identity                               │ Tabs.
+ shipping     soon    broken                       invalid: missing frontmat…│ 
+                                                                             │ Blocked by [help-requested-by-web-ui](help-requested-by-web-
                                                                              │ ui.md), requested by `web-ui` in run `2026`.
-                                                                             │
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2 · running 1 · clean  flow 4s ago
  pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 · ok 1 · queued 1 · running 1)                                 pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed                               reactor 5s ago

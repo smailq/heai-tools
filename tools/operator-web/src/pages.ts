@@ -6,7 +6,6 @@ import { ageDays, ago, clock, hms, orDash, short, since } from './format.ts'
 import { html, raw, type Html } from './html.ts'
 import { lineResult, move, openCount, stands, flowsRed, type Definition, type Flow, type Stuck, type Timeline } from './flows.ts'
 import { moveKey, renderMachine } from './machine.ts'
-import { routesTo } from './owners.ts'
 import { countBy, jobDuration, jobExit, jobStarted, jobState, jobWorker, podSummary, podUp, queueText, type Job, type JobOutput } from './pod.ts'
 import { actionFailed, actionResult, cadence, command, failedActions, limited, logPath, problem, problems, reactorRed, ruleResult, type Event } from './reactor.ts'
 import { TOOLS, type Reading, type Tool } from './reader.ts'
@@ -54,9 +53,9 @@ export function nav(ctx: Ctx, tab: Tab): Html {
   const fl = r.flows
   const st = r.reactor.status
   const failedN = failedActions(r.reactor).length
-  const territories = Object.keys(r.owners.owners).length
+  const territories = r.territories.names.length
   const sub: Record<Tab, Html | string> = {
-    architect: html`${r.map ? basename(r.map) : 'no map'}${territories ? ` · ${territories} territories` : ''}${r.owners.note ? html` · <span class="warn">⚠ ${r.owners.note}</span>` : null}`,
+    architect: html`${r.map ? basename(r.map) : 'no map'}${territories ? ` · ${territories} territories` : ''}${r.territories.note ? html` · <span class="warn">⚠ ${r.territories.note}</span>` : null}`,
     tasks: t ? `${t.tasks.length} · changed ${ago(t.changed, now)}` : html`<span class="red">⚠ ${r.trackerError}</span>`,
     flows: fl.flows.length || fl.definitions.length
       ? html`${openCount(fl.flows)} open${fl.stuck.length ? html` · <span class="warn">⚠ ${fl.stuck.length} stuck</span>` : null}${flowsRed(fl) ? html` <span class="red">●</span>` : null} · ${fl.definitions.length} machines`
@@ -162,7 +161,7 @@ export function tasksPane(ctx: Ctx, activeOnly: boolean, sortBy: string): Html {
 <td class="pri pri-${orDash(task.priority)}">${orDash(task.priority)}</td>
 <td><a href="/tasks/${enc(task.slug)}">${task.slug}</a></td>
 <td class="wide">${orDash(task.territories.join(','))}</td>
-<td class="wide">${task.territories.length ? orDash(routesTo(r.owners.owners, task.territories)) : '(untriaged)'}</td>
+<td>${orDash(task.agent)}</td>
 <td>${ageDays(task.modified_at, now)}</td>
 <td>${task.blocker ? html`← <a href="/tasks/${enc(task.blocker)}">${task.blocker}</a>${dead ? html` <span class="red">(blocker ${b})</span>` : b ? html` <span class="faint">(${b})</span>` : null}` : null}</td>
 </tr>`
@@ -176,9 +175,8 @@ export function tasksPane(ctx: Ctx, activeOnly: boolean, sortBy: string): Html {
 </div>
 ${r.trackerError ? html`<p class="warn">⚠ ${r.trackerError}</p>` : null}
 ${t?.configError ? html`<p class="warn">⚠ ${t.configError}</p>` : null}
-${r.owners.note ? html`<p class="faint">routes to: ${r.owners.note}</p>` : null}
 ${table(
-  html`<th>status</th><th>pri</th><th>slug</th><th class="wide">territory</th><th class="wide">routes to</th><th>age</th><th>blocked by</th>`,
+  html`<th>status</th><th>pri</th><th>slug</th><th class="wide">territory</th><th>agent</th><th>age</th><th>blocked by</th>`,
   rows.length ? rows.map(row) : empty(7, '(nothing to show)')
 )}`
 }
@@ -187,7 +185,6 @@ export function taskPane(ctx: Ctx, task: Task): Html {
   const t = ctx.r.tracker!
   const b = blockerState(t, task)
   const dead = b === 'missing' || b === 'canceled'
-  const owners = ctx.r.owners.owners
   return html`<p class="crumbs"><a href="/tasks">← tasks</a></p>
 <h1>${task.slug} ${valid(task) ? html`<span class="st st-${task.status}">${task.status}</span>` : html`<span class="red">invalid</span>`}</h1>
 ${task.problems.length ? html`<ul class="red">${task.problems.map((p) => html`<li>${p}</li>`)}</ul>` : null}
@@ -195,7 +192,8 @@ ${task.problems.length ? html`<ul class="red">${task.problems.map((p) => html`<l
 <tr><th>title</th><td>${task.title}</td></tr>
 <tr><th>status</th><td>${task.status}</td></tr>
 <tr><th>priority</th><td>${orDash(task.priority)}</td></tr>
-<tr><th>territory</th><td>${task.territories.length ? task.territories.map((x) => html`<div>${x} → ${owners[x] ?? '?'}</div>`) : '(untriaged)'}</td></tr>
+<tr><th>territory</th><td>${task.territories.length ? task.territories.map((x) => html`<div>${x}</div>`) : '(untriaged)'}</td></tr>
+<tr><th>agent</th><td>${orDash(task.agent)}</td></tr>
 ${task.blocker ? html`<tr><th>blocked by</th><td><a href="/tasks/${enc(task.blocker)}">${task.blocker}</a> <span class="${dead ? 'red' : 'faint'}">(${b})</span></td></tr>` : null}
 <tr><th>created</th><td>${orDash(task.created_at)}</td></tr>
 <tr><th>modified</th><td>${orDash(task.modified_at)} <span class="faint">${ageDays(task.modified_at, ctx.now)}</span></td></tr>

@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -442,7 +441,7 @@ func (m Model) columns(width int) []column {
 		{"pri", 6, 60},
 		{"slug", 0, 0}, // flexible
 		{"territory", 14, 80},
-		{"routes to", 16, 95},
+		{"agent", 12, 95},
 		{"age", 5, 110},
 	}
 	// The slug takes what the fixed columns leave, keeping room for a blocker note beside it.
@@ -490,9 +489,6 @@ func (m Model) tableLines(st styles, width int) []string {
 		left += " · by " + sortNames[m.sortBy]
 	}
 	right := "items/ changed " + ago(t.Changed, m.opts.Now())
-	if m.snap.Owners.Note != "" {
-		right = m.snap.Owners.Note + " · " + right
-	}
 	if t.ConfigErr != "" {
 		right = st.red.Render(t.ConfigErr) + " · " + right
 	}
@@ -511,10 +507,10 @@ func (m Model) tableLines(st styles, width int) []string {
 
 func (m Model) row(st styles, cols []column, t tracker.Task, selected bool, width int) string {
 	tr := m.snap.Tracker
+	// No territory is a task nobody has scoped yet, so the column says so rather than showing a dash.
 	territory := strings.Join(t.Territories, ",")
-	routes := m.snap.Owners.Owners.RoutesTo(t.Territories)
 	if len(t.Territories) == 0 {
-		routes = "(untriaged)"
+		territory = "(untriaged)"
 	}
 	note, noteRed := "", false
 	if !t.Valid() {
@@ -538,8 +534,8 @@ func (m Model) row(st styles, cols []column, t tracker.Task, selected bool, widt
 		pri = "-"
 	}
 	values := map[string]string{
-		"status": t.Status, "pri": pri, "slug": t.Slug, "territory": orDash(territory),
-		"routes to": orDash(routes), "age": ageDays(t.ModifiedAt, m.opts.Now()), "": note,
+		"status": t.Status, "pri": pri, "slug": t.Slug, "territory": territory,
+		"agent": orDash(t.Agent), "age": ageDays(t.ModifiedAt, m.opts.Now()), "": note,
 	}
 	var cells []string
 	for _, c := range cols {
@@ -556,7 +552,7 @@ func (m Model) row(st styles, cols []column, t tracker.Task, selected bool, widt
 				cell = st.red.Render(cell)
 			case c.name == "" && note != "":
 				cell = st.yellow.Render(cell)
-			case c.name == "routes to" && routes == "(untriaged)":
+			case c.name == "territory" && len(t.Territories) == 0:
 				cell = st.faint.Render(cell)
 			}
 		}
@@ -1244,11 +1240,8 @@ func (m Model) detailLines(st styles, t *tracker.Task, width, off, avail int) []
 	}
 	lines = append(lines, kv("status", st.status(t.Status).Render(t.Status)))
 	lines = append(lines, kv("priority", orDash(t.Priority)))
-	territory := orDash(strings.Join(t.Territories, ","))
-	if routes := m.snap.Owners.Owners.RoutesTo(t.Territories); routes != "" {
-		territory += st.faint.Render("  → " + routes)
-	}
-	lines = append(lines, kv("territory", territory))
+	lines = append(lines, kv("territory", orDash(strings.Join(t.Territories, ","))))
+	lines = append(lines, kv("agent", orDash(t.Agent)))
 	lines = append(lines, kv("created", t.CreatedAt), kv("modified", t.ModifiedAt))
 	if t.Blocker != "" {
 		state := tr.BlockerState(*t)
@@ -1348,11 +1341,6 @@ func (m Model) helpLines(st styles) []string {
 	lines = append(lines, " "+pad("tracker", 16)+m.opts.TasksDir)
 	lines = append(lines, " "+pad("map", 16)+orDash(m.snap.MapPath))
 	lines = append(lines, " "+pad("project", 16)+m.project())
-	owners := "architect territories --json · architect check --format json, when the map's mtime moves"
-	if m.snap.Owners.Note != "" {
-		owners += "  (" + m.snap.Owners.Note + ")"
-	}
-	lines = append(lines, " "+pad("routes to", 16)+owners)
 	lines = append(lines, " "+pad("blocker", 16)+"the first `Blocked by [slug](slug.md)` in the body, and that task's status")
 	flowsFrom := fmt.Sprintf("flow definitions --json · flow list --json · flow stuck --json, every %s", m.opts.SlowInterval)
 	if m.flows.Note != "" {
@@ -1647,12 +1635,4 @@ func ageDays(date string, now time.Time) string {
 		return "today"
 	}
 	return fmt.Sprintf("%dd", days)
-}
-
-func modTime(path string) time.Time {
-	st, err := os.Stat(path)
-	if err != nil {
-		return time.Time{}
-	}
-	return st.ModTime()
 }

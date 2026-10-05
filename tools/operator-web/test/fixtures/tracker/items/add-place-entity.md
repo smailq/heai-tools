@@ -3,6 +3,7 @@ title: Add place entity
 status: in-progress
 priority: high
 territory: core, desktop
+agent: cli
 created_at: 2026-08-26
 modified_at: 2026-09-05
 ---

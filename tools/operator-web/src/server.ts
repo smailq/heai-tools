@@ -197,9 +197,8 @@ export function createApp(reader: Reader, opts: ServerOptions = {}): Server {
       return sendJSON(res, 200, {
         tracker: r.tracker,
         map: r.map,
-        owners: r.owners.owners,
-        repositories: r.owners.repos,
-        ownersNote: r.owners.note || undefined,
+        territories: r.territories.names,
+        territoriesNote: r.territories.note || undefined,
         counts: r.tracker ? counts(r.tracker) : {},
         flows: r.flows,
         pod: r.pod,

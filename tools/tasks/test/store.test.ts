@@ -7,7 +7,7 @@ import { discoverDir, load, ValidationError } from '../src/store.ts'
 import { loadConfig, loadVocabularies, parseConfig, SCHEMA_PATH, schemaProblems, UsageError } from '../src/config.ts'
 
 const task = (fields: Record<string, string>, body = 'Body.'): string =>
-  `---\ntitle: ${fields['title'] ?? 'A task'}\nstatus: ${fields['status'] ?? 'todo'}\npriority: ${fields['priority'] ?? ''}\nterritory: ${fields['territory'] ?? ''}\ncreated_at: 2026-08-20\nmodified_at: 2026-08-20\n---\n\n${body}\n`
+  `---\ntitle: ${fields['title'] ?? 'A task'}\nstatus: ${fields['status'] ?? 'todo'}\npriority: ${fields['priority'] ?? ''}\nterritory: ${fields['territory'] ?? ''}\nagent: ${fields['agent'] ?? ''}\ncreated_at: 2026-08-20\nmodified_at: 2026-08-20\n---\n\n${body}\n`
 
 /** A tracker directory on disk, from a map of relative path to contents. */
 function tracker(files: Record<string, string>): string {
@@ -70,45 +70,17 @@ test('the configuration is checked against the schema: unknown keys, a map that 
 test('an absent configuration leaves the territory vocabulary open', () => {
   const vocabularies = loadVocabularies(tracker({}))
   assert.equal(vocabularies.territories, null)
-  assert.equal(vocabularies.ownerOf('anything'), null)
+  assert.equal(vocabularies.mapPath, null)
 })
 
-test('territories and their owners are read from the configured map', () => {
+test('the territory names are read from the configured map, and nothing else is', () => {
   const dir = tracker({
     'tasks.yaml': 'map: ./map.yaml\n',
-    'map.yaml': 'territories:\n  api:\n    owner: api-owner\n  ui:\n    owner: ui-owner\n'
+    'map.yaml': 'territories:\n  api:\n    scope: []\n  ui:\n    parent: api\n  db:\n    context: Migrations are append-only.\n'
   })
   const vocabularies = loadVocabularies(dir)
-  assert.deepEqual(vocabularies.territories, ['api', 'ui'])
-  assert.equal(vocabularies.ownerOf('api'), 'api-owner')
-  assert.equal(vocabularies.ownerOf('missing'), null)
-})
-
-test('a child territory without an owner inherits through the parent chain', () => {
-  const dir = tracker({
-    'tasks.yaml': 'map: ./map.yaml\n',
-    'map.yaml': [
-      'territories:',
-      '  root:',
-      '    owner: kyu',
-      '  mid:',
-      '    parent: root',
-      '  leaf:',
-      '    parent: mid',
-      '  own:',
-      '    parent: root',
-      '    owner: api-owner',
-      '  broken:',
-      '    parent: ghost',
-      ''
-    ].join('\n')
-  })
-  const vocabularies = loadVocabularies(dir)
-  assert.equal(vocabularies.ownerOf('leaf'), 'kyu')
-  assert.equal(vocabularies.ownerOf('own'), 'api-owner')
-  // A chain the map leaves broken resolves to no owner; judging the map is
-  // the validator's business, not this tool's.
-  assert.equal(vocabularies.ownerOf('broken'), null)
+  assert.deepEqual(vocabularies.territories, ['api', 'ui', 'db'])
+  assert.ok(vocabularies.mapPath?.endsWith('map.yaml'))
 })
 
 test('a configured map that cannot be read fails rather than reopening the vocabulary', () => {
@@ -119,7 +91,7 @@ test('a configured map that cannot be read fails rather than reopening the vocab
 test('a configured map validates the territory a task claims', () => {
   const files = {
     'tasks.yaml': 'map: ./map.yaml\n',
-    'map.yaml': 'territories:\n  api:\n    owner: api-owner\n'
+    'map.yaml': 'territories:\n  api:\n    scope: []\n'
   }
   assert.equal(load(tracker({ ...files, 'items/one.md': task({ territory: 'api' }) })).tasks.length, 1)
   assert.throws(

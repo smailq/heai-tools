@@ -3,6 +3,7 @@ title: Document tabs
 status: blocked
 priority: high
 territory: ui
+agent: web
 created_at: 2026-08-28
 modified_at: 2026-09-06
 ---

@@ -9,30 +9,23 @@ const cli = join(import.meta.dirname, '..', 'src', 'cli.ts')
 
 const VALID = `version: 1
 unowned: fail
-actors:
-  kyu: { type: human, identity: '@kyu' }
-  api: { type: llm-agent, context: Owns the API. }
 repositories:
   app: {}
 territories:
-  platform: { owner: kyu, scope: [{ repository: app, globs: ['architecture.yaml', 'ci/**'] }] }
-  service: { owner: api, scope: [{ repository: app, globs: ['src/**'] }] }
+  platform: { scope: [{ repository: app, globs: ['architecture.yaml', 'ci/**'] }], context: Governance. }
+  service: { scope: [{ repository: app, globs: ['src/**'] }] }
 `
 
 const MULTI = `version: 1
-actors:
-  a1: { type: llm-agent, context: c }
-  kyu: { type: human, identity: '@kyu' }
 repositories:
   app: {}
   sdk: {}
 territories:
   api:
-    owner: a1
     scope:
       - { repository: app, globs: ['src/**'] }
       - { repository: sdk, globs: ['**'] }
-  platform: { owner: kyu, scope: [{ repository: app, globs: ['ci/**'] }] }
+  platform: { scope: [{ repository: app, globs: ['ci/**'] }] }
 `
 
 /**
@@ -68,11 +61,11 @@ describe('the command', () => {
 
 describe('check', () => {
   it('exits 0 on a valid map, prints warnings, and --strict turns them into 1', () => {
-    // Give the map an actor that owns nothing, which is a warning.
-    const d = dir(VALID.replace('  api: { type: llm-agent, context: Owns the API. }', '  api: { type: llm-agent, context: Owns the API. }\n  spare: { type: llm-agent, context: Idle. }'))
+    // Give the map a repository no territory scopes, which is a warning.
+    const d = dir(VALID.replace('  app: {}', '  app: {}\n  spare: {}'))
     const r = run(['check'], d)
     assert.equal(r.code, 0, r.err)
-    assert.match(r.out, /warning: actors.spare: declared but neither owns nor watches/)
+    assert.match(r.out, /warning: repositories.spare: declared but no territory scopes it/)
     assert.match(r.out, /valid with 1 warning/)
     assert.equal(run(['check', '--strict'], d).code, 1)
     const j = JSON.parse(run(['check', '--format', 'json'], d).out) as { valid: boolean; warnings: string[]; map: unknown }
@@ -81,10 +74,10 @@ describe('check', () => {
     assert.ok(j.map)
   })
   it('exits 1 on an invalid map and 2 on one that cannot be read', () => {
-    const d = dir(VALID.replace('owner: api', 'owner: ghost'))
+    const d = dir(VALID.replace('repository: app, globs: [\'src/**\']', 'repository: ghost, globs: [\'src/**\']'))
     const r = run(['check'], d)
     assert.equal(r.code, 1)
-    assert.match(r.out, /error: territories.service: owner "ghost" is not a declared actor/)
+    assert.match(r.out, /error: territories.service.scope\[0\]: unknown repository "ghost"/)
     assert.equal(run(['check', 'nope.yaml'], d).code, 2)
     assert.equal(run(['check', '--map', 'nope.yaml'], d).code, 2)
     assert.equal(run(['check', '--schema', '/nowhere.json'], d).code, 2)
@@ -96,8 +89,8 @@ describe('check', () => {
     writeFileSync(join(d, '.heai', 'architecture.yaml'), VALID)
     writeFileSync(join(d, 'architecture.yaml'), 'version: 2\n')
     assert.match(run(['check'], d).out, /\.heai\/architecture\.yaml: valid/)
-    assert.equal(run(['gate', '--actor', 'api'], d, 'src/a.ts\n').code, 0)
-    assert.equal(run(['owner', 'src/a.ts'], d).code, 0)
+    assert.equal(run(['gate', 'service'], d, 'src/a.ts\n').code, 0)
+    assert.equal(run(['territory', 'src/a.ts'], d).code, 0)
   })
   it('finds the map in HEAI_DIR, after --map and HEAI_MAP and before .heai/', () => {
     const project = dir(VALID)
@@ -108,8 +101,8 @@ describe('check', () => {
     const r = run(['check'], d, '', { HEAI_DIR: project })
     assert.equal(r.code, 0, r.err)
     assert.ok(r.out.startsWith(`${join(project, 'architecture.yaml')}: valid`), r.out)
-    assert.equal(run(['owner', 'src/a.ts'], d, '', { HEAI_DIR: project }).code, 0)
-    assert.equal(run(['gate', '--actor', 'api'], d, 'src/a.ts\n', { HEAI_DIR: project }).code, 0)
+    assert.equal(run(['territory', 'src/a.ts'], d, '', { HEAI_DIR: project }).code, 0)
+    assert.equal(run(['gate', 'service'], d, 'src/a.ts\n', { HEAI_DIR: project }).code, 0)
     // A relative HEAI_DIR resolves from the current directory.
     writeFileSync(join(d, 'architecture.yaml'), VALID)
     assert.match(run(['check'], d, '', { HEAI_DIR: '.' }).out, /: valid$/m)
@@ -128,41 +121,47 @@ describe('check', () => {
 describe('gate', () => {
   const d = dir(VALID)
 
-  it('exit 0 when every changed path is owned, 1 on a violation or a closed unowned path', () => {
+  it('exit 0 when every changed path is inside the scope, 1 on one outside it or a closed unowned path', () => {
     const ok = run(['gate', '--territory', 'service'], d, 'src/a.ts\n')
     assert.equal(ok.code, 0, ok.err)
     assert.match(ok.out, /PASS/)
-    const foreign = run(['gate', '--territory', 'service'], d, 'ci/release.yml\n')
-    assert.equal(foreign.code, 1)
-    assert.match(foreign.out, /FAIL/)
-    assert.match(foreign.out, /foreign/)
+    assert.match(ok.out, /scope\s+territory service/)
+    const outside = run(['gate', '--territory', 'service'], d, 'ci/release.yml\n')
+    assert.equal(outside.code, 1)
+    assert.match(outside.out, /FAIL/)
+    assert.match(outside.out, /outside/)
+    assert.match(outside.out, /the scope is: src\/\*\*/)
     const stray = run(['gate', '--territory', 'service'], d, 'stray.txt\n')
     assert.equal(stray.code, 1)
     assert.match(stray.out, /unowned/)
   })
-  it('confinement is symmetric, and a bare name resolves against both namespaces', () => {
-    assert.equal(run(['gate', '--actor', 'kyu'], d, 'ci/release.yml\n').code, 0)
-    assert.equal(run(['gate', '--actor', 'kyu'], d, 'src/a.ts\n').code, 1)
-    assert.equal(run(['gate', 'api'], d, 'src/a.ts\n').code, 0)
+  it('takes the scope as positionals or --territory, several of them for a change that crosses a boundary', () => {
     assert.equal(run(['gate', 'service'], d, 'src/a.ts\n').code, 0)
+    assert.equal(run(['gate', 'service'], d, 'src/a.ts\nci/release.yml\n').code, 1)
+    const both = run(['gate', 'service', 'platform'], d, 'src/a.ts\nci/release.yml\n')
+    assert.equal(both.code, 0, both.err)
+    assert.match(both.out, /scope\s+territories service, platform/)
+    assert.equal(run(['gate', '--territory', 'service', '--territory', 'platform'], d, 'src/a.ts\nci/release.yml\n').code, 0)
+    assert.equal(run(['gate', 'service', '--territory', 'platform'], d, 'src/a.ts\nci/release.yml\n').code, 0)
   })
-  it('exits 2 for bad usage: a subject named twice, unknown, missing, or a bad format', () => {
-    const twice = run(['gate', 'service', '--actor', 'kyu'], d, 'src/a.ts\n')
-    assert.equal(twice.code, 2)
-    assert.match(twice.err, /name the subject once/)
-    assert.equal(run(['gate', '--territory', 'nope'], d, 'src/a.ts\n').code, 2)
-    assert.equal(run(['gate'], d, 'src/a.ts\n').code, 2)
+  it('exits 2 for bad usage: a scope unknown or missing, or a bad format', () => {
+    const unknown = run(['gate', '--territory', 'nope'], d, 'src/a.ts\n')
+    assert.equal(unknown.code, 2)
+    assert.match(unknown.err, /no territory named "nope"/)
+    const none = run(['gate'], d, 'src/a.ts\n')
+    assert.equal(none.code, 2)
+    assert.match(none.err, /name the territory/)
     assert.equal(run(['gate', '--territory', 'service', '--format', 'xml'], d, 'src/a.ts\n').code, 2)
     assert.equal(run(['gate', '--territory', 'service', '--map', '/nonexistent.yaml'], d, 'src/a.ts\n').code, 2)
   })
   it('refuses a map that reads but does not validate', () => {
-    // The gate runs over the validated map, so a map with an unknown owner
-    // is refused rather than judged.
-    const bad = dir(VALID.replace('owner: api', 'owner: ghost'))
+    // The gate runs over the validated map, so a map with an unknown
+    // repository is refused rather than judged.
+    const bad = dir(VALID.replace('repository: app, globs: [\'src/**\']', 'repository: ghost, globs: [\'src/**\']'))
     const r = run(['gate', '--territory', 'platform'], bad, 'ci/x.yml\n')
     assert.equal(r.code, 2)
     assert.match(r.err, /does not validate/)
-    assert.match(r.err, /owner "ghost"/)
+    assert.match(r.err, /unknown repository "ghost"/)
   })
   it('json output carries the verdict, and large output survives a pipe', () => {
     const r = run(['gate', '--territory', 'service', '--format', 'json'], d, 'ci/release.yml\n')
@@ -175,7 +174,7 @@ describe('gate', () => {
     assert.ok(big.out.length > 65536, `expected more than one pipe buffer, got ${big.out.length}`)
     assert.equal((JSON.parse(big.out) as { findings: unknown[] }).findings.length, 4000)
   })
-  it('reads a real unified diff, and --all lists owned files that findings alone would omit', () => {
+  it('reads a real unified diff, and --all lists the files inside the scope that findings alone would omit', () => {
     const diff = [
       'diff --git a/src/a.ts b/src/a.ts',
       'index 1234567..89abcde 100644',
@@ -203,36 +202,35 @@ describe('gate', () => {
 })
 
 describe('queries', () => {
-  it('owner, territories, actors, context and template', () => {
+  it('territory, territories, context and template', () => {
     const d = dir(VALID)
-    assert.match(run(['owner', 'src/a.ts'], d).out, /src\/a\.ts  service  owned by api \(llm-agent\)/)
-    assert.equal(run(['owner', 'README.md'], d).code, 1)
-    assert.equal(JSON.parse(run(['owner', 'src/a.ts', '--json'], d).out).owner, 'api')
-    assert.match(run(['territories', '--actor', 'api'], d).out, /^service\s+api/m)
-    assert.match(run(['actors'], d).out, /^api\s+llm-agent\s+owns service/m)
-    assert.match(run(['context', 'api'], d).out, /# actor:api\n\nOwns the API\./)
-    assert.equal(run(['context', 'nobody'], d).code, 2)
+    assert.match(run(['territory', 'src/a.ts'], d).out, /^src\/a\.ts  service$/m)
+    const unowned = run(['territory', 'README.md'], d)
+    assert.equal(unowned.code, 1)
+    assert.match(unowned.out, /README\.md  unowned in app/)
+    assert.match(run(['territories'], d).out, /^service\s+app: src\/\*\*/m)
+    assert.match(run(['context', 'platform'], d).out, /# territory:platform\n\nGovernance\./)
+    assert.equal(run(['context', 'nowhere'], d).code, 2)
+    assert.equal(run(['context'], d).code, 2)
     assert.match(run(['template'], d).out, /^version: 1/)
+    assert.doesNotMatch(run(['template'], d).out, /actors|owner/)
   })
-  it('--json carries what a script needs to route a task and compose a prompt', () => {
-    const d = dir(VALID.replace('context: Owns the API. }', 'context: Owns the API., watches: [platform] }'))
-    const owner = JSON.parse(run(['owner', 'src/a.ts', '--json'], d).out)
-    assert.deepEqual(owner, { path: 'src/a.ts', repository: 'app', territory: 'service', owner: 'api', ownerType: 'llm-agent' })
+  it('--json carries what a script needs to scope a task and compose a prompt', () => {
+    const d = dir(VALID)
+    assert.deepEqual(JSON.parse(run(['territory', 'src/a.ts', '--json'], d).out), { path: 'src/a.ts', repository: 'app', territory: 'service' })
     const territories = JSON.parse(run(['territories', '--json'], d).out) as { name: string }[]
-    assert.deepEqual(
-      territories.find((t) => t.name === 'service'),
-      { name: 'service', owner: 'api', ownerType: 'llm-agent', declaredOwner: 'api', parent: null, globs: [{ repository: 'app', globs: ['src/**'] }], dependsOn: [], hasContext: false }
-    )
-    const actors = JSON.parse(run(['actors', '--json'], d).out) as { name: string }[]
-    assert.deepEqual(actors.find((a) => a.name === 'api'), { name: 'api', type: 'llm-agent', identity: null, owns: ['service'], watches: ['platform'], hasContext: true })
-    const context = JSON.parse(run(['context', 'api', '--json'], d).out)
-    assert.deepEqual(context.own, [{ from: 'actor:api', context: 'Owns the API.' }])
-    assert.deepEqual(context.owned, [{ territory: 'service', layers: [] }])
-    assert.deepEqual(context.watched, [{ territory: 'platform', owner: 'kyu', layers: [] }])
+    assert.deepEqual(territories.find((t) => t.name === 'service'), { name: 'service', parent: null, globs: [{ repository: 'app', globs: ['src/**'] }], dependsOn: [], hasContext: false })
+    assert.deepEqual(JSON.parse(run(['context', 'platform', '--json'], d).out), [{ from: 'territory:platform', context: 'Governance.' }])
+    const gate = JSON.parse(run(['gate', 'service', '--format', 'json'], d, 'src/a.ts\nci/x.yml\n').out)
+    assert.deepEqual(gate.subject, { territories: ['service'] })
+    assert.deepEqual(gate.findings, [
+      { path: 'ci/x.yml', classification: 'outside', territory: 'platform', fatal: true },
+      { path: 'src/a.ts', classification: 'inside', territory: 'service', fatal: false }
+    ])
   })
   it('refuses to answer for a map that does not validate', () => {
-    const d = dir(VALID.replace('owner: api', 'owner: ghost'))
-    const r = run(['owner', 'src/a.ts'], d)
+    const d = dir(VALID.replace('repository: app, globs: [\'src/**\']', 'repository: ghost, globs: [\'src/**\']'))
+    const r = run(['territory', 'src/a.ts'], d)
     assert.equal(r.code, 2)
     assert.match(r.err, /does not validate/)
   })

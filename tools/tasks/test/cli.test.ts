@@ -46,7 +46,7 @@ async function invoke({ input = '', args, env = {}, cwd }: Invocation): Promise<
 }
 
 const task = (f: Record<string, string> = {}): string =>
-  `---\ntitle: ${f['title'] ?? 'A task'}\nstatus: ${f['status'] ?? 'todo'}\npriority: ${f['priority'] ?? ''}\nterritory: ${f['territory'] ?? ''}\ncreated_at: 2026-08-20\nmodified_at: 2026-08-20\n---\n\nBody.\n`
+  `---\ntitle: ${f['title'] ?? 'A task'}\nstatus: ${f['status'] ?? 'todo'}\npriority: ${f['priority'] ?? ''}\nterritory: ${f['territory'] ?? ''}\nagent: ${f['agent'] ?? ''}\ncreated_at: 2026-08-20\nmodified_at: 2026-08-20\n---\n\nBody.\n`
 
 const temp = (): string => mkdtempSync(join(tmpdir(), 'tasks-cli-'))
 
@@ -241,12 +241,18 @@ test('delete moves the task file and regenerates the view', async () => {
 test('the CLI sets every property, and a territory list is one flag', async () => {
   const dir = await tracker()
   await cli('new', 'one', '--title', 'One', '--body', 'Scope.', '--dir', dir)
-  const r = await cli('set', 'one', '--status', 'in-review', '--territory', 'web,api', '--dir', dir)
+  const r = await cli('set', 'one', '--status', 'in-review', '--territory', 'web,api', '--agent', 'cli', '--dir', dir)
   assert.equal(r.code, 0)
   const file = readFileSync(join(dir, 'items', 'one.md'), 'utf8')
   assert.match(file, /status: in-review/)
-  assert.match(file, /territory: api, web\n/)
-  assert.match(readFileSync(join(dir, 'INDEX.md'), 'utf8'), /· t:api,web - One/)
+  assert.match(file, /territory: api, web\nagent: cli\n/)
+  assert.match(readFileSync(join(dir, 'INDEX.md'), 'utf8'), /· t:api,web · a:cli - One/)
+  const bad = await cli('set', 'one', '--agent', 'Not A Name', '--dir', dir)
+  assert.equal(bad.code, 1, 'a value the format refuses is an invalid file, exit 1, and nothing is written')
+  assert.match(readFileSync(join(dir, 'items', 'one.md'), 'utf8'), /agent: cli\n/)
+  const listed = await cli('list', '--agent', 'cli', '--json', '--dir', dir)
+  assert.equal(JSON.parse(listed.stdout).length, 1)
+  assert.equal(JSON.parse((await cli('list', '--agent', 'web', '--json', '--dir', dir)).stdout).length, 0)
 })
 
 const RUN_BODY = 'Regenerate after the schema change.\n\n```sh run\npnpm generate\n```\n'
@@ -272,7 +278,7 @@ test('list --json is every task, frontmatter only, in pick-up order', async () =
     ['doing-it', 'fix-it', 'ship-it', 'regen', 'triage-me']
   )
   assert.deepEqual(Object.keys(tasks[1]!), [
-    'slug', 'title', 'status', 'priority', 'territory', 'created_at', 'modified_at'
+    'slug', 'title', 'status', 'priority', 'territory', 'agent', 'created_at', 'modified_at'
   ])
   assert.deepEqual(tasks[1]!['territory'], ['api', 'web'])
   assert.deepEqual(tasks[4]!['territory'], [])
@@ -291,9 +297,9 @@ test('list without --json is a plain table', async () => {
   const r = await cli('list', '--dir', dir)
   assert.equal(r.code, 0)
   const lines = r.stdout.trimEnd().split('\n')
-  assert.match(lines[0]!, /^slug\s+status\s+priority\s+territory\s+modified\s+title$/)
+  assert.match(lines[0]!, /^slug\s+status\s+priority\s+territory\s+agent\s+modified\s+title$/)
   assert.equal(lines.length, 6)
-  assert.match(lines[1]!, /^doing-it\s+in-progress\s+-\s+api\s+\d{4}-\d{2}-\d{2}\s+Doing it$/)
+  assert.match(lines[1]!, /^doing-it\s+in-progress\s+-\s+api\s+-\s+\d{4}-\d{2}-\d{2}\s+Doing it$/)
   assert.match(lines[2]!, /^fix-it\s+todo\s+urgent\s+api,web\s+/)
 })
 
@@ -328,7 +334,7 @@ test('show prints the file as it is, or its fields and body as JSON', async () =
   assert.equal(r.code, 0)
   const task = JSON.parse(r.stdout) as Record<string, unknown>
   assert.deepEqual(Object.keys(task), [
-    'slug', 'title', 'status', 'priority', 'territory', 'created_at', 'modified_at', 'body'
+    'slug', 'title', 'status', 'priority', 'territory', 'agent', 'created_at', 'modified_at', 'body'
   ])
   assert.equal(task['slug'], 'fix-it')
   assert.deepEqual(task['territory'], ['api', 'web'])

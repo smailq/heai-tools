@@ -27,7 +27,7 @@ test('a created task is written in the format the parser demands', () => {
   const stamp = today()
   assert.equal(
     read(dir, 'items/do-the-thing.md'),
-    `---\ntitle: Do the thing\nstatus: backlog\npriority:\nterritory:\ncreated_at: ${stamp}\nmodified_at: ${stamp}\n---\n\nWhy, and what done means.\n`
+    `---\ntitle: Do the thing\nstatus: backlog\npriority:\nterritory:\nagent:\ncreated_at: ${stamp}\nmodified_at: ${stamp}\n---\n\nWhy, and what done means.\n`
   )
   // The round trip is the real check: what was written parses back unchanged.
   assert.equal(load(dir).tasks[0]!.title, 'Do the thing')
@@ -153,7 +153,7 @@ test('creating stamps both dates; a caller cannot set them', () => {
 test('an edit restamps modified_at and leaves created_at alone', () => {
   const dir = tracker({
     'items/one.md':
-      '---\ntitle: One\nstatus: todo\npriority:\nterritory:\ncreated_at: 2020-01-01\nmodified_at: 2020-01-01\n---\n\nBody.\n'
+      '---\ntitle: One\nstatus: todo\npriority:\nterritory:\nagent:\ncreated_at: 2020-01-01\nmodified_at: 2020-01-01\n---\n\nBody.\n'
   })
   updateTask(dir, 'one', { status: 'in-progress' })
   const task = load(dir).tasks[0]!
@@ -164,7 +164,7 @@ test('an edit restamps modified_at and leaves created_at alone', () => {
 test('an edit that changes nothing does not restamp', () => {
   const dir = tracker({
     'items/one.md':
-      '---\ntitle: One\nstatus: todo\npriority:\nterritory:\ncreated_at: 2020-01-01\nmodified_at: 2020-01-02\n---\n\nBody.\n'
+      '---\ntitle: One\nstatus: todo\npriority:\nterritory:\nagent:\ncreated_at: 2020-01-01\nmodified_at: 2020-01-02\n---\n\nBody.\n'
   })
   updateTask(dir, 'one', { status: 'todo' })
   assert.equal(load(dir).tasks[0]!.modified_at, '2020-01-02')

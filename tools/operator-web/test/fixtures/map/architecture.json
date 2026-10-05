@@ -1,23 +1,6 @@
 {
   "version": 1,
   "unowned": "fail",
-  "actors": {
-    "smailq": {
-      "type": "human",
-      "identity": "@smailq"
-    },
-    "api-owner": {
-      "type": "llm-agent",
-      "context": "You own the HTTP API. Keep handlers thin; business rules live in core.\n"
-    },
-    "core-owner": {
-      "type": "llm-agent",
-      "context": "You own the domain model and the database layer.\n",
-      "watches": [
-        "api"
-      ]
-    }
-  },
   "repositories": {
     "app": {
       "remotePath": "github.com/example/app",
@@ -26,7 +9,6 @@
   },
   "territories": {
     "platform": {
-      "owner": "smailq",
       "scope": [
         {
           "repository": "app",
@@ -40,7 +22,6 @@
       "context": "The map protects everything else."
     },
     "core": {
-      "owner": "core-owner",
       "scope": [
         {
           "repository": "app",
@@ -52,7 +33,6 @@
       "context": "Invariants: no I/O in the domain model; every aggregate has a test.\n"
     },
     "api": {
-      "owner": "api-owner",
       "scope": [
         {
           "repository": "app",

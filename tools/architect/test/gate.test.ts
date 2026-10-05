@@ -6,61 +6,52 @@ import { claims, type ArchitectureMap } from '../src/validate.ts'
 
 const map: ArchitectureMap = {
   version: 1,
-  actors: {
-    smailq: { type: 'human', identity: '@smailq' },
-    'api-owner': { type: 'llm-agent', context: 'Owns the API.' }
-  },
   repositories: { app: {}, sdk: {} },
   territories: {
     api: {
-      owner: 'api-owner',
       scope: [
         { repository: 'app', globs: ['src/api/**'] },
         { repository: 'sdk', globs: ['**'] }
       ]
     },
-    web: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['src/web/**'] }] },
-    platform: { owner: 'smailq', scope: [{ repository: 'app', globs: ['ci/**'] }] }
+    web: { scope: [{ repository: 'app', globs: ['src/web/**'] }] },
+    platform: { scope: [{ repository: 'app', globs: ['ci/**'] }] }
   },
   unowned: 'allow'
 }
 
-const gate = (subject: string, paths: string[], m: ArchitectureMap = map, repo = 'app') =>
-  runGate({ map: m, repository: repo, subject: resolveSubject(m, { name: subject }), paths })
+const gate = (scope: string | string[], paths: string[], m: ArchitectureMap = map, repo = 'app') =>
+  runGate({ map: m, repository: repo, subject: resolveSubject(m, Array.isArray(scope) ? scope : [scope]), paths })
 
-test('a territory subject may change only its own paths', () => {
+test('a change may touch only the territory it was scoped to', () => {
   const r = gate('api', ['src/api/handler.ts'])
   assert.equal(r.ok, true)
-  assert.equal(r.findings[0]?.classification, 'owned')
+  assert.equal(r.findings[0]?.classification, 'inside')
+  assert.equal(r.findings[0]?.territory, 'api')
 
   const bad = gate('api', ['src/web/page.ts'])
   assert.equal(bad.ok, false)
-  assert.equal(bad.findings[0]?.classification, 'foreign')
+  assert.equal(bad.findings[0]?.classification, 'outside')
   assert.equal(bad.findings[0]?.territory, 'web')
+  assert.equal(bad.findings[0]?.fatal, true)
 })
 
-test('an actor subject may change every territory it owns', () => {
-  const r = gate('api-owner', ['src/api/handler.ts', 'src/web/page.ts'])
+test('a change scoped to several territories may touch their union, and nothing more', () => {
+  const r = gate(['api', 'web'], ['src/api/handler.ts', 'src/web/page.ts'])
   assert.equal(r.ok, true)
   assert.equal(r.violations, 0)
+  assert.deepEqual(r.subject.territories, ['api', 'web'])
+
+  const bad = gate(['api', 'web'], ['ci/release.yml'])
+  assert.equal(bad.ok, false)
+  assert.equal(bad.findings[0]?.territory, 'platform')
 })
 
-test('confinement is symmetric: a human is confined too', () => {
-  // The map bounds every actor alike, so there is no subject that passes
-  // trivially. A human reaching outside their territory fails the gate.
-  const r = gate('smailq', ['src/api/handler.ts'])
+test('no scope passes trivially: the whole map is not a subject', () => {
+  // Every territory named is still a scope; what is not named is outside.
+  const r = gate(['api', 'web', 'platform'], ['stray.txt'], { ...map, unowned: 'fail' })
   assert.equal(r.ok, false)
-  assert.equal(r.findings[0]?.classification, 'foreign')
-
-  const own = gate('smailq', ['ci/release.yml'])
-  assert.equal(own.ok, true)
-})
-
-test('an agent reaching into a human-owned territory fails', () => {
-  const r = gate('api-owner', ['ci/release.yml'])
-  assert.equal(r.ok, false)
-  assert.equal(r.findings[0]?.owner, 'smailq')
-  assert.equal(r.findings[0]?.ownerType, 'human')
+  assert.equal(r.findings[0]?.classification, 'unowned')
 })
 
 test('the unowned posture decides, and the caller cannot override it', () => {
@@ -68,6 +59,7 @@ test('the unowned posture decides, and the caller cannot override it', () => {
   assert.equal(allowed.ok, true)
   assert.equal(allowed.findings[0]?.classification, 'unowned')
   assert.equal(allowed.findings[0]?.fatal, false)
+  assert.match(allowed.findings[0]?.note ?? '', /unowned posture/)
 
   const closed = gate('api', ['stray.txt'], { ...map, unowned: 'fail' })
   assert.equal(closed.ok, false)
@@ -94,10 +86,7 @@ test('exclude by glob subtracts from its own entry', () => {
   const m: ArchitectureMap = {
     ...map,
     territories: {
-      everything: {
-        owner: 'api-owner',
-        scope: [{ repository: 'app', globs: ['**'], exclude: { globs: ['ci/**'] } }]
-      },
+      everything: { scope: [{ repository: 'app', globs: ['**'], exclude: { globs: ['ci/**'] } }] },
       platform: map.territories.platform!
     }
   }
@@ -108,14 +97,11 @@ test('exclude by glob subtracts from its own entry', () => {
   assert.equal(r.findings[0]?.territory, 'platform')
 })
 
-test('exclude by territory subtracts that territory\'s globs', () => {
+test("exclude by territory subtracts that territory's globs", () => {
   const m: ArchitectureMap = {
     ...map,
     territories: {
-      everything: {
-        owner: 'api-owner',
-        scope: [{ repository: 'app', globs: ['**'], exclude: { territories: ['platform'] } }]
-      },
+      everything: { scope: [{ repository: 'app', globs: ['**'], exclude: { territories: ['platform'] } }] },
       platform: map.territories.platform!
     }
   }
@@ -126,15 +112,12 @@ test('exclude by territory subtracts that territory\'s globs', () => {
 })
 
 test('exclusion never assigns the excluded path', () => {
-  // Excluding a path the map gives to nobody leaves it unowned, not owned.
+  // Excluding a path the map gives to nobody leaves it unowned, not claimed.
   const m: ArchitectureMap = {
     ...map,
     unowned: 'fail',
     territories: {
-      everything: {
-        owner: 'api-owner',
-        scope: [{ repository: 'app', globs: ['**'], exclude: { globs: ['orphan/**'] } }]
-      }
+      everything: { scope: [{ repository: 'app', globs: ['**'], exclude: { globs: ['orphan/**'] } }] }
     }
   }
   const r = gate('everything', ['orphan/x.ts'], m)
@@ -146,8 +129,8 @@ test('an overlapping map is reported, never guessed at', () => {
   const m: ArchitectureMap = {
     ...map,
     territories: {
-      one: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['src/**'] }] },
-      two: { owner: 'smailq', scope: [{ repository: 'app', globs: ['src/api/**'] }] }
+      one: { scope: [{ repository: 'app', globs: ['src/**'] }] },
+      two: { scope: [{ repository: 'app', globs: ['src/api/**'] }] }
     }
   }
   assert.throws(() => gate('one', ['src/api/x.ts'], m), UsageError)
@@ -159,9 +142,11 @@ test('the repository must be named when the map governs several', () => {
   assert.equal(resolveRepository({ ...map, repositories: { only: {} } }), 'only')
 })
 
-test('an unknown subject is a usage error, not a pass', () => {
-  assert.throws(() => resolveSubject(map, { name: 'nobody' }), UsageError)
-  assert.throws(() => resolveSubject(map, { territory: 'api', actor: 'smailq' }), UsageError)
+test('an unknown or empty scope is a usage error, not a pass', () => {
+  assert.throws(() => resolveSubject(map, ['nowhere']), UsageError)
+  assert.throws(() => resolveSubject(map, ['api', 'nowhere']), UsageError)
+  assert.throws(() => resolveSubject(map, []), UsageError)
+  assert.deepEqual(resolveSubject(map, ['api', 'api']).territories, ['api'], 'a territory named twice counts once')
 })
 
 test('a path the carved-out territory itself excludes becomes unowned', () => {
@@ -172,14 +157,8 @@ test('a path the carved-out territory itself excludes becomes unowned', () => {
     ...map,
     unowned: 'fail',
     territories: {
-      everything: {
-        owner: 'api-owner',
-        scope: [{ repository: 'app', globs: ['**'], exclude: { territories: ['platform'] } }]
-      },
-      platform: {
-        owner: 'smailq',
-        scope: [{ repository: 'app', globs: ['ci/**'], exclude: { globs: ['ci/vendor/**'] } }]
-      }
+      everything: { scope: [{ repository: 'app', globs: ['**'], exclude: { territories: ['platform'] } }] },
+      platform: { scope: [{ repository: 'app', globs: ['ci/**'], exclude: { globs: ['ci/vendor/**'] } }] }
     }
   }
   const r = gate('everything', ['ci/vendor/tool.sh'], m)
@@ -191,12 +170,8 @@ test('a child territory carves itself out of its parent, with no exclude written
   const m: ArchitectureMap = {
     ...map,
     territories: {
-      everything: { owner: 'smailq', scope: [{ repository: 'app', globs: ['**'] }] },
-      api: {
-        parent: 'everything',
-        owner: 'api-owner',
-        scope: [{ repository: 'app', globs: ['src/api/**'] }]
-      }
+      everything: { scope: [{ repository: 'app', globs: ['**'] }] },
+      api: { parent: 'everything', scope: [{ repository: 'app', globs: ['src/api/**'] }] }
     }
   }
   // The path sits inside both territories' globs, yet resolves to the child:
@@ -206,57 +181,14 @@ test('a child territory carves itself out of its parent, with no exclude written
   assert.equal(r.ok, false)
   assert.equal(r.findings[0]?.territory, 'api')
   assert.equal(gate('everything', ['src/other.ts'], m).ok, true)
-})
-
-test('a child without an owner inherits from the nearest ancestor', () => {
-  const m: ArchitectureMap = {
-    ...map,
-    territories: {
-      everything: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['**'] }] },
-      docs: { parent: 'everything', scope: [{ repository: 'app', globs: ['docs/**'] }] }
-    }
-  }
-  // The actor subject owns the child through inheritance, and a finding
-  // against the child reports the inherited owner.
-  assert.equal(gate('api-owner', ['docs/readme.md'], m).ok, true)
-  const r = gate('smailq', ['docs/readme.md'], m)
-  assert.equal(r.findings[0]?.owner, 'api-owner')
-  assert.equal(r.findings[0]?.ownerType, 'llm-agent')
-})
-
-test("a child's own owner overrides the inherited one", () => {
-  const m: ArchitectureMap = {
-    ...map,
-    territories: {
-      everything: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['**'] }] },
-      governed: {
-        parent: 'everything',
-        owner: 'smailq',
-        scope: [{ repository: 'app', globs: ['ci/**'] }]
-      }
-    }
-  }
-  assert.equal(gate('smailq', ['ci/release.yml'], m).ok, true)
-  const r = gate('api-owner', ['ci/release.yml'], m)
-  assert.equal(r.ok, false)
-  assert.equal(r.findings[0]?.owner, 'smailq')
-})
-
-test('a parent chain that does not resolve an owner is a map error', () => {
-  const m: ArchitectureMap = {
-    ...map,
-    territories: {
-      a: { parent: 'b', scope: [{ repository: 'app', globs: ['a/**'] }] },
-      b: { parent: 'a', scope: [{ repository: 'app', globs: ['b/**'] }] }
-    }
-  }
-  assert.throws(() => gate('a', ['a/x.ts'], m), UsageError)
+  // A change scoped to the parent and the child together may touch both.
+  assert.equal(gate(['everything', 'api'], ['src/api/handler.ts', 'src/other.ts'], m).ok, true)
 })
 
 test('a malformed glob is a map error, whatever the diff contains', () => {
   const m: ArchitectureMap = {
     ...map,
-    territories: { bad: { owner: 'api-owner', scope: [{ repository: 'app', globs: ['src/'] }] } }
+    territories: { bad: { scope: [{ repository: 'app', globs: ['src/'] }] } }
   }
   // Raised even with nothing to match it against, and as a usage error.
   assert.throws(() => gate('bad', [], m), UsageError)

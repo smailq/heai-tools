@@ -3,15 +3,15 @@
  status       pri     slug                                        ┃ title       Document tabs
  in-progress  high    add-place-entity                            ┃ status      blocked
  in-review    -       inline-images-from-…                        ┃ priority    high
-[7m blocked      high    document-tabs         ← help-requested-by-w…[m┃ territory   ui  → ui-owner
- blocked      -       merge-two-entities    ← never-filed (blocke…┃ created     2026-08-28
- blocked      -       multiple-workspaces   ← ontology-entity-ide…┃ modified    2026-09-06
- todo         high    do-the-thing                                ┃ blocked by  help-requested-by-web-ui  (todo)
- todo         -       help-requested-by-w…                        ┃ file        ../tracker/testdata/tracker/items/docu…
- backlog      -       receipts-rollup-view                        ┃ ── body ──────────────────────────── lines 3-5 of 5 
- done         low     old-and-done                                ┃ Blocked by [help-requested-by-web-ui](help-
- canceled     -       ontology-entity-ide…                        ┃ requested-by-web-ui.md), requested by `web-ui` in
- shipping     soon    broken                invalid: missing fron…┃ run `2026`.
+[7m blocked      high    document-tabs         ← help-requested-by-w…[m┃ territory   ui
+ blocked      -       merge-two-entities    ← never-filed (blocke…┃ agent       cli
+ blocked      -       multiple-workspaces   ← ontology-entity-ide…┃ created     2026-08-28
+ todo         high    do-the-thing                                ┃ modified    2026-09-06
+ todo         -       help-requested-by-w…                        ┃ blocked by  help-requested-by-web-ui  (todo)
+ backlog      -       receipts-rollup-view                        ┃ file        ../tracker/testdata/tracker/items/docu…
+ done         low     old-and-done                                ┃ ── body ─────────────────── lines 3-4 of 5 · 1 more 
+ canceled     -       ontology-entity-ide…                        ┃ Blocked by [help-requested-by-web-ui](help-
+ shipping     soon    broken                invalid: missing fron…┃ requested-by-web-ui.md), requested by `web-ui` in
  flows    ⚠ 4 stuck > 1h   landing 1 (proposed 1)   request 2 (todo 1 · canceled 1)   session 4 (blocked 2  flow 4s ago
  pod      ● heai-workshop running   jobs 5 (canceled 1 · failed 1 · ok 1 · queued 1 · running 1)             pod 4s ago
  reactor  ● clock  ● tasks_cli  ● drops  ○ github  ○ health   3 events/1h · 4 rules · 1 failed           reactor 5s ago

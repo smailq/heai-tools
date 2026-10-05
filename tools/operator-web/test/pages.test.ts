@@ -12,7 +12,7 @@ const TABS = ['href="/architect/"', 'href="/tasks"', 'href="/flows"', 'href="/po
 
 test('each pane is a tab, and every page carries all of them', async () => {
   const cases: Array<[string, string[]]> = [
-    ['/tasks', ['class="optab on"><b>tasks', 'add-place-entity', 'desktop-owner', 'help-requested-by-web-ui', '(blocker canceled)', 'missing frontmatter key: territory']],
+    ['/tasks', ['class="optab on"><b>tasks', 'add-place-entity', '<th>agent</th>', '<td>cli</td>', '<td>web</td>', 'help-requested-by-web-ui', '(blocker canceled)', 'missing frontmatter key: territory']],
     ['/tasks?active=1&sort=slug', ['── active', 'class="on">slug']],
     ['/flows', ['class="optab on"><b>flows', '20260906-024801-session-77f0', '<h2>stuck</h2>', '<h2>definitions</h2>']],
     ['/flows/machines', ['class="optab on"><b>flows', '<svg class="machine"', 'href="/flows/machines" class="on"']],
@@ -106,9 +106,20 @@ test('the panes are read only, and keep their scripts to this server', async () 
 
 test('/api/state is the reading as JSON, red when something is', async () => {
   const r = await get(s.url + '/api/state')
-  const out = JSON.parse(r.body) as { tracker: { tasks: unknown[] }; flows: { flows: unknown[] }; red: boolean }
+  const out = JSON.parse(r.body) as { tracker: { tasks: Array<{ agent: string }> }; territories: string[]; flows: { flows: unknown[] }; red: boolean }
   assert.ok(out.tracker.tasks.length > 0 && out.flows.flows.length > 0)
+  assert.deepEqual(out.territories, ['core', 'desktop', 'ui'], 'the territories are the names architect listed')
+  assert.ok(out.tracker.tasks.some((t) => t.agent === 'cli'))
+  for (const gone of ['owners', 'repositories', 'ownersNote']) assert.ok(!(gone in out), `${gone} is no longer in the reading`)
   assert.equal(out.red, true, 'the tracker fixture carries a broken file')
+})
+
+test("a task's page lists its territories plainly and names its agent", async () => {
+  const page = (await get(s.url + '/tasks/add-place-entity')).body
+  assert.ok(page.includes('<tr><th>territory</th><td><div>core</div><div>desktop</div></td></tr>'))
+  assert.ok(page.includes('<tr><th>agent</th><td>cli</td></tr>'))
+  const unassigned = (await get(s.url + '/tasks/merge-two-entities')).body
+  assert.ok(unassigned.includes('<tr><th>agent</th><td>-</td></tr>'))
 })
 
 test('static files, and nothing outside them', async () => {

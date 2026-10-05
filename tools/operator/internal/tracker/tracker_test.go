@@ -12,6 +12,7 @@ title: Do the thing
 status: todo
 priority: high
 territory: api
+agent: cli
 created_at: 2026-08-20
 modified_at: 2026-08-25
 ---
@@ -30,19 +31,38 @@ func TestParseValidTask(t *testing.T) {
 	if len(task.Territories) != 1 || task.Territories[0] != "api" {
 		t.Errorf("territories: %v", task.Territories)
 	}
+	if task.Agent != "cli" {
+		t.Errorf("agent: %q", task.Agent)
+	}
 	if task.CreatedAt != "2026-08-20" || task.ModifiedAt != "2026-08-25" || task.Body != "Some body." {
 		t.Errorf("dates/body: %+v", task)
 	}
 }
 
 func TestEmptyOptionalFieldIsUnsetNotInvalid(t *testing.T) {
-	raw := strings.Replace(strings.Replace(fixtureTask, "priority: high", "priority:", 1), "territory: api", "territory:", 1)
+	raw := strings.NewReplacer("priority: high", "priority:", "territory: api", "territory:", "agent: cli", "agent:").Replace(fixtureTask)
 	task := Parse("t", raw)
 	if !task.Valid() {
 		t.Fatalf("problems: %v", task.Problems)
 	}
-	if task.Priority != "" || len(task.Territories) != 0 {
-		t.Errorf("expected unset, got %q %v", task.Priority, task.Territories)
+	if task.Priority != "" || len(task.Territories) != 0 || task.Agent != "" {
+		t.Errorf("expected unset, got %q %v %q", task.Priority, task.Territories, task.Agent)
+	}
+}
+
+func TestAgentMustBeAName(t *testing.T) {
+	for _, ok := range []string{"cli", "desktop-owner", "a.b_c", "0x9"} {
+		raw := strings.Replace(fixtureTask, "agent: cli", "agent: "+ok, 1)
+		if task := Parse("t", raw); !task.Valid() {
+			t.Errorf("%q should be a name: %v", ok, task.Problems)
+		}
+	}
+	for _, bad := range []string{"Cli", "web ui", "-lead", "agents/cli"} {
+		raw := strings.Replace(fixtureTask, "agent: cli", "agent: "+bad, 1)
+		task := Parse("t", raw)
+		if task.Valid() || !strings.Contains(task.Problems[0], "is not a name") {
+			t.Errorf("%q should be a problem, got %v", bad, task.Problems)
+		}
 	}
 }
 
@@ -50,6 +70,7 @@ func TestEveryProblemReportedInOnePass(t *testing.T) {
 	task := Parse("t", "---\ntitle:\nstatus: shipping\npriority: soon\n---\n")
 	want := []string{
 		"missing frontmatter key: territory",
+		"missing frontmatter key: agent",
 		"missing frontmatter key: created_at",
 		"title must not be empty",
 		"body must not be empty",

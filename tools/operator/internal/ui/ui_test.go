@@ -11,7 +11,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
-	"github.com/smailq/heai-tools/tools/operator/internal/owners"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
 	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
 	"github.com/smailq/heai-tools/tools/operator/internal/tracker"
@@ -39,15 +38,7 @@ func fixture(t *testing.T) Model {
 		t.Fatal(err)
 	}
 	tr.Changed = now.Add(-3 * time.Minute)
-	snap := Snapshot{
-		Tracker: tr,
-		MapPath: "/repo/architecture.yaml",
-		Owners: owners.Result{Owners: owners.Owners{
-			"core": "core-reviewer", "desktop": "desktop-owner", "ui": "ui-owner", "mail": "mail-owner",
-			"api": "api-owner", "website": "website-owner", "ontology": "ontology-owner",
-		}, Repos: []string{"app", "docs"}},
-		At: now,
-	}
+	snap := Snapshot{Tracker: tr, MapPath: "/repo/architecture.yaml", At: now}
 	list, err := flows.ParseList(readFixture(t, "flow", "list.json"))
 	if err != nil {
 		t.Fatal(err)
@@ -197,8 +188,9 @@ func TestPTogglesTheTaskPane(t *testing.T) {
 	if m.split() || m.focus != focusLeft || strings.Contains(m.Render(), "│") {
 		t.Error("p should hide the pane and return focus to the list")
 	}
-	if !strings.Contains(m.Render(), "routes to") {
-		t.Error("the list should get its columns back when the pane is hidden")
+	// The column header is the third line; the task pane has an agent row too, so the whole render would not tell.
+	if head := strings.Split(m.Render(), "\n")[2]; !strings.Contains(head, "agent") || !strings.Contains(head, "age") {
+		t.Errorf("the list should get its columns back when the pane is hidden: %q", head)
 	}
 	if !press(m, "p").split() {
 		t.Error("p again should show the pane")

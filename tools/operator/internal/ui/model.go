@@ -12,7 +12,6 @@ import (
 
 	"github.com/smailq/heai-tools/tools/operator/internal/discover"
 	"github.com/smailq/heai-tools/tools/operator/internal/flows"
-	"github.com/smailq/heai-tools/tools/operator/internal/owners"
 	"github.com/smailq/heai-tools/tools/operator/internal/pod"
 	"github.com/smailq/heai-tools/tools/operator/internal/reactor"
 	"github.com/smailq/heai-tools/tools/operator/internal/tracker"
@@ -37,18 +36,17 @@ type Options struct {
 	Now     func() time.Time
 }
 
-// Snapshot is one reading of the tracker's files, with the owners the map gives.
+// Snapshot is one reading of the tracker's files, with the map it resolved to.
 type Snapshot struct {
 	Tracker *tracker.Tracker
 	Err     error
+	// MapPath is the architecture map this screen reads beside; flow is asked about its directory.
 	MapPath string
-	Owners  owners.Result
 	At      time.Time
 }
 
-// Load takes a snapshot of the tracker. Owners are re-asked of architect only
-// when the map's mtime moved since prev, since validation is not free and the
-// map rarely changes.
+// Load takes a snapshot of the tracker. When the tracker cannot be read the
+// previous map stands, so the sibling panes keep asking about the same project.
 func Load(opts Options, prev Snapshot) Snapshot {
 	now := time.Now
 	if opts.Now != nil {
@@ -58,7 +56,6 @@ func Load(opts Options, prev Snapshot) Snapshot {
 	t, err := tracker.Load(opts.TasksDir)
 	if err != nil {
 		s.Err = err
-		s.Owners = prev.Owners
 		s.MapPath = prev.MapPath
 		if s.MapPath == "" {
 			s.MapPath = discover.Map(opts.MapOverride, discover.Env{}, "", opts.Cwd)
@@ -67,10 +64,6 @@ func Load(opts Options, prev Snapshot) Snapshot {
 	}
 	s.Tracker = t
 	s.MapPath = discover.Map(opts.MapOverride, discover.Env{}, t.MapPath, opts.Cwd)
-	s.Owners = prev.Owners
-	if s.MapPath != prev.MapPath || mapMoved(s.MapPath, prev.Owners.MapModTime) {
-		s.Owners = owners.Resolve(s.MapPath)
-	}
 	return s
 }
 
@@ -82,13 +75,6 @@ func LoadPod(project string, now time.Time) pod.Result { return pod.Poll(project
 
 // LoadReactor asks reactor for its sources and rules and the last hour's events.
 func LoadReactor(project string, now time.Time) reactor.Result { return reactor.Poll(project, now) }
-
-func mapMoved(path string, seen time.Time) bool {
-	if path == "" {
-		return false
-	}
-	return modTime(path) != seen
-}
 
 // sort modes for the tasks pane, cycled by S.
 const (
@@ -775,7 +761,7 @@ func (m Model) rowCount() int {
 }
 
 func matches(t tracker.Task, needle string) bool {
-	hay := strings.ToLower(strings.Join(append([]string{t.Slug, t.Title, t.Status, t.Priority}, t.Territories...), " "))
+	hay := strings.ToLower(strings.Join(append([]string{t.Slug, t.Title, t.Status, t.Priority, t.Agent}, t.Territories...), " "))
 	return strings.Contains(hay, needle)
 }
 

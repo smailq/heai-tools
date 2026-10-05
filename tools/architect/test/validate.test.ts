@@ -3,14 +3,7 @@ import { describe, it } from 'node:test'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { stringify } from 'yaml'
-import {
-  claims,
-  createValidator,
-  effectiveOwner,
-  TEMPLATE,
-  type ArchitectureMap,
-  type Territory
-} from '../src/validate.ts'
+import { claims, createValidator, TEMPLATE, type ArchitectureMap, type Territory } from '../src/validate.ts'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const validator = createValidator(join(here, '..', 'schemas', 'architecture.schema.json'))
@@ -19,14 +12,10 @@ const validator = createValidator(join(here, '..', 'schemas', 'architecture.sche
 function map(overrides: Partial<ArchitectureMap> = {}): ArchitectureMap {
   return {
     version: 1,
-    actors: {
-      kyu: { type: 'human', identity: '@kyu' },
-      api: { type: 'llm-agent', context: 'Owns the API.' }
-    },
     repositories: { app: { remotePath: 'src.example.com/team/app' } },
     territories: {
-      platform: { owner: 'kyu', scope: [{ repository: 'app', globs: ['architecture.yaml'] }] },
-      service: { owner: 'api', scope: [{ repository: 'app', globs: ['src/**'] }] }
+      platform: { scope: [{ repository: 'app', globs: ['architecture.yaml'] }] },
+      service: { scope: [{ repository: 'app', globs: ['src/**'] }] }
     },
     ...overrides
   }
@@ -35,29 +24,6 @@ function map(overrides: Partial<ArchitectureMap> = {}): ArchitectureMap {
 const check = (m: ArchitectureMap) => validator.validateDoc(m)
 const errorsOf = (m: ArchitectureMap) => check(m).errors
 const has = (list: string[], needle: string) => list.some((x) => x.includes(needle))
-
-describe('watches', () => {
-  it('must name declared territories, and warns when it names one the actor owns', () => {
-    const watching = map({
-      actors: {
-        kyu: { type: 'human', identity: '@kyu' },
-        api: { type: 'llm-agent', context: 'Owns the API.' },
-        maintainer: { type: 'llm-agent', context: 'Watches.', watches: ['service'] }
-      }
-    })
-    const result = check(watching)
-    assert.deepEqual(result.errors, [])
-    assert.ok(!has(result.warnings, 'maintainer'), 'a watcher owning nothing is not "owns no territory"')
-
-    const unknown = map({ actors: { ...watching.actors, maintainer: { type: 'llm-agent', context: 'W.', watches: ['nope'] } } })
-    assert.ok(has(errorsOf(unknown), 'actors.maintainer.watches: unknown territory "nope"'))
-
-    const redundant = map({ actors: { ...watching.actors, api: { type: 'llm-agent', context: 'Owns.', watches: ['service'] } } })
-    assert.ok(has(check(redundant).warnings, 'actors.api.watches: "service" is already owned'))
-    const dup = map({ actors: { ...watching.actors, maintainer: { type: 'llm-agent', context: 'W.', watches: ['service', 'service'] } } })
-    assert.ok(errorsOf(dup).length > 0, 'duplicates are a schema error')
-  })
-})
 
 describe('schema', () => {
   it('accepts the starter template', () => {
@@ -83,24 +49,17 @@ describe('schema', () => {
     assert.ok(has(result.errors, 'schema:'))
   })
 
-  it('requires an identity of a human and a context of an llm-agent', () => {
-    const noIdentity = check({ ...map(), actors: { kyu: { type: 'human' } } } as ArchitectureMap)
-    assert.equal(noIdentity.valid, false)
-    const noContext = check({
-      ...map(),
-      actors: { kyu: { type: 'human', identity: '@kyu' }, api: { type: 'llm-agent' } }
-    } as ArchitectureMap)
-    assert.equal(noContext.valid, false)
+  it('rejects the actors section the format no longer has', () => {
+    const result = validator.validateDoc({ ...map(), actors: { kyu: { type: 'human', identity: '@kyu' } } })
+    assert.equal(result.valid, false)
+    assert.ok(has(result.errors, 'schema:'))
+    const owned = map()
+    ;(owned.territories.service as Territory & { owner?: string }).owner = 'kyu'
+    assert.ok(has(errorsOf(owned), 'schema:'), 'a territory has no owner key')
   })
 })
 
 describe('referential integrity', () => {
-  it('rejects an undeclared owner', () => {
-    const m = map()
-    m.territories.service!.owner = 'ghost'
-    assert.ok(has(errorsOf(m), 'owner "ghost" is not a declared actor'))
-  })
-
   it('rejects a scope entry naming an unknown repository', () => {
     const m = map()
     m.territories.service!.scope[0]!.repository = 'nope'
@@ -139,7 +98,7 @@ describe('referential integrity', () => {
 })
 
 describe('child territories', () => {
-  /** platform owns everything; service carves src/** out of it as a child. */
+  /** platform claims everything; service carves src/** out of it as a child. */
   function nested(): ArchitectureMap {
     const m = map()
     m.territories.platform!.scope[0]!.globs = ['**']
@@ -149,20 +108,6 @@ describe('child territories', () => {
 
   it('accepts a child inside its parent, with no exclude written', () => {
     assert.deepEqual(errorsOf(nested()), [])
-  })
-
-  it('accepts a child without an owner, inheriting through the chain', () => {
-    const m = nested()
-    delete (m.territories.service as Partial<Territory>).owner
-    const result = check(m)
-    assert.deepEqual(result.errors, [])
-    assert.equal(effectiveOwner(result.map!, 'service'), 'kyu')
-  })
-
-  it('rejects a territory with neither owner nor parent', () => {
-    const m = map()
-    delete (m.territories.service as Partial<Territory>).owner
-    assert.ok(has(errorsOf(m), 'schema:'))
   })
 
   it('rejects an unknown parent, and a territory that is its own parent', () => {
@@ -202,7 +147,6 @@ describe('child territories', () => {
     const m = nested()
     m.territories.twin = {
       parent: 'platform',
-      owner: 'api',
       scope: [{ repository: 'app', globs: ['src/twin/**'] }]
     }
     assert.ok(has(errorsOf(m), 'service and twin overlap in app'))
@@ -213,18 +157,6 @@ describe('child territories', () => {
     assert.equal(claims(result.map!, 'app', 'service', 'src/a.ts'), true)
     assert.equal(claims(result.map!, 'app', 'platform', 'src/a.ts'), false)
     assert.equal(claims(result.map!, 'app', 'platform', 'docs/x.md'), true)
-  })
-
-  it('counts inherited ownership when judging idle actors and human ownership', () => {
-    const m = map({
-      territories: {
-        root: { owner: 'kyu', scope: [{ repository: 'app', globs: ['**'] }] },
-        sub: { parent: 'root', scope: [{ repository: 'app', globs: ['src/**'] }] }
-      }
-    })
-    const result = check(m)
-    assert.ok(!has(result.warnings, 'no human-owned territory'))
-    assert.ok(!has(result.warnings, 'actors.kyu'))
   })
 
   it('flags an exclusion that restates a child carve-out', () => {
@@ -268,8 +200,8 @@ describe('no overlap', () => {
     const m = map({
       repositories: { app: {}, site: {} },
       territories: {
-        platform: { owner: 'kyu', scope: [{ repository: 'app', globs: ['**'] }] },
-        service: { owner: 'api', scope: [{ repository: 'site', globs: ['**'] }] }
+        platform: { scope: [{ repository: 'app', globs: ['**'] }] },
+        service: { scope: [{ repository: 'site', globs: ['**'] }] }
       }
     })
     assert.deepEqual(errorsOf(m), [])
@@ -278,12 +210,6 @@ describe('no overlap', () => {
 
 describe('warnings', () => {
   const warningsOf = (m: ArchitectureMap) => check(m).warnings
-
-  it('flags an actor that owns nothing', () => {
-    const m = map()
-    m.actors.spare = { type: 'llm-agent', context: 'idle' }
-    assert.ok(has(warningsOf(m), 'actors.spare: declared but neither owns nor watches a territory'))
-  })
 
   it('flags a repository no territory scopes', () => {
     const m = map()
@@ -308,12 +234,6 @@ describe('warnings', () => {
     const m = map()
     m.territories.service!.scope[0]!.exclude = { globs: ['src/legacy/**'] }
     assert.ok(has(warningsOf(m), '"src/legacy/**" is claimed by no territory'))
-  })
-
-  it('flags a map with no human-owned territory', () => {
-    const m = map()
-    m.territories.platform!.owner = 'api'
-    assert.ok(has(warningsOf(m), 'no human-owned territory'))
   })
 
   it('says nothing about a healthy map', () => {

@@ -22,7 +22,7 @@ Tools read [`architect/schemas/architecture.schema.json`](architect/schemas/arch
 
 ## Tools
 
-- [`architect`](architect) - the reference validator for the map, the owner, territory, actor and context queries other tools shell out for, and the scope gate that checks a diff against the map's ownership boundaries, as a command and a library.
+- [`architect`](architect) - the reference validator for the map, the territory and context queries other tools shell out for, and the scope gate that checks a diff against the territory a change was scoped to, as a command and a library.
 - [`tasks`](tasks) - a file-based task tracker for a repository, managed by an agent.
 - [`reactor`](reactor) - the one daemon, and a router: ticks, commits, webhooks, polls and `heai-reactor emit` become events, and each event runs the one script its rule names.
 - [`pod`](pod) - one persistent container watching a work queue: a job is a directory with a `job.json` and a `workdir/`, the worker runs the job's command, and its `stdout`, `stderr` and `result.json` land beside it.

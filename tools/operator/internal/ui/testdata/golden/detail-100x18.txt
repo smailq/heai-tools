@@ -3,7 +3,8 @@
  title       Document tabs
  status      blocked
  priority    high
- territory   ui  → ui-owner
+ territory   ui
+ agent       cli
  created     2026-08-28
  modified    2026-09-06
  blocked by  help-requested-by-web-ui  (todo)
@@ -13,6 +14,5 @@
  
  Blocked by [help-requested-by-web-ui](help-requested-by-web-ui.md), requested by `web-ui` in run
  `2026`.
-
 
  ↑↓ scroll  esc back  q quit

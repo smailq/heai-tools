@@ -269,7 +269,7 @@ export async function tree(repositories: Record<string, { localPath?: unknown }>
   return out
 }
 
-/** The tracker this server reads, in the shape the editor's Actors tab lists. */
+/** The tracker this server reads, in the shape the editor lists per territory. */
 export function taskRows(t: Tracker | null): object[] {
   return (t?.tasks ?? []).filter(valid).map((task) => ({
     slug: task.slug,
@@ -277,6 +277,7 @@ export function taskRows(t: Tracker | null): object[] {
     status: task.status,
     priority: task.priority,
     territory: task.territories.join(','),
+    agent: task.agent,
     created_at: task.created_at,
     modified_at: task.modified_at,
     body: task.body.slice(0, 4000)

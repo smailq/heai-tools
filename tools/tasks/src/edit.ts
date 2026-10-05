@@ -24,14 +24,14 @@ import { ITEMS_DIR, load, ValidationError, type Store } from './store.ts'
 import { writeIndex } from './render.ts'
 
 /** The task properties an edit may set. Every key optional; `''` clears one. */
-export type TaskFields = Partial<Pick<Task, 'title' | 'status' | 'priority' | 'territory'>>
+export type TaskFields = Partial<Pick<Task, 'title' | 'status' | 'priority' | 'territory' | 'agent'>>
 
 /**
  * The task properties a caller may set. `created_at` and `modified_at` are
  * deliberately not among them: they record when the tool acted, so letting a
  * caller write them would make them a claim rather than a fact.
  */
-export const SETTABLE_TASK_KEYS = ['title', 'status', 'priority', 'territory'] as const
+export const SETTABLE_TASK_KEYS = ['title', 'status', 'priority', 'territory', 'agent'] as const
 
 export interface EditResult {
   /** The file written, relative to the tracker directory. */
@@ -47,6 +47,7 @@ const EMPTY_TASK: Omit<Task, 'slug' | 'body'> = {
   status: 'backlog',
   priority: '',
   territory: '',
+  agent: '',
   created_at: '',
   modified_at: ''
 }
